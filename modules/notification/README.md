@@ -187,6 +187,25 @@ module. What stays this module's own is the one slice its manifest's `Streams` a
 topics are read from: nothing exports that rule, and a screen which watched a topic its
 module never opened would be watching a door no module opened.
 
+**Reused, by the delivery answer** — `contracts.Mailer` and both of its carriers, unchanged,
+with a non-nil one still in every composition; `notification.Mailbox`, still the record a
+mail-less deployment runs and a test reads, and no longer a promise; and the
+second-interface-beside-a-frozen-one unit `modules/site` opens with `LockedReader`, with
+`MailDeliveryFunc` answering the way `PaletteFunc` does.
+
+**Added, by the delivery answer** — `contracts.MailDelivery`, because a composition holds a
+`Mailer` whatever the deployment chose and "there is a mailer" therefore answers nothing
+about whether a message leaves: the caller that acted as though it did accepted sign-ups it
+could never mail. A method on `Mailer` would have said the same thing and is the break the
+frozen public line refuses, so it is a second interface and the carrier answers it about
+itself — `*gomail.Sender` dials, `*Mailbox` files — and one object is put twice, so no
+composition can hold a sender and a delivery answer that contradict each other.
+
+**Made reusable, by the delivery answer** — the carrier answering a question about itself
+beside the interface it already satisfied, which is how the next "does this installation
+really do the thing?" is asked without widening a frozen port; and `contracts.MailDeliveryFunc`,
+so a composition or a fixture can say which installation it is in one token.
+
 ## Authorization
 
 ### Permissions

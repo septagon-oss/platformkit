@@ -179,8 +179,7 @@ var permissions = []module.Permission{
 // should take.
 func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Storage == nil {
-		// A wiring mistake fails where it is written rather than as a nil
-		// dereference on the first upload.
+		// Storage is required before any route can accept an upload.
 		panic("file.Module: Deps.Storage is required; wire file.Local(dir) to keep the bytes on disk")
 	}
 	if len(deps.Retention) > 0 && deps.Tenants == nil {
@@ -236,12 +235,37 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		}
 	}
 	return svc, module.Module{
-		Name:         "file",
-		Migrations:   Migrations.Files,
-		PersonalData: personalTables(),
-		Adopts:       Migrations.Adopts,
-		Permissions:  permissions,
-		Declared:     contracts.Events,
+		Name:       "file",
+		Views:      contracts.Views(deps.Library != nil, true, true),
+		Migrations: Migrations.Files,
+		// Bytes go, rows stay, and the certificate names both a subject and an actor.
+		PersonalData: personaldata.Implements(
+			// files.alt (000063) is the sentence somebody typed about a picture, and a
+			// caption is their own words about themselves as much as a file name is — with
+			// the difference that the caption is what a screen reader hands out to whoever
+			// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
+			// the one statement that also moves the row's instant: see personalData.Erase.
+			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
+			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			// file_uses (000045) says which record's field displays which file. `record`
+			// is a polymorphic reference — `module` and `entity` say whose row it is — so
+			// it is filed as about rather than not-person: a richtext field of a user's
+			// own record names this person's row in it, and the module that writes the
+			// row is not the module that decides what it points at. `module`, `entity`,
+			// `field` and `locale` name no identifier: the first three are CHECKed
+			// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
+			// so none of them is a column an address was ever copied into.
+			personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
+			// file_variants (000054) is one width of one picture: the file it belongs
+			// to is a row, not a person, and the two text columns hold no sentence —
+			// `state` is a CHECKed vocabulary and `reason` is a failed encode's own
+			// word for itself, capped at 24 characters by the same CHECK.
+			personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
+		),
+		Adopts:      Migrations.Adopts,
+		Permissions: permissions,
+		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Files", Screen: "file/files", Permission: contracts.PermissionFileRead},
 		},
@@ -260,6 +284,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
 		Subscriptions: []events.Subscription{internal.EraseBlobs(deps.Storage)},
+		// The sweep walks the object store and asks which rows still point at
+		// each blob, which is a question across every tenant: the bytes exist
+		// whether or not the row that owns them does. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "sweep stored bytes no row references, across every tenant"},
 		Routes: func(s httpx.Surfaces) {
 			sweep.Use(s.Ops.SystemToken())
 			internal.RegisterRoutes(s, svc)
@@ -268,35 +296,4 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			internal.MountLibrary(s, library)
 		},
 	}
-}
-
-// personalTables names the rows this module holds: the file a person uploaded and
-// what they said about it, the holds they placed, the erasure that removed them,
-// and the two tables that name a file rather than a person and are declared so a
-// subject erasure does not sweep them by accident.
-func personalTables() personaldata.Declaration {
-	return personaldata.Implements(
-		// files.alt (000063) is the sentence somebody typed about a picture, and a
-		// caption is their own words about themselves as much as a file name is — with
-		// the difference that the caption is what a screen reader hands out to whoever
-		// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
-		// the one statement that also moves the row's instant: see personalData.Erase.
-		personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
-		personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
-		personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
-		// file_uses (000045) says which record's field displays which file. `record`
-		// is a polymorphic reference — `module` and `entity` say whose row it is — so
-		// it is filed as about rather than not-person: a richtext field of a user's
-		// own record names this person's row in it, and the module that writes the
-		// row is not the module that decides what it points at. `module`, `entity`,
-		// `field` and `locale` name no identifier: the first three are CHECKed
-		// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
-		// so none of them is a column an address was ever copied into.
-		personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
-		// file_variants (000054) is one width of one picture: the file it belongs
-		// to is a row, not a person, and the two text columns hold no sentence —
-		// `state` is a CHECKed vocabulary and `reason` is a failed encode's own
-		// word for itself, capped at 24 characters by the same CHECK.
-		personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
-	)
 }

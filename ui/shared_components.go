@@ -11,6 +11,7 @@ import (
 // Shared component rules target the owning component, so the same geometry and
 // measure apply in an application, an export and the authenticated Gallery.
 func sharedComponentRules(s *css.Sheet) {
+	choiceRules(s)
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	s.Select("[data-shared-content] p, [data-shared-content] figcaption, [data-component=hero-full-bleed] p", css.Decl("max-width", css.Literal("37.5em")), css.Decl("overflow-wrap", css.Literal("anywhere")))
 	s.Select("[data-component=slot-picker] label, [data-component=option-chips] label", css.Decl("padding", css.Literal("0.5rem 1rem")), css.Decl("border", css.Literal("1px solid var(--pk-color-border-default)")), css.Decl("border-radius", v("pk-radius-button")))

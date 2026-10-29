@@ -62,34 +62,51 @@ func numericList(s string, budget *int) ([]float64, error) {
 	}
 	return out, nil
 }
-
-// allowedAttributes is the attribute names this element may carry: its own set,
-// plus the paint and geometry every non-root element shares. The names arrive
-// padded with spaces so one Contains answers membership.
-func allowedAttributes(e *element, root bool) (string, error) {
+func validateElement(e *element, root bool, budget *int, figure bool) error {
 	specific := map[string]string{"svg": "xmlns viewBox width height preserveAspectRatio", "g": "", "path": "d", "rect": "x y width height rx ry", "circle": "cx cy r", "ellipse": "cx cy rx ry", "line": "x1 y1 x2 y2", "polyline": "points", "polygon": "points"}
+	if figure {
+		specific["text"] = "x y font-size text-anchor font-weight"
+	}
 	attrs, ok := specific[e.name]
 	if !ok || (!root && e.name == "svg") {
-		return "", fmt.Errorf("element %s is forbidden", e.name)
+		return fmt.Errorf("element %s is forbidden", e.name)
 	}
 	if !root {
-		attrs += " fill stroke stroke-width stroke-linecap stroke-linejoin stroke-miterlimit fill-rule opacity fill-opacity stroke-opacity transform data-part data-option data-slot"
+		attrs += " fill stroke stroke-width stroke-linecap stroke-linejoin stroke-miterlimit fill-rule opacity fill-opacity stroke-opacity transform"
+		if figure {
+			attrs += " data-choice"
+		} else {
+			attrs += " data-part data-option data-slot"
+		}
 	}
-	return " " + attrs + " ", nil
+	for k, v := range e.attrs {
+		if !strings.Contains(" "+attrs+" ", " "+k+" ") {
+			return fmt.Errorf("attribute %s is forbidden", k)
+		}
+		if err := attribute(e, k, v, root, budget); err != nil {
+			return fmt.Errorf("%s: %w", k, err)
+		}
+	}
+	return requiredAttributes(e, root)
 }
 
-// attributeValue checks one attribute's value: the vocabulary a stroke end may
-// take, the number a dimension, the path or transform a drawing may spend of the
-// budget. The element and whether it is the root travel with it, because a
-// coordinate list needs one minimum in a path and another in a polygon, and a
-// root's width is a limit a nested one's is not.
-func attributeValue(e *element, root bool, k, v string, budget *int) error {
+func attribute(e *element, k, v string, root bool, budget *int) error {
 	var err error
 	switch k {
-	case "xmlns", "data-part", "data-option", "data-slot":
+	case "xmlns", "data-part", "data-option", "data-slot", "data-choice":
 	case "fill", "stroke":
 		if v != "none" && !colourPattern.MatchString(v) {
 			err = errors.New("paint must be none or #RRGGBB")
+		}
+	case "text-anchor":
+		err = vocabulary(v, "start middle end")
+	case "font-weight":
+		err = vocabulary(v, "normal bold 100 200 300 400 500 600 700 800 900")
+	case "font-size":
+		ns, fault := numericList(v, budget)
+		err = fault
+		if err == nil && (len(ns) != 1 || ns[0] <= 0 || ns[0] > 256) {
+			err = errors.New("font-size must be positive and at most 256")
 		}
 	case "stroke-linecap":
 		err = vocabulary(v, "butt round square")
@@ -106,111 +123,75 @@ func attributeValue(e *element, root bool, k, v string, budget *int) error {
 	case "d":
 		err = path(v, budget)
 	default:
-		err = numericAttributeValue(e, root, k, v, budget)
+		err = numericAttribute(e, k, v, root, budget)
 	}
 	return err
 }
 
-// numericAttributeValue checks an attribute whose value is a number or a list of
-// them: the box a drawing claims, the coordinates of a polygon, the interval a
-// stroke may take. The budget travels with it because a long list of points is
-// the size of the drawing, not its syntax, and the root's width is its canvas
-// where a nested one's is only a length.
-func numericAttributeValue(e *element, root bool, k, v string, budget *int) error {
+func numericAttribute(e *element, k, v string, root bool, budget *int) error {
+
 	ns, err := numericList(v, budget)
-	if err != nil {
-		return err
-	}
-	switch k {
-	case "viewBox":
-		if len(ns) != 4 || ns[2] <= 0 || ns[3] <= 0 || ns[2] > 8192 || ns[3] > 8192 {
-			return errors.New("viewBox needs four numbers and positive axes at most 8192")
-		}
-	case "points":
-		minimum := 4
-		if e.name == "polygon" {
-			minimum = 6
-		}
-		if len(ns) < minimum || len(ns)%2 != 0 {
-			return errors.New("points needs complete coordinate pairs")
-		}
-	default:
-		if len(ns) != 1 {
-			return errors.New("one number is required")
-		}
-		lo, hi := -1000000.0, 1000000.0
+	if err == nil {
 		switch k {
-		case "opacity", "fill-opacity", "stroke-opacity":
-			lo, hi = 0, 1
-		case "stroke-width":
-			lo, hi = 0, 8192
-		case "stroke-miterlimit":
-			lo, hi = 1, 1000
-		case "width", "height", "rx", "ry", "r":
-			lo = 0
-		}
-		// The canvas rule is weighed first: a negative root width is outside both
-		// intervals, and the sentence that names the canvas is the actionable one.
-		if root && (k == "width" || k == "height") && (ns[0] <= 0 || ns[0] > 8192) {
-			return errors.New("dimension must be positive and at most 8192")
-		}
-		if ns[0] < lo || ns[0] > hi {
-			return errors.New("number outside the permitted interval")
+		case "viewBox":
+			if len(ns) != 4 || ns[2] <= 0 || ns[3] <= 0 || ns[2] > 8192 || ns[3] > 8192 {
+				err = errors.New("viewBox needs four numbers and positive axes at most 8192")
+			}
+		case "points":
+			minimum := 4
+			if e.name == "polygon" {
+				minimum = 6
+			}
+			if len(ns) < minimum || len(ns)%2 != 0 {
+				err = errors.New("points needs complete coordinate pairs")
+			}
+		default:
+			if len(ns) != 1 {
+				err = errors.New("one number is required")
+				break
+			}
+			lo, hi := -1000000.0, 1000000.0
+			switch k {
+			case "opacity", "fill-opacity", "stroke-opacity":
+				lo, hi = 0, 1
+			case "stroke-width":
+				lo, hi = 0, 8192
+			case "stroke-miterlimit":
+				lo, hi = 1, 1000
+			case "width", "height", "rx", "ry", "r":
+				lo = 0
+			}
+			if ns[0] < lo || ns[0] > hi {
+				err = errors.New("number outside the permitted interval")
+			}
+			if root && (k == "width" || k == "height") && (ns[0] <= 0 || ns[0] > 8192) {
+				err = errors.New("dimension must be positive and at most 8192")
+			}
 		}
 	}
-	return nil
+	return err
 }
 
-// requiredAttributes names what an element cannot mean without.
-func requiredAttributes(e *element) error {
+func requiredAttributes(e *element, root bool) error {
 	required := map[string]string{"svg": "viewBox", "path": "d", "rect": "width height", "circle": "r", "ellipse": "rx ry", "polyline": "points", "polygon": "points"}
 	for k := range strings.FieldsSeq(required[e.name]) {
 		if _, ok := e.attrs[k]; !ok {
 			return fmt.Errorf("required attribute %s is absent", k)
 		}
 	}
-	return nil
-}
-
-// settleRoot gives the root the size and the aspect its viewBox implies where
-// the drawing left them unsaid.
-func settleRoot(e *element) error {
-	ns, err := numericList(e.attrs["viewBox"], nil)
-	if err != nil || len(ns) != 4 {
-		return errors.New("required viewBox is invalid")
-	}
-	for i, k := range []string{"width", "height"} {
-		if _, ok := e.attrs[k]; !ok {
-			e.attrs[k] = decimal(ns[i+2])
-		}
-	}
-	if _, ok := e.attrs["preserveAspectRatio"]; !ok {
-		e.attrs["preserveAspectRatio"] = "xMidYMid meet"
-	}
-	return nil
-}
-
-// validateElement holds one element to the grammar: an element the language
-// knows, the attributes it may carry, the values those attributes take, and the
-// few attributes without which it means nothing. Only the root may be an svg.
-func validateElement(e *element, root bool, budget *int) error {
-	allowed, err := allowedAttributes(e, root)
-	if err != nil {
-		return err
-	}
-	for k, v := range e.attrs {
-		if !strings.Contains(allowed, " "+k+" ") {
-			return fmt.Errorf("attribute %s is forbidden", k)
-		}
-		if err := attributeValue(e, root, k, v, budget); err != nil {
-			return fmt.Errorf("%s: %w", k, err)
-		}
-	}
-	if err := requiredAttributes(e); err != nil {
-		return err
-	}
 	if root {
-		return settleRoot(e)
+		ns, err := numericList(e.attrs["viewBox"], nil)
+		if err != nil || len(ns) != 4 {
+			return errors.New("required viewBox is invalid")
+		}
+		for i, k := range []string{"width", "height"} {
+			if _, ok := e.attrs[k]; !ok {
+				e.attrs[k] = decimal(ns[i+2])
+			}
+		}
+		if _, ok := e.attrs["preserveAspectRatio"]; !ok {
+			e.attrs["preserveAspectRatio"] = "xMidYMid meet"
+		}
 	}
 	return nil
 }

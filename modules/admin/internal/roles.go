@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"net/http"
 	"net/url"
 	"slices"
@@ -96,13 +97,13 @@ func (p pages) mountRoles(app *httpx.Router) {
 	// through the API; the screen is what makes that possible without curl.
 	guard := httpx.Permission(authcontracts.PermissionRoleManage)
 
-	page.Serve(namespace(app, "auth"), p.shell, page.Route{ID: "admin-roles", Method: http.MethodGet, Path: p.at.roles.rel,
+	page.Serve(namespace(app, authcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-roles", Method: http.MethodGet, Path: p.at.roles.rel,
 		Summary: "What each role grants in this tenant", Errors: rolesReadFaults}, guard,
 		func(ctx context.Context, r page.Request, in *rolesInput) (page.View, error) {
 			return p.rolesView(ctx, r, in.Page, "")
 		})
 
-	page.Serve(namespace(app, "auth"), p.shell, page.Route{ID: "admin-role-set", Method: http.MethodPost, Path: p.at.roles.rel,
+	page.Serve(namespace(app, authcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-role-set", Method: http.MethodPost, Path: p.at.roles.rel,
 		Summary: "Set what a role grants", Errors: rolesWriteFaults}, guard,
 		func(ctx context.Context, r page.Request, in *roleForm) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
@@ -111,7 +112,7 @@ func (p pages) mountRoles(app *httpx.Router) {
 			}
 			form, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+				return page.View{}, page.FormUnreadable()
 			}
 			// The screenful the form was on, so that a refusal and a success
 			// both come back to what the person was reading.
@@ -289,14 +290,14 @@ func newRoleFieldset(where string, offered []string, at int) g.Node {
 	const form = "pk-new-role"
 	return components.Form(components.FormProps{Action: where, Label: "A new role"},
 		components.Input(components.InputProps{
-			ComponentProps: components.ComponentProps{ID: form + "-name"},
+			ComponentProps: components.ComponentProps{ID: form + "-name", Attrs: screenAnchor("roles", "field.name")},
 			Name:           "name", Label: "Name", Required: true, MaxLength: authcontracts.MaxRoleName,
 			HelpText: "A lower-case identifier: letters, digits and underscores.",
 			Pattern:  "[a-z][a-z0-9_]*", Placeholder: "editor"}),
 		hidden(form+"-page", "page", strconv.Itoa(at)),
 		permissionBoxes(form, nil, offered),
 		components.FormActions(components.FormActionsProps{},
-			components.Button(components.ButtonProps{Label: "Create the role", Type: "submit"})),
+			components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("roles", "action.create")}, Label: "Create the role", Type: "submit"})),
 	)
 }
 

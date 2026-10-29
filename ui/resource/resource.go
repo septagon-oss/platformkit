@@ -1,86 +1,61 @@
-// Package resource renders the screens of a schema-described resource — the
-// list, the detail, the two forms, and one control per command the caller was
-// given — from plain values: the entity's schema, the rows a handler read, and
-// the words the request's locale chose.
-//
-// It is the pure half of the generated screens behind docs/adr/0007. Nothing
-// here names a task or a user, opens a transaction or reads a request; what a
-// caller may do arrives as a boolean, and what they read arrives as maps. That
-// is what lets the same screens be rendered for design export, for a native
-// catalog's golden file or in a test with no database, and it is why the
-// package gate holds this package to kit/entity, kit/entity/display,
-// kit/locale, ui/forms, ui/document and the presentation packages beneath them.
-// ui/screens is the adapter: it takes httpx.Resource, whose guarded closures do
-// the reading and writing, and mounts these renderers behind page.Serve.
+// Package resource renders resolved entity policies and supplied rows as HTML.
+// It performs no I/O; ui/screens supplies authorized routes and request values.
+// See README.md for composition, fallback and value-reading contracts.
 package resource
 
 import (
 	"fmt"
+	"maps"
+	"strings"
+	"time"
+	"unicode/utf8"
 
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
-	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
-// Resource is what the screens know about one registered entity: its schema,
-// with the module, name and API path the screens' own paths derive from, and
-// the fields a command of its own writes, which a form shows read-only.
-// httpx.Resource carries the same two beside its guarded closures; ui/screens
-// hands the renderers this half.
+// Resource supplies a schema, immutable resolved policy and authorized routes.
+// When Resolved is absent or unsupported, the original declarations resolve once.
 type Resource struct {
-	Schema    entity.Schema
-	Immutable []string
-	// API is the resource's own read address as the kernel composed it — the path
-	// its JSON routes answer at — empty for a screen rendered without a kernel
-	// behind it. A renderer builds an autosave target from it and from nothing
-	// else: the screen's own /app/... address is where a person is, not where the
-	// record lives, and a browser that guessed an API path would be guessing which
-	// surface its caller may read on.
+	// Resolved is an immutable policy for this render; unsupported versions resolve the original declarations.
+	Resolved *present.Resolved
+	// CommandsOnly suppresses entity surfaces when resolving a legacy command projection.
+	CommandsOnly bool
+	// ScreenOwner enables composed screen references; empty keeps standalone rendering.
+	ScreenOwner string
+	Schema      entity.Schema
+	Immutable   []string
+	// API is the registered JSON read address, or empty for offline rendering.
+	// It scopes rich-text drafts without inferring a route from the screen address.
 	API string
-	// Present supplies the resource names, reading order, status, empty-state
-	// guidance, visibility, sections and supported sorts. The catalogue and web
-	// screens resolve the same declarations through Words.
+	// Present supplies legacy declarations used only when Resolved cannot be read.
 	Present entity.EntryHints
-	// Screen is the workspace address of this resource's collection screen:
-	// /app/<module>/<entity>, composed by the kernel at registration. Every
-	// link a renderer writes is built from it, which is the whole reason the
-	// renderer needs it and no reason it needs to know how it was made. A
-	// screen rendered without a kernel behind it — a design export, a golden
-	// file — names one itself.
+	// Screen is the registered collection or singleton page address.
+	// Offline callers supply their own address; all navigation starts here.
 	Screen string
-	// Singleton says a tenant has one of these and its API has no id in the
-	// path. A screen needs to know, because the doors a collection shows are
-	// the doors this resource has no routes behind: New would post to a create
-	// that answers 405, Delete would post to one that answers 409, and a row
-	// link would name an id the row does not have. kit/httpx documents the same
-	// duty on httpx.Resource.Singleton, and ui/screens/catalog.go has always
-	// carried it to the native shell; ui/screens carries it here.
+	// Singleton identifies an id-less record surface with no collection or create/delete doors.
 	Singleton bool
-	// Operations names the routes this resource's API actually mounted — "list",
-	// "read", "create", "update", "delete" — in that order. Empty means all
-	// five, which is what every resource written before a Spec could name its
-	// operations offers, and what a screen rendered without a kernel behind it
-	// (a design export, a golden file) renders.
-	//
-	// The renderers draw a door only for a verb named here, because a door behind
-	// which no route answers is not a door: it is a refusal with a button on it.
-	// The value is plain strings rather than httpx.CRUD because this package is
-	// pure by docs/adr/0007 and imports no transport; ui/screens carries it across.
+	// Operations lists mounted CRUD verbs. Nil means all five; an explicit empty
+	// set means none. These route capabilities narrow the resolved presentation.
 	Operations []string
-	// Commands are the lifecycle routes this caller may use, in the order the API
-	// declared them, each with the path its route was mounted on. Empty for a
-	// screen rendered without a caller — a design export, a golden file — because
-	// "may I do this?" has no answer there, and a control that would be refused is
-	// not worth drawing. ui/screens fills this in from httpx.Resource.
+	// Commands contains only callable routes authorized for this render.
+	// The policy supplies their words and flags; a policy alone grants no route.
 	Commands []Command
-	// History is this record's versions, read for the caller the page is rendered
-	// for, and nil for a resource whose Spec keeps none. The command it carries is
-	// left out of Commands by the adapter, so the panel is the one place a person
-	// restores from. ui/screens fills this in from httpx.Resource.History.
+	// History contains the versions already read under the record's guard.
+	// Nil hides the panel; Carries avoids duplicating its restore command.
 	History *HistoryPanel
+	// Selected holds the equality selections this page is showing, field to
+	// value, each one already validated and applied to the read by the caller.
+	// The list's sort, facet and pager links carry them, so turning the page or
+	// changing the order keeps the filter a person came to narrow. What a page
+	// may offer stays in Resolved.List.Filters: this names what was chosen, not
+	// what is offered, and ui/screens fills it in from the request's query.
+	// A render only reads it.
+	Selected map[string]string
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -91,6 +66,8 @@ const PerPage = 50
 
 // Options is what a shell decides about its generated screens.
 type Options struct {
+	// Location is the viewer zone; nil renders UTC before browser enhancement.
+	Location *time.Location
 	// Workspace is the address the breadcrumb's first entry links to: the
 	// workspace's own root. It is not a prefix the renderer composes paths
 	// from — a screen is mounted at an address the kernel derived, and the
@@ -100,14 +77,8 @@ type Options struct {
 	Workspace string
 	// Home is the breadcrumb's first entry's label, linking to Workspace.
 	Home string
-	// PictureSource is the address template a `present:image` cell fetches its
-	// bytes from, `{id}` standing for the file id the field holds: the same
-	// template the workspace catalogue publishes as `pictures.source`, and for the
-	// same reason — the door belongs to a module this package may not name, so the
-	// composition that has met both writes the address once here rather than a
-	// renderer guessing at it. Empty means this installation names no such door,
-	// and every picture cell then draws the plain value it drew before this field
-	// existed.
+	// PictureSource substitutes {id} in an authorized picture delivery URL.
+	// Empty means this installation offers no stored-picture delivery door.
 	PictureSource string
 	// ComposedSource substitutes {reference} with a validated composed-picture token.
 	ComposedSource string
@@ -125,6 +96,15 @@ type Options struct {
 	// no verdict — a design export, a shell drawing the writer's own line — and draws
 	// what it drew before this field existed.
 	Refusal *Refusal
+	// Rendered is the instant this render measures relative values against,
+	// sampled once by whoever drew the request. Its zero value names no instant,
+	// and a relative value then keeps the absolute text an offline render or a
+	// design export has always drawn. The instant arrives as a value rather than
+	// a function to call because Options is a frozen comparable surface: a func
+	// or map field here would stop `a == b` from compiling for whoever holds
+	// two. It also says who owns the sample: the request takes it once, so no
+	// two values on one page are measured against two different nows.
+	Rendered time.Time
 }
 
 // Refusal is one verdict as a form shows it: what the refusal page calls it, and how
@@ -145,17 +125,28 @@ func (o Options) Text(key, fallback string, args ...any) string {
 	return o.Locale.Text(key, fallback, args...)
 }
 
+// chromeFormatter is a render's locale as a form's seam for its chrome. A nil
+// *locale.Locale sitting in a locale.Formatter interface is not nil to the code
+// that asks it, so a render that composed no locale composes no formatter and
+// answers its chrome with source text instead of dying on the way there.
+func chromeFormatter(selected *locale.Locale) locale.Formatter {
+	if selected == nil {
+		return nil
+	}
+	return selected
+}
+
 // deleteForm is the destructive action: a real form, so it works without
-// JavaScript, carrying the attribute confirm.js opens the dialog on.
-func deleteForm(o Options, item, entity string) g.Node {
+// JavaScript, carrying the attribute confirm.js opens the dialog on. anchor names
+// the record's published view, empty for a standalone render.
+func deleteForm(o Options, item, entity string, anchor map[string]string) g.Node {
 	remove := o.Text("screens.delete", "Delete")
+	attrs := map[string]string{"data-confirm": o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity), "data-confirm-label": remove}
+	maps.Copy(attrs, anchor)
 	return components.Form(components.FormProps{Action: item + "/delete", Label: o.Text("screens.delete_this", "Delete this %s", entity)},
 		components.Button(components.ButtonProps{
-			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-confirm":       o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity),
-				"data-confirm-label": remove,
-			}},
-			Label: remove, Type: "submit", Tone: "danger", Size: "md",
+			ComponentProps: components.ComponentProps{Attrs: attrs},
+			Label:          remove, Type: "submit", Tone: "danger", Size: "md",
 		}))
 }
 
@@ -167,11 +158,31 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 		}})
 }
 
-// offers reports whether this resource mounted the route for a verb. An empty
-// Operations means all five; the same question, stated once on httpx.Resource,
+// collectionName is the resource's plural as a label rather than as a noun in a
+// sentence: the word the policy holds, exactly as its author wrote it, with the
+// letter a reader starts a line with. A list's heading, the name of its table
+// region and a breadcrumb's collection entry each stand alone, so each begins a
+// sentence; the count keeps the bare noun, because "3 notes" sits inside a
+// sentence and starts none. Nothing is re-spelled here: no pluralising, no
+// re-segmenting of a word an author chose — the first letter only.
+func (r Resource) collectionName() string { return startSentence(r.Resolved.Identity.Plural) }
+
+// startSentence puts the page's own capital on the first letter of a word that
+// begins a line. The rest of the word is the author's, letter for letter.
+func startSentence(word string) string {
+	first, size := utf8.DecodeRuneInString(word)
+	if first == utf8.RuneError && size <= 1 {
+		return word
+	}
+	return strings.ToUpper(string(first)) + word[size:]
+}
+
+// offers reports whether this resource mounted the route for a verb. A nil
+// Operations means all five and an empty one that none is mounted, the pair
+// present reads; the question itself is stated once on httpx.Resource, which
 // decides the route table, and this is its answer at the door.
 func (r Resource) offers(verb string) bool {
-	if len(r.Operations) == 0 {
+	if r.Operations == nil {
 		return true
 	}
 	for _, o := range r.Operations {
@@ -182,84 +193,14 @@ func (r Resource) offers(verb string) bool {
 	return false
 }
 
-// known is the field a row is recognised by, for the whole table at once: the field the entity marked
-// `ui:"display"` if it declared one, and otherwise the first writable text-shaped field it declares.
-//
-// A `text` column counts beside a `string` one: both hold a name, and the reference app's own users
-// are a `text` table — an entity of text columns that has not marked a field used to answer its own
-// heading and its row's only link with a UUID. The mark still wins when both apply; see candidates.
-//
-// It reads the fields the asking screen shows, which is what callers pass it: an identity selection
-// over a whole schema would pick a field that screen does not draw, and the value would come back on
-// the screen anyway — in the leading cell, the row's link and the tab title.
-func known(fields []entity.Field) entity.Field {
-	if c := candidates(fields); len(c) > 0 {
-		return c[0]
+// recordAddress is the address a row's identity column links to, and it is empty
+// for a resource that mounted no record route: a list of rows nobody may open is
+// drawn as rows, not as links into the 404 of a place nothing is served. The page
+// side and the door side already asked Offers read; the table's own link is the
+// last place that asks it.
+func (r Resource) recordAddress() string {
+	if !r.offers("read") {
+		return ""
 	}
-	if len(fields) > 0 {
-		return fields[0]
-	}
-	return entity.Field{Name: "id"}
-}
-
-// candidates is the order a row is named in, in the one place that order is written down: the marked
-// field, then every other writable string or text field in schema order. known takes its head for a
-// whole table; label walks it for one row, because the field an entity calls its name can be blank in
-// a row that has not been filled in yet.
-func candidates(fields []entity.Field) []entity.Field {
-	var out []entity.Field
-	for _, f := range fields {
-		if f.Display {
-			out = append(out, f)
-		}
-	}
-	for _, f := range fields {
-		if f.Display || f.ReadOnly {
-			continue // the marked ones are already at the head, and a caller may not write this one
-		}
-		if f.Type == entity.TypeString || f.Type == entity.TypeText {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// onList is the schema as a list of rows reads it: every field whose reading puts it on a row, in
-// schema order. entity.Field.OnList resolves the two tags that say so (`visibility`, and the older
-// `hide:list` a declared visibility overrides); this is where the list asks, once, so the columns it
-// draws and the field it leads with cannot disagree about which fields a row has.
-func onList(fields []entity.Field) []entity.Field {
-	out := make([]entity.Field, 0, len(fields))
-	for _, f := range fields {
-		if f.OnList() {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// readable is the schema as the record reads it: `hidden` is the only visibility off this screen,
-// `detail` being the field a record answers and a row does not need. A field that is not drawn here
-// cannot name the row here either — the record's title is its toolbar, its breadcrumb and the browser
-// tab a person bookmarks.
-func readable(fields []entity.Field) []entity.Field {
-	out := make([]entity.Field, 0, len(fields))
-	for _, f := range fields {
-		if !f.Presentation.Hidden() {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// label is what one row is called, for one row: the first of those candidates this row has a value
-// for, and the id only when it has nothing else — today's last resort, kept for an entity of no
-// text-shaped fields at all.
-func label(row map[string]any, fields []entity.Field) string {
-	for _, f := range candidates(fields) {
-		if v := display.Text(row[f.Name]); v != "" {
-			return v
-		}
-	}
-	return display.Text(row["id"])
+	return r.Screen
 }

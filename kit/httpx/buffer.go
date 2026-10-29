@@ -9,27 +9,23 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
 // buffer is a response that has not been sent yet.
 //
-// A 200 written before the commit is a lie whenever the commit can still fail,
-// and it can: a DEFERRABLE INITIALLY DEFERRED constraint is checked at COMMIT,
-// a serialization failure is raised there, and so is the settings re-read
-// kit/db does. Holding the response costs one copy of the body and turns those
-// into the 500 they are.
+// A 200 written before the commit is a lie whenever the commit can still fail, and it
+// can: a DEFERRABLE INITIALLY DEFERRED constraint is checked at COMMIT, a serialization
+// failure is raised there, and so is the settings re-read kit/db does. Holding the
+// response costs one copy of the body and turns those into the 500 they are.
 //
-// A handler that calls Flush is streaming and knows what it is doing: from that
-// call on this is a passthrough, and its response reaches the wire before the
-// commit like any other streaming response. A huma StreamResponse that never
-// calls Flush is not streaming in any sense the network can see: it is buffered
-// whole, like every other response, and it is bounded like every other response.
-//
-// The bound is maxBuffer. Holding a response costs one copy of it, and a
-// download that is larger than that is a response nobody should be copying:
-// past the limit the buffer sends what it holds and becomes a passthrough, with
-// the same honest consequence as Flush — the bytes are on the wire before the
-// commit, and a commit that then fails is a log line rather than a 500.
+// A handler that calls Flush is streaming and knows what it is doing: from that call on
+// this is a passthrough. A huma StreamResponse that never calls Flush is buffered whole,
+// like every other response, and bounded like every other response. Past maxBuffer the
+// buffer sends what it holds and becomes a passthrough, with the same honest consequence:
+// the bytes are on the wire before the commit, and a commit that then fails is a log line
+// rather than a 500.
 type buffer struct {
 	http.ResponseWriter
 	// header is what the response headers were when the buffer was built, so
@@ -54,7 +50,32 @@ type buffer struct {
 	direct        bool
 	mutation      bool
 	streamRefused bool
+	// carried is the refusal a handler answered with, kept beside the held response it is
+	// about to become.
+	//
+	// The reason it is kept here rather than read back out of the body is that two facts
+	// about a refusal are deliberately absent from the JSON: problem.Problem's Key names
+	// the copy this shell ships for the verdict, and its Diagnostic says the detail is an
+	// operator's rather than the reader's. A program reading a code needs neither, which is
+	// why they are `json:"-"`. The one reader that needs both is the page this held response
+	// may still become, and by the time negotiation reaches the body they are gone — so the
+	// verdict arrives at that decision with its own metadata on it rather than a sentence
+	// reconstructed from a body that never carried it. See (*API).renegotiate.
+	carried *problem.Problem
 }
+
+// carry records which refusal a handler answered with. The first one wins: it is the
+// handler's own verdict, and anything the chain writes over a held response — a failed
+// commit, a public route that minted a cookie — replaces the whole answer rather than
+// adding a second verdict to it.
+func (b *buffer) carry(refused *problem.Problem) {
+	if b.carried == nil {
+		b.carried = refused
+	}
+}
+
+// refusal is the carried verdict, or nil where no handler answered with one.
+func (b *buffer) refusal() *problem.Problem { return b.carried }
 
 // maxBuffer is the most a held response may hold. Two megabytes is far past any
 // JSON document this API produces and far below anything worth copying.

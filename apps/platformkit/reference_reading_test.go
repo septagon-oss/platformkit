@@ -29,8 +29,11 @@ func referenceResources(t *testing.T) []httpx.Resource {
 	_, cfg := configure(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
-		Unwired: true, Tenants: c.tenants, Authorize: c.auth,
-		Authenticate: c.auth.Authenticate, Cache: cache.Memory("pkit"), Log: quiet(),
+		Unwired: true, Tenants: c.testTenants(), Authorize: c.testAuth(),
+		Authenticate: c.testAuth().Authenticate, Cache: cache.Memory("pkit"), Log: quiet(),
+		// Every module's Routes runs below, and four of them take a cross-tenant
+		// credential; a composition built by hand states what its manifests say.
+		SystemAccess: systemAccessOf(c.modules),
 	})
 	for _, m := range c.modules {
 		if m.Routes != nil {

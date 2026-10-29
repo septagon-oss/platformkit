@@ -1,13 +1,5 @@
 package rest
 
-// singleton.go is the other shape an entity has: one row per tenant.
-//
-// Spec is five routes on a collection, and two modules of E5 wanted something
-// else — a tenant's site settings, and a tenant's subscription. Both wrote the
-// same three routes by hand, with the same transaction ritual, the same error
-// mapping and the same public-door check, and neither registered a resource, so
-// neither got a screen. The review named it: a singleton belongs in the kernel.
-
 import (
 	"context"
 	"fmt"
@@ -83,6 +75,7 @@ type Singleton[T crud.Entity] struct {
 // Mount registers the two routes, the public one when there is one, and the
 // resource the admin generator reads.
 func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
+	s.Module = mountedUnder(s.Module, surfaces.App, "Singleton", s.Entity)
 	s.check()
 	auth := httpx.Resource{Read: s.Read, Write: s.Write,
 		OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite}
@@ -219,16 +212,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 		Delete: func(context.Context, uuid.UUID) error { return refuse() },
 		Update: func(ctx context.Context, _ uuid.UUID, values map[string]any) (map[string]any, error) {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				current, err := s.Load(ctx, tx)
-				if err != nil {
-					return current, err
-				}
-				// The PATCH route's own merge, so read-only fields are refused
-				// at this door exactly as they are over HTTP.
-				if _, err := merge(current, crud.Fields[T](), nil, values); err != nil {
-					return current, err
-				}
-				return s.Save(ctx, tx, current)
+				return s.saveForm(ctx, tx, values)
 			})
 		},
 	}
@@ -274,6 +258,9 @@ func (s Singleton[T]) check() {
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = formHintsFault(httpx.Resource{Schema: entity.Schema{Fields: crud.Fields[T]()}, Present: s.Present, Singleton: true, Write: s.Write})
 	}
 	if bad != "" {
 		panic("rest: Singleton for " + s.Module + "." + s.Entity + ": " + bad)

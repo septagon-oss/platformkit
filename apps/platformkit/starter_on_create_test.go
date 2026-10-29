@@ -24,11 +24,11 @@ func TestNewTenantOpensWithStarterAndDemoContent(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		bootstrapTenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		bootstrapTenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "walkthrough", Name: "Walkthrough", Host: "walkthrough.localhost", Demo: true,
 		})
 		if err != nil {

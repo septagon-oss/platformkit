@@ -136,7 +136,7 @@ func TestBootstrapSaysItsLanguagesOnce(t *testing.T) {
 	// And what one request actually reads: the resolution every page negotiates over.
 	var resolved tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		resolved, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		resolved, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	})
 	if err != nil {

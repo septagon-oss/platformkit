@@ -188,23 +188,18 @@ func (bu *Budget) Baseline(counts map[string]int, round int) {
 	}
 }
 
-// reserved adds the acceptance round to every count, which is how --allow reaches
-// Baseline without changing what a ceiling means: the rule for a ceiling is still
+// reserved adds the acceptance allowance to every count, which is how --allow
+// reaches Baseline without changing what a ceiling means: a ceiling is still
 // "the count, rounded up to the next multiple of --round", and --allow says which
-// count — the one the acceptance round arrives on rather than the one the feature
+// count is rounded — the one an acceptance arrives on, not the one the feature
 // leaves behind.
-//
 // The tool states that cost rather than letting each branch negotiate one. An
-// acceptance round is this program's review, which lands its own test file on the
-// branch after the feature's lines are already counted: re-baselining a `go_test`
-// count that ends in 79 rounds up to the next hundred and leaves 21 lines of slack,
-// and one acceptance round here brought a file of 139, so `--check` refused the
-// review for the crime of reading the delivery. The reservation is measured from what this
-// repository already holds — the largest single acceptance-round test file here is
-// 499 lines — so a branch that expects to be
-// reviewed passes --allow 500 for the bucket a review file is counted in, which is
-// go_test, and leaves every other bucket unreserved, because a review round adds
-// no production Go and no shipped module.
+// acceptance lands its own test file after the feature's lines are counted, and a
+// count that ends just below a multiple of --round leaves no room for it, so the
+// check would refuse the file that reads the delivery. The 500 of --allow 500 is
+// measured from what this repository already holds — the largest single test file
+// added that way — and reserves only go_test, the bucket such a file is counted
+// in.
 func reserved(counts map[string]int, allow int) map[string]int {
 	if allow <= 0 {
 		return counts

@@ -67,10 +67,14 @@ test('the version panel shows what an edit moved and brings the older words back
   // Every version says when it was written, and the number a person would quote.
   await expect(panel).toContainText(/v2 · /);
 
-  // Bring v1 back. The panel asks first, and the answer is a new version.
+  // Bring v1 back. The panel asks first, and the answer is the sentence that says what the write
+  // did — a new version, not an overwrite — with one door back to the record beside it. A person
+  // who restored reads that sentence before they read the page again.
   const restored = await restoreVersion(page, 1);
   expect(restored.status(), 'the restore was accepted').toBeLessThan(400);
-  await expect(page).toHaveURL(new RegExp(detail));
+  await expect(page.getByText(/new version was written|nova vers[ãa]o/i)).toBeVisible();
+  await page.getByRole('link', { name: /^(Continue|Continuar)$/ }).click();
+  await expect(page).toHaveURL(new RegExp(`^http://[^/]+${detail}$`));
   await expect(page.locator('[data-component="prose"]')).toContainText('opens at nine');
 
   const series = await storedVersions(page, id);
@@ -84,7 +88,8 @@ test('the version panel shows what an edit moved and brings the older words back
 
   // And the panel says so: the entry the restore wrote names the version it brought
   // back, so the series reads as a sequence and not as three anonymous saves. The
-  // restore lands on this same page, so the panel is read where the person is.
+  // person came back to the record by the door the answer gave them, and opens the
+  // panel there.
   const reopened = await openHistoryPanel(page);
   await expect(reopened.getByText(/v3/).first()).toBeVisible();
   await expect(reopened).toContainText(/Restored from v1|restaurada desde a vers[ãa]o 1|from v1/i);

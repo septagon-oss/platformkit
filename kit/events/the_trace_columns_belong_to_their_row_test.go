@@ -41,8 +41,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round3Other is a second customer, sharing this schema and this table.
-var round3Other = tenancy.Tenant{ID: uuid.New(), Slug: "other", Name: "Other"}
+// secondCustomer is a second customer, sharing this schema and this table.
+var secondCustomer = tenancy.Tenant{ID: uuid.New(), Slug: "other", Name: "Other"}
 
 // TestATenantSeesNoTraceContextThatIsNotItsOwn reads the three columns this branch
 // added, from the tenant that owns the row and from one that does not.
@@ -78,7 +78,7 @@ func TestATenantSeesNoTraceContextThatIsNotItsOwn(t *testing.T) {
 	// The other tenant: no row, so no traceparent and no baggage either — a policy
 	// that hid the row but exposed the column would show up here.
 	var guest counts
-	err = db.Run(tenancy.WithTenant(t.Context(), round3Other), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(tenancy.WithTenant(t.Context(), secondCustomer), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		return tx.DB().Raw(`SELECT count(*), count(traceparent), count(baggage),
 			COALESCE(max(traceparent), '') FROM platformkit_outbox`).Row().Scan(
 			&guest.rows, &guest.traced, &guest.correlated, &guest.parent)
@@ -90,7 +90,7 @@ func TestATenantSeesNoTraceContextThatIsNotItsOwn(t *testing.T) {
 		t.Errorf("tenant %q reads %d outbox rows (%d with a traceparent, %d with a baggage, max=%q); "+
 			"row-level security shows it nothing: a publisher's trace context and request id are the "+
 			"other tenant's correlation identifiers",
-			round3Other.Slug, guest.rows, guest.traced, guest.correlated, guest.parent)
+			secondCustomer.Slug, guest.rows, guest.traced, guest.correlated, guest.parent)
 	}
 
 	// And a write from the second tenant reaches no row: RLS applies its USING
@@ -98,7 +98,7 @@ func TestATenantSeesNoTraceContextThatIsNotItsOwn(t *testing.T) {
 	// changed one, a tenant could rewrite the trace another tenant's audit trail
 	// joins on.
 	var touched int64
-	err = db.Run(tenancy.WithTenant(t.Context(), round3Other), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(tenancy.WithTenant(t.Context(), secondCustomer), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		res := tx.DB().Exec(`UPDATE platformkit_outbox SET baggage = 'pkit.request.id=forged',
 			traceparent = '00-00000000000000000000000000000000-0000000000000000-01'`)
 		if res.Error != nil {
@@ -113,7 +113,7 @@ func TestATenantSeesNoTraceContextThatIsNotItsOwn(t *testing.T) {
 		t.Logf("the second tenant's UPDATE was refused: %v", err)
 	}
 	if touched != 0 {
-		t.Errorf("tenant %q changed %d of tenant acme's outbox rows, want 0", round3Other.Slug, touched)
+		t.Errorf("tenant %q changed %d of tenant acme's outbox rows, want 0", secondCustomer.Slug, touched)
 	}
 
 	// The owner's row still carries what its own request wrote — the refusal above

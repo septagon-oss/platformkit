@@ -24,11 +24,11 @@ func TestADeactivationAndAnEmptyingWriteRace(t *testing.T) {
 	makeGrant(t, s, "second")
 
 	emptying := func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, "second", nil, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, "second", nil, declared)
 		return err
 	}
 	deactivating := func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Deactivate(ctx, tx, s.ada.ID)
+		_, err := c.testUsers().Deactivate(ctx, tx, s.ada.ID)
 		return err
 	}
 

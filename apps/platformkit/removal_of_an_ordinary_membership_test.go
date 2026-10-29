@@ -19,7 +19,7 @@ func TestRemovingAnOrdinaryMembershipDoesNotRefuseForFindingNoAdministrator(t *t
 	s := twoAdministrators(t, cfg, compose(cfg))
 	catalogue := []tenancy.Grant{{Permission: authcontracts.PermissionPasskeySignIn}}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := s.c.auth.SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
+		_, err := s.c.testAuth().SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestRemovingAnOrdinaryMembershipDoesNotRefuseForFindingNoAdministrator(t *t
 		t.Fatalf("fixture has administering holders: %v", got)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		u, err := s.c.users.SetRoles(ctx, tx, s.bob.ID, nil)
+		u, err := s.c.testUsers().SetRoles(ctx, tx, s.bob.ID, nil)
 		if err == nil && (u == nil || len(u.Roles) != 0) {
 			t.Errorf("membership removal returned %v, want no roles", u)
 		}
@@ -41,7 +41,7 @@ func TestRemovingAnOrdinaryMembershipDoesNotRefuseForFindingNoAdministrator(t *t
 		t.Fatalf("removing an ordinary membership in a tenant already without administrators: %v", err)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		u, err := s.c.users.Get(ctx, tx, s.bob.ID)
+		u, err := s.c.testUsers().Get(ctx, tx, s.bob.ID)
 		if err != nil {
 			return err
 		}

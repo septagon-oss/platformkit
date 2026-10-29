@@ -7,12 +7,12 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 4346 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 2347 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 4022 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 5024 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 2783 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 4650 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 79 | filename prefix |
 | rows inside them | 123 | same walk |
-| Playwright specs / Maestro flows / `scripts/` pins / node tests | 109 / 1 / 117 / 97 | same walk |
+| Playwright specs / Maestro flows / `scripts/` pins / node tests | 122 / 1 / 152 / 99 | same walk |
 <!-- END GENERATED -->
 
 ## Layers and tiers
@@ -21,9 +21,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 24 | push, first | asserts a golden or the published API set |
-| behaviour | 3720 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
-| composition | 492 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
-| journey | 110 | nightly | `e2e/`: browser or device |
+| behaviour | 4320 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| composition | 557 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
+| journey | 123 | nightly | `e2e/`: browser or device |
 <!-- END GENERATED -->
 
 Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. Rows sit in packages that open nothing, in packages that do, and in the browser. The push tier's headline, which `scripts/check_test_inventory.sh` prints, also counts the contract-key rows (openapi, asyncapi, golden, wire_compatibility, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
@@ -51,7 +51,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 2102 | 3960 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 2538 | 4638 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 91 | 170 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -122,16 +122,16 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 <!-- BEGIN GENERATED: scripts/inventory_figures.py area-verdicts -->
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
-| kit | 670 | 69 | 139 | 0 |
-| modules | 665 | 35 | 36 | 0 |
-| apps | 305 | 24 | 28 | 0 |
-| ui | 243 | 22 | 5 | 0 |
-| tools | 115 | 1 | 0 | 0 |
-| e2e | 110 | 5 | 0 | 0 |
+| kit | 803 | 69 | 139 | 0 |
+| modules | 751 | 35 | 36 | 0 |
+| ui | 341 | 22 | 5 | 0 |
+| apps | 326 | 24 | 28 | 0 |
+| tools | 160 | 1 | 0 | 0 |
+| e2e | 123 | 5 | 0 | 0 |
 | design | 15 | 9 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
-The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (117 files), `pkit` (92 files).
+The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (152 files), `pkit` (97 files).
 <!-- END GENERATED -->
 
 `tools` appears with the design tooling's JavaScript cases: one of them, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above. The table lists the areas that hold a verdict; an area that holds none is every `keep`, so a row for it would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not, and the sentence under the table names it with its population instead. `ui`'s merge column is small because the round-named sheets that carried those verdicts folded into the named pins beside them. The table and that sentence are written by `scripts/inventory_figures.py` from the same rows (`make generate`), and `make check` refuses this file when they no longer answer them.
@@ -155,7 +155,7 @@ The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that 
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 <!-- BEGIN GENERATED: scripts/inventory_figures.py go-test-ceiling -->
-The `go_test` bucket declares a ceiling of 234225 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
+The `go_test` bucket declares a ceiling of 242154 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
 <!-- END GENERATED -->
 
 ## What CI re-checks, after the tiers

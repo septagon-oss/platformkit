@@ -1,22 +1,6 @@
 package resource
 
-// commands.go is the read side of a lifecycle route. The five CRUD operations have
-// always had generated controls because they are the same at every entity; a
-// command is what is different about an entity — assign, resolve, claim a handle,
-// report a problem — and until now each one arrived at the screen as nothing at all,
-// so a person looking at a task they were allowed to resolve had Edit and Delete on
-// offer and no way to resolve it.
-//
-// A command control is a real POST form, so it works with JavaScript switched off,
-// exactly as the delete form does. It is not a confirmation dialog: Delete asks you to
-// confirm because it destroys, and a command is not inherently destructive —
-// "acknowledge" and "recheck the SLA" are commands too — so this package does not
-// invent a warning about an action whose consequence it cannot know. What it does
-// instead is print the consequence its author wrote: a command that declares a
-// `confirmation` asks in that title, says that body above the button and labels the
-// button with that confirmLabel. An undeclared one stays exactly the form it was.
-// The Summary and Description the module wrote for the API are the rest of what the
-// person on the screen reads.
+// command controls are native POST forms whose copy and flags come from policy.
 
 import (
 	"encoding/hex"
@@ -26,21 +10,22 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/locale"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
 
-// Command is one lifecycle route as a screen needs it: what to call it, what it does,
-// what it asks for, whether it acts on the whole list or on one row, and where its
-// route was mounted.
-//
-// There is deliberately no closure here. ui/resource draws and does not write — that
-// is docs/adr/0007 — and the guard that decides whether this caller may use the
-// command has already been applied by the adapter, which lists only what
-// httpx.Resource.CommandsFor answered with. A command a caller may not use is not
-// rendered dimmed or disabled: the door is not there, because the route behind it is
-// not reachable by them either.
+// Command supplies an authorized route and its argument bindings, without
+// execution closures. Resolved supplies presentation; Present is the legacy input.
 type Command struct {
+	// Resolved supplies command copy and flags after authority has been narrowed.
+	Resolved *present.ResolvedCommand
+	// ScreenOwner names the module whose screens these anchors live on; Repeated marks
+	// a view whose controls no single form can be pointed at.
+	ScreenOwner, Entity string
+	Repeated            bool
 	// Bindings fills hidden arguments from the displayed row, never a fresh read.
 	Bindings    map[string]string
 	Verb        string
@@ -52,20 +37,12 @@ type Command struct {
 	// a collection command, and the item path for a row command — which only the
 	// renderer knows once it has the row, so Action appends the verb to it.
 	Base string
-	// Present is how the command's author described it. This renderer draws the
-	// confirmation from it when one is declared, and still invents none when it
-	// is not: a warning about an action whose consequence nobody wrote down would
-	// be a guess with a button on it. Primary and Destructive travel with the
-	// command and are not drawn here — the web button tone is a design decision
-	// of its own.
+	// Present supplies declarations when no supported resource policy is supplied.
 	Present entity.CommandHints
 }
 
-// Action is where this command's form posts, and both shapes end in the verb,
-// because the verb is the route. It is worth being explicit about the collection
-// case: the list path is where a *create* is posted, so a collection command whose
-// action stopped at Base would press "Reindex everything" and create a row. The
-// assertion that found this is TestEveryCommandTheCallerMayUseHasExactlyOneControl.
+// Action appends the verb to Base for a collection command or item for a
+// record command. It preserves the adapter's route and never resolves authority.
 func (c Command) Action(item string) string {
 	if c.Collection {
 		return c.Base + "/" + c.Verb
@@ -73,24 +50,30 @@ func (c Command) Action(item string) string {
 	return item + "/" + c.Verb
 }
 
-// commandForms is one form per command that belongs on this screen: the ones that
-// act on a whole list are not offered beside a single row, and a command that acts
-// on a row has no meaning above a table of many.
-func commandForms(o Options, words Words, commands []Command, item string, collection bool) []g.Node {
-	return commandFormsIn(o, words, commands, item, collection, nil, nil)
+// CommandForms renders the authorized policy commands belonging to this surface.
+// item is the record address; collection forms use each command's supplied Base.
+func CommandForms(r Resource, o Options, item string, collection bool, row map[string]any) []g.Node {
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return []g.Node{invalid(err)}
+	}
+	return commandFormsIn(o, o.Words(r.Schema), r.Commands, item, collection, nil, row)
 }
 
-// commandFormsIn is the same with one row's standing in each language the tenant
-// speaks besides its own. A command that asks for one text per field of the record
-// asks per language, and the language is not something the person is left to type
-// into a box beside it: the screen knows which languages this record is owed, and
-// the same command offered once per language is one form per language, each with
-// the revisions it read already in it. A screen with no languages to offer — the
-// design export, a monolingual tenant, the list screen — offers the command as it
-// always has, once.
+// commandFormsIn expands revision-map commands once per supplied locale.
+// Without locale states, each authorized command has one form.
 func commandFormsIn(o Options, words Words, commands []Command, item string, collection bool,
 	locales []entity.LocaleState, row map[string]any) []g.Node {
 	out := make([]g.Node, 0, len(commands))
+	primaryUsed := false
+	form := func(c Command, locale entity.LocaleState) g.Node {
+		if c.Resolved.Primary {
+			policy := *c.Resolved
+			policy.Primary, primaryUsed = !primaryUsed, true
+			c.Resolved = &policy
+		}
+		return commandFormFor(o, words, c, item, locale, row)
+	}
 	for _, c := range commands {
 		if c.Collection != collection {
 			continue
@@ -98,11 +81,11 @@ func commandFormsIn(o Options, words Words, commands []Command, item string, col
 		perLocale := carriesRevisions(c)
 		if perLocale && len(locales) > 0 {
 			for _, l := range locales {
-				out = append(out, commandFormFor(o, words, c, item, l, row))
+				out = append(out, form(c, l))
 			}
 			continue
 		}
-		out = append(out, commandFormFor(o, words, c, item, entity.LocaleState{}, row))
+		out = append(out, form(c, entity.LocaleState{}))
 	}
 	return out
 }
@@ -112,54 +95,32 @@ func commandFormsIn(o Options, words Words, commands []Command, item string, col
 // only a read of this row in this language can supply. That is the whole test: it
 // is a fact the command declared about its own arguments, and not a verb this
 // package has learned to recognise.
-func carriesRevisions(c Command) bool {
-	for _, f := range c.Fields {
-		for _, k := range f.Keys {
-			if k.From == entity.KeyFromRevision {
-				return true
-			}
+func carriesRevisions(c Command) bool { return present.RepeatedFields(c.Fields) }
+
+// commandFormFor renders policy copy and arguments at the command's route.
+// Locale and revision bindings use only values already read for this page.
+func commandFormFor(o Options, words Words, c Command, item string, locale entity.LocaleState, row map[string]any) g.Node {
+	policy := c.Resolved
+
+	label, button := policy.Label, policy.Label
+	warning := policy.Confirmation
+	if warning != nil {
+		if warning.Title != "" {
+			label = warning.Title
+		}
+		if warning.ConfirmLabel != "" {
+			button = warning.ConfirmLabel
 		}
 	}
-	return false
-}
-
-// commandFormFor is the control, and one row's standing in one language: one control
-// per argument, through the same Control the edit form uses, so a command that takes
-// an assignee gets the same picker a field of that type gets, and a command that takes
-// none is a button and not a guess about what it might want. The words are the
-// request's — a declared label, confirmation and argument copy arrive in the language
-// the person reads. The language is a control like any other until the screen knows
-// which one this form is for; then it is carried and the sentence beside the button
-// names it.
-func commandFormFor(o Options, words Words, c Command, item string, locale entity.LocaleState, row map[string]any) g.Node {
-	// The form's accessible name is the sentence the module wrote for the API, and
-	// the button is the short verb phrase: a page with three command forms on it has
-	// to tell a reader what each one is for, and three buttons reading "Assign",
-	// "Resolve", "Archive" with no prose is a guess about consequence.
-	label := words.CommandLabel(c.Verb, c.Present)
-	if label == "" {
-		// Nothing was declared, so there is nothing to translate: the screen came
-		// to this renderer already wearing the route's Summary as its name.
-		label = c.Label
-	}
-	if c.Description != "" {
-		label = c.Description
-	}
-	warning := words.Command(c.Verb, c.Present).Confirmation
-	if warning != nil && warning.Title != "" {
-		// The author wrote the consequence, so the form asks in those words and
-		// says what it costs underneath. Without them nothing is invented here —
-		// see this file's own header.
-		label = warning.Title
-	}
-	button := c.Label
-	if declared := words.CommandLabel(c.Verb, c.Present); declared != "" {
-		button = declared
-	}
-	if warning != nil && warning.ConfirmLabel != "" {
-		button = warning.ConfirmLabel
-	}
+	// What each argument's control says about itself is the screen's own copy, not
+	// the module's: the note under a list argument, the name a picker's absence
+	// gets, the placeholder of a select. The request that answered the button's
+	// words answers these too, through the same seam the edit form composes.
+	chrome := chromeFormatter(o.Locale)
 	controls := make([]g.Node, 0, len(c.Fields)+2)
+	if c.Description != "" {
+		controls = append(controls, components.FormSentence(components.FormSentenceProps{Text: c.Description}))
+	}
 	if warning != nil && warning.Body != "" {
 		// The consequence is the form's own copy, so the design system owns its text
 		// scale and its reading measure. Drawn as a bare paragraph it arrived on a
@@ -170,8 +131,10 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	if locale.Locale != "" {
 		// The form is for this language, so the language is carried and not asked
 		// for, and the sentence beside the button says which one the person is
-		// about to write.
-		label = label + " — " + locale.Locale
+		// about to write. What that sentence looks like — which side the language
+		// sits on, and what holds them apart — belongs to the copy of the language
+		// the person reads, because it is the name a screen reader announces.
+		label = o.Text("screens.command_in_locale", "%[1]s — %[2]s", label, locale.Locale)
 	}
 	arguments := words.forCommand(c.Verb)
 	// Hex keeps action, locale and field boundaries distinct, including punctuation
@@ -183,15 +146,15 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			// The argument comes from the row the person is looking at, so the box is
 			// hidden and still carries this control's own identity.
 			hidden := f
-			hidden.Widget = "hidden"
+			hidden.Widget, hidden.Present, hidden.Choices, hidden.Presentation.Figure = "hidden", "", nil, nil
 			controls = append(controls, forms.Control(forms.ControlProps{
-				Field: formField(arguments, hidden), ID: id, Value: display.Text(row[source]),
+				Field: formField(arguments, hidden, o), ID: id, Value: display.Text(row[source]), Format: chrome,
 			}))
 			continue
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, chrome, c.fieldAnchor(f.Name, k.Name)))
 			}
 			continue
 		}
@@ -200,30 +163,28 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: formField(arguments, f), ID: id, Value: value,
+			Field: c.formField(arguments, f, o), ID: id, Value: value, Format: chrome, ChoiceValues: choiceDefault(f),
 		}))
 	}
-	// Outline, so the screen's one filled action stays its toolbar's — Edit on a
-	// record, New on a list. A filled submit per command put three brand-filled
-	// buttons above the fold of a record with several commands, and the design
-	// floor allows one. Outline has no fill in either theme.
+	variant, tone := "outline", ""
+	if policy.Primary {
+		variant = ""
+	}
+	if policy.Destructive {
+		tone = "danger"
+	}
 	controls = append(controls, components.Button(components.ButtonProps{
-		Label: button, Type: "submit", Variant: "outline", Size: "md",
+		ComponentProps: components.ComponentProps{Attrs: c.submitAttrs()},
+		Label:          button, Type: "submit", Variant: variant, Tone: tone, Size: "md",
 	}))
-	return components.Form(components.FormProps{Action: c.Action(item), Label: label}, controls...)
+	return components.Form(components.FormProps{ComponentProps: components.ComponentProps{Attrs: c.viewAttrs()}, Action: c.Action(item), Label: label}, controls...)
 }
 
-// mapKeyControl is one key of a map-valued argument: a control of the key's own
-// widget, named the way a form names an entry of a map — `values[title]` — and
-// filled with what the screen already knows about that field of this row when the
-// key says it is filled for the person rather than by them.
-//
-// The value is the revision, not the stored text. A screen that prefilled the box
-// with the current translation would be a screen that invites a person to retype
-// what they did not mean to change, and the command writes every field the body
-// names: an unchanged box reposted without its revision would be a 409 on six
-// fields of which one was edited. An empty box is a field left alone.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
+// mapKeyControl renders one named map argument. Revision keys quote the supplied
+// locale's observed revision; other keys begin empty to avoid rewriting values the
+// person did not submit. An anchor names the key in the published view, and chrome
+// is the request's formatter for what the control says about itself.
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, state entity.LocaleState, chrome locale.Formatter, anchor screen.AnchorRef) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -232,10 +193,10 @@ func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.Loc
 	}
 	value := ""
 	if k.From == entity.KeyFromRevision {
-		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
+		value = strconv.FormatInt(state.Revisions[k.Name], 10)
 	}
 	return forms.Control(forms.ControlProps{
-		Field: forms.Field{Definition: key, Label: k.Label},
-		ID:    id, Value: value,
+		Field: forms.Field{Definition: key, Label: k.Label, Anchor: anchor},
+		ID:    id, Value: value, Format: chrome,
 	})
 }

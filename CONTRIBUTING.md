@@ -231,8 +231,8 @@ once. Main's own growth is not the branch's: a branch that merges main carries
 main's numbers unchanged, and the merge declares nothing. A ceiling that comes
 down returns lines to the pool and mints none, so lowering a ceiling only a
 merge resolution wrote declares nothing. A raise of over 1,000 lines in one
-bucket also needs an `Owner-approved:` trailer on each commit that raises it; a
-commit returning part of an approved allocation owes no second trailer.
+bucket also needs an `Owner-approved:` trailer on each commit declaring it over
+1,000 lines above main; earlier raises and returned allocations owe no trailer.
 `go run ./tools/locbudget --write` lowers ceilings; rebaselining with
 `--round 100` can raise them and requires that review. A branch that expects an
 acceptance round prices that too, because the round arrives with a test file of

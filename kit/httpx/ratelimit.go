@@ -1,26 +1,16 @@
 package httpx
 
-// ratelimit.go puts a limit's own numbers on the answer it decided.
+// ratelimit.go puts a limit's own numbers on the answer it decided: a public API states its
+// limits on the wire so a client can back off before it is refused rather than after
+// (draft-ietf-httpapi-ratelimit-headers), and a client left guessing sends traffic this
+// server paid for and threw away.
 //
-// A public API states its limits on the wire so a client can back off before it is
-// refused rather than after (draft-ietf-httpapi-ratelimit-headers). kit/limit has
-// counted the anonymous writes of the Public surface and the asks of the access door
-// for a while, and said nothing beyond one `Retry-After` on one of the two refusals —
-// which leaves a well-behaved client guessing, and a guess it gets wrong is traffic
-// this server paid for and threw away.
-//
-// The one rule here is that every number on these fields came from the counter that
-// decided the answer. `kit/limit` decides and reads in one statement: `Reserve` records
-// the event and returns, from that one statement, the decision, the quota left and the
-// window left, so the policy line costs no statement at all — a name, a quota and a
-// window the guard was built with — and the rate line is the reading that decided. The
-// shape before it was `Allow` and a second `Count` taken after the refusal: one SELECT
-// against a row the first had already written, stating a quota taken from a row another
-// request had moved since the attempt being answered. `Count` stays for the read that
-// has to come before an attempt — modules/auth's lockout asks how full a window is and
-// must not fill it — and is not how a response states itself. Adding `Reserve` to an
-// interface published at v1.1.0 broke whoever implemented it, and that is a decision the
-// diff of scripts/baselines records, not one a middleware makes in passing.
+// The one rule here is that every number on these fields came from the counter that decided
+// the answer. kit/limit decides and reads in one statement — Reserve records the event and
+// returns the decision, the quota left and the window left — so the policy line is a name, a
+// quota and a window the guard was built with, and the rate line is the reading that decided.
+// Count stays for the read that must come before an attempt: modules/auth's lockout asks how
+// full a window is and must not fill it.
 
 import (
 	"context"
@@ -41,22 +31,16 @@ const (
 	RetryAfterHeader      = "Retry-After"
 )
 
-// defaultRetryAfter is the wait a 429 names when the writer of it named none, and
-// the 429 rule of this package: every refusal this package decides already names its
-// window, and the ones that do not came from a handler counting somewhere kit/httpx
-// cannot see and that named no wait either. The kernel refuses to answer "too many"
-// with no number at all, and says which route did — a guarantee that holds for every
-// 429 is worth more than a guarantee that holds for the two guards this package
-// happens to own. A module that counts for itself names its own window instead of
-// reaching here: SayCounted is how modules/auth's lockout and its mail caps do it.
+// defaultRetryAfter is the wait a 429 names when the writer of it named none, and the 429
+// rule of this package: every refusal this package decides already names its window, and the
+// ones that do not came from a handler counting somewhere kit/httpx cannot see and naming no
+// wait either. The kernel refuses to answer "too many" with no number at all, and says which
+// route did — a guarantee that holds for every 429 is worth more than one that holds for the
+// two guards this package happens to own. A module that counts for itself names its own
+// window instead (SayCounted is how modules/auth's lockout does it).
 //
-// The rule is that a refusal which says "too many" and no number tells a client
-// nothing it can act on, and every client then retries at its own guess — which is
-// the traffic this response exists to prevent. It is a floor and not a reading of any
-// counter: the routes that decide a refusal from a real window write that window here
-// instead, and only a handler that counted somewhere this package cannot see reaches
-// the default. One minute is the shortest window any limit in this kernel runs
-// (publicWriteWindow), so it is never a longer wait than the caller is under.
+// It is a floor and not a reading of any counter, and one minute is the shortest window any
+// limit in this kernel runs, so it is never a longer wait than the caller is under.
 const defaultRetryAfter = 60 * time.Second
 
 // limitPolicy is one policy as the wire names it: a name, a quota, a window. The
@@ -184,20 +168,18 @@ type Counted struct {
 
 // SayCounted puts the counter that decided this answer on the answer itself.
 //
-// It is a request-scoped thing, so it says nothing at all to a caller standing outside
-// a request — a worker, a test driving a service directly — because there is no answer
-// here to state a limit on, and an allowance is the same verdict either way. A handler
-// that spends a counter before it is in a request gets the decision and no fields.
+// It is a request-scoped thing, so it says nothing at all to a caller standing outside a
+// request — a worker, a test driving a service directly — because there is no answer here to
+// state a limit on, and a handler that spends a counter before it is in a request gets the
+// decision and no fields.
 //
-// Both fields are lists, and both are appended to rather than replaced: a public route
-// in an application that runs the anonymous-write limit is answered under two counters,
-// the kernel's and the module's, and a caller told one of them has been told a limit it
-// is not under. The order is the order they were consulted, which is the order
-// `RateLimit-Policy` asks for.
+// Both fields are lists, and both are appended to rather than replaced: a public route in an
+// application that runs the anonymous-write limit is answered under two counters, and a
+// caller told one of them has been told a limit it is not under. The order is the order they
+// were consulted, which is what `RateLimit-Policy` asks for.
 //
-// The reading is written down beside the response, and not only rendered on it, so a
-// keyed write that is replayed later can state this counter again as of the moment that
-// replay is answered at: see sayRecorded.
+// The reading is written down beside the response, and not only rendered on it, so a keyed
+// write that is replayed later can state this counter again (see sayRecorded).
 func SayCounted(ctx context.Context, c Counted) {
 	b, held := bufferFrom(ctx)
 	if !held || c.Name == "" {
@@ -242,41 +224,19 @@ func recorded(got []measured) []idempotency.Limit {
 	return out
 }
 
-// sayRecorded restates the ceilings a remembered answer was decided under on the
-// reply to the attempt that is asking again.
+// sayRecorded restates the ceilings a remembered answer was decided under on the reply to
+// the attempt that is asking again.
 //
-// The policy line is not restated here, because it is not lost: the answer kept it among
-// its own headers and the reply is written with it verbatim, which is the only complete
-// account of it. A door names the ceilings it consulted and not only the one that
-// refused — the access door names both of its counters on every ask — so a policy line
-// rebuilt from the kept readings alone would drop a ceiling no reading was kept for, and
-// the draft asks that field to stay the same across a sequence of responses.
-//
-// The reading is the harder half, and the reason the numbers are stored rather than the
-// rendered lines: what is left of a quota and what is left of a window both shrink while
-// a record sits in it, so a replay that restated the stored figures would report a wait
-// that has partly elapsed, or outlast a window that has closed. `t` and `Retry-After`
-// therefore come from the window's own ending, and the quota is restated as the counter
-// reported it — the ceiling a caller was told at the moment it was decided has not
-// changed; only the clock has moved.
-//
-// The line is written whole, over whatever a guard above this one left under that name:
-// the anonymous-write guard is spent before the memory is consulted, so a retry arrives
-// with a reading of its own already on the way down, from a counter this answer never
-// consulted. Kept beside the restated ones it is one policy with two quotas and two
-// resets — a client that reads `t=60` and then `t=0` has been told both that the window
-// is open and that it closed.
+// The policy line is not rebuilt here: the kept answer carries it verbatim, which is the only
+// complete account of it, and a door names every ceiling it consulted rather than only the
+// one that refused. The readings are the harder half, and are stored rather than rendered,
+// because what is left of a quota and of a window both shrink while a record sits in one: t
+// and Retry-After come from the window's own ending, and the quota is restated as the counter
+// reported it. The line is written whole, over whatever a guard above left under that name.
 //
 // A refusal names the longest of the waits still running over the counters that were shut
-// when it was decided: an answer under two spent counters is not free to retry until the
-// later of them opens, and a caller told the shorter has been told to come back to a
-// refusal. A counter with quota remaining never shut this answer, so its window does not
-// belong in the wait — an answer refused by a two-second cap inside an open sixty-second
-// one is a two-second refusal, and a caller told sixty sits out fifty-eight seconds of a
-// window that was never the reason they were refused. The open counter's reading still
-// goes on the `RateLimit` line, because the caller is under it; only the wait counts the
-// spent ones. A refusal no kept reading reports as spent names no wait here, and takes
-// respond.go's floor as the answer itself did.
+// when it was decided; README.md, "A write that is sent twice" holds why, and the case of
+// the counter that is still open and so owes no wait.
 func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now time.Time) {
 	if len(limits) == 0 {
 		return

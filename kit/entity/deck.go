@@ -48,10 +48,20 @@ func DeckFault(p EntryHints, fields []Field) string {
 	if d == nil {
 		return ""
 	}
-	if d.Queue != nil && len(d.Queue) == 0 {
+	if fault := deckQueueFault(d.Queue, fields); fault != "" {
+		return fault
+	}
+	if fault := deckOrderFault(d.Order, p.Sortable, fields); fault != "" {
+		return fault
+	}
+	return deckDirectionsFault(d.Directions)
+}
+
+func deckQueueFault(queue []string, fields []Field) string {
+	if queue != nil && len(queue) == 0 {
 		return "deck.queue declares no filter"
 	}
-	for _, raw := range d.Queue {
+	for _, raw := range queue {
 		name, value, ok := strings.Cut(raw, ":")
 		if !ok {
 			return fmt.Sprintf("deck.queue filter %q is not field:value", raw)
@@ -64,21 +74,29 @@ func DeckFault(p EntryHints, fields []Field) string {
 			return "deck.queue: " + err.Error()
 		}
 	}
-	name := strings.TrimPrefix(d.Order, "-")
+	return ""
+}
+
+func deckOrderFault(order string, sortable []string, fields []Field) string {
+	name := strings.TrimPrefix(order, "-")
 	f, known := FieldNamed(fields, name)
-	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, "+") || !known || !scalarField(f) || f.Presentation.Hidden() || !slices.Contains(p.Sortable, name) {
-		return fmt.Sprintf("deck.order %q must name a visible, declared sortable scalar field", d.Order)
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, "+") || !known || !scalarField(f) || f.Presentation.Hidden() || !slices.Contains(sortable, name) {
+		return fmt.Sprintf("deck.order %q must name a visible, declared sortable scalar field", order)
 	}
-	if len(d.Directions) == 0 {
+	return ""
+}
+
+func deckDirectionsFault(directions map[string]DeckDirection) string {
+	if len(directions) == 0 {
 		return "deck.directions declares no direction"
 	}
-	for _, key := range slices.Sorted(maps.Keys(d.Directions)) {
+	for _, key := range slices.Sorted(maps.Keys(directions)) {
 		if !slices.Contains([]string{"right", "left", "up", "down"}, key) {
 			return fmt.Sprintf("deck.directions.%s is not a direction", key)
 		}
 	}
 	for _, key := range []string{"right", "left", "up", "down"} {
-		v, ok := d.Directions[key]
+		v, ok := directions[key]
 		if !ok {
 			continue
 		}

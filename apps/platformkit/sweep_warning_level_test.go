@@ -35,7 +35,7 @@ func TestTheSweepReportsADeadGrantAsAWarning(t *testing.T) {
 	// service was handed in Routes and says nothing at all when it is empty, so a
 	// sweep run against an un-booted composition is silent for the wrong reason.
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 	conn, err := db.Open(t.Context(), cfg.Database.URL)

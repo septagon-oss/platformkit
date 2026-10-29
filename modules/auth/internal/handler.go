@@ -24,32 +24,31 @@ import (
 // route that makes no promise an Idempotency-Key could keep. See httpx.MintsACredential.
 var mints, credential = httpx.MintsACredential()
 
-// Every path this module mounts is relative to itself and to the surface it
-// chose. The workspace's JSON lands at /api/v1/auth/… as it always did, and the
-// anonymous legs — the ones a person with no account makes — land under
-// /api/v1/public/auth/…, which is where every public door answers. Neither
-// address is written here.
-// RegisterRoutes mounts signing in and out, the caller's own identity, the
-// caller's own sessions, the three password routes and the two roles routes.
-//
-// All but the last two are about the caller themselves, which is why they
-// declare no permission: the public ones are for somebody who cannot sign in,
-// and the signed-in ones are about a person rather than a resource. The roles
-// routes are the exception and say so with role:manage — a role is what
-// everybody else in the tenant may do.
-func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
-	registerSignInRoutes(surfaces, svc, cookies)
-	registerPasswordRoutes(surfaces, svc, cookies)
-
-	registerSessionRoutes(surfaces, svc, cookies)
-
-	registerRoleRoutes(surfaces, svc, cookies)
+// RouteServices supplies each route's capabilities without a session aggregate.
+type RouteServices struct {
+	Login             contracts.PasswordLogin
+	Logout            contracts.SessionEnder
+	Identity          contracts.IdentityReader
+	ChangePassword    contracts.PasswordChanger
+	ForgotPassword    contracts.ResetRequester
+	ResetPassword     contracts.PasswordResetter
+	ListSessions      contracts.SessionReader
+	RevokeSession     contracts.SessionRevoker
+	RevokeAllSessions contracts.AllSessionsRevoker
+	ListRoles         contracts.RoleReader
+	SetRole           contracts.RoleWriter
 }
 
-// registerSignInRoutes mounts signing in with a password, signing out again, and the identity a session answers with.
-func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
-	app := surfaces.App
+// RegisterRoutes mounts the session, password and role operations.
+func RegisterRoutes(surfaces httpx.Surfaces, svc RouteServices, cookies Cookies) {
+	registerIdentityRoutes(surfaces, svc, cookies)
+	registerPasswordRoutes(surfaces, svc, cookies)
+	registerSessionRoutes(surfaces, svc, cookies)
+	registerRoleRoutes(surfaces, svc)
+}
 
+func registerIdentityRoutes(surfaces httpx.Surfaces, svc RouteServices, cookies Cookies) {
+	app := surfaces.App
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-login",
 		Method:      http.MethodPost,
@@ -62,7 +61,7 @@ func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookie
 			httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed},
 			mints:                 credential,
 		},
-	}, httpx.Public(), handleLogin(svc, cookies))
+	}, httpx.Public(), handleLogin(svc.Login, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-logout",
@@ -73,7 +72,7 @@ func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookie
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedOut}},
-	}, httpx.SignedIn(), handleLogout(svc, cookies))
+	}, httpx.SignedIn(), handleLogout(svc.Logout, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-me",
@@ -83,8 +82,13 @@ func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookie
 		Description: "The caller's identity and the permissions their roles grant in this tenant.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
-	}, httpx.SignedIn(), handleIdentity(svc))
+	}, httpx.SignedIn(), handleIdentity(svc.Identity))
 
+}
+
+func registerPasswordRoutes(surfaces httpx.Surfaces, svc RouteServices, cookies Cookies) {
+	app := surfaces.App
+	public := surfaces.Public
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-change",
 		Method:      http.MethodPost,
@@ -96,12 +100,7 @@ func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookie
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			usercontracts.EventPasswordSet, contracts.EventSessionRevoked,
 		}},
-	}, httpx.SignedIn(), handleChangePassword(svc))
-}
-
-// registerPasswordRoutes mounts the three password doors: the change made from a session, and the forgot and reset pair a caller reaches without one.
-func registerPasswordRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
-	app, public := surfaces.App, surfaces.Public
+	}, httpx.SignedIn(), handleChangePassword(svc.ChangePassword))
 
 	httpx.Register(public, huma.Operation{
 		OperationID: "auth-password-forgot",
@@ -114,7 +113,7 @@ func registerPasswordRoutes(surfaces httpx.Surfaces, svc contracts.Service, cook
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventResetRequested,
 		}},
-	}, httpx.Public(), handleForgotPassword(svc))
+	}, httpx.Public(), handleForgotPassword(svc.ForgotPassword))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-password-reset",
@@ -132,13 +131,12 @@ func registerPasswordRoutes(surfaces httpx.Surfaces, svc contracts.Service, cook
 			},
 			mints: credential,
 		},
-	}, httpx.Public(), handleResetPassword(svc, cookies))
+	}, httpx.Public(), handleResetPassword(svc.ResetPassword, cookies))
+
 }
 
-// registerSessionRoutes mounts the caller's own sessions: which are open now, and the two ways they end — this one, or every one of them at once.
-func registerSessionRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+func registerSessionRoutes(surfaces httpx.Surfaces, svc RouteServices, cookies Cookies) {
 	app := surfaces.App
-
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-session-list",
 		Method:      http.MethodGet,
@@ -147,7 +145,7 @@ func registerSessionRoutes(surfaces httpx.Surfaces, svc contracts.Service, cooki
 		Description: "Every live session this person has, most recently seen first, with the browser and address each was opened with and the one making the request marked. A session is named by its ref and never by its id: this list is something a person reads, not something a client presents.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
-	}, httpx.SignedIn(), handleListSessions(svc))
+	}, httpx.SignedIn(), handleListSessions(svc.ListSessions))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-session-revoke",
@@ -158,7 +156,7 @@ func registerSessionRoutes(surfaces httpx.Surfaces, svc contracts.Service, cooki
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventSessionRevoked}},
-	}, httpx.SignedIn(), handleRevokeSession(svc))
+	}, httpx.SignedIn(), handleRevokeSession(svc.RevokeSession))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-session-revoke-all",
@@ -169,13 +167,12 @@ func registerSessionRoutes(surfaces httpx.Surfaces, svc contracts.Service, cooki
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventSessionRevoked}},
-	}, httpx.SignedIn(), handleRevokeAllSessions(svc, cookies))
+	}, httpx.SignedIn(), handleRevokeAllSessions(svc.RevokeAllSessions, cookies))
+
 }
 
-// registerRoleRoutes mounts the two roles routes, the tenant's roles and one role of one person. A role is what everybody else in the tenant may do, so both answers are role:manage.
-func registerRoleRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+func registerRoleRoutes(surfaces httpx.Surfaces, svc RouteServices) {
 	app := surfaces.App
-
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-list",
 		Method:      http.MethodGet,
@@ -184,7 +181,7 @@ func registerRoleRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies 
 		Description: "What every role name grants here, which is what everybody holding one may do.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusServiceUnavailable},
-	}, httpx.Permission(contracts.PermissionRoleManage), handleListRoles(svc))
+	}, httpx.Permission(contracts.PermissionRoleManage), handleListRoles(svc.ListRoles))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-set",
@@ -195,7 +192,8 @@ func registerRoleRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies 
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
-	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc, surfaces))
+	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc.SetRole, surfaces))
+
 }
 
 // sessionOf is the session id the caller presented, read back off the request

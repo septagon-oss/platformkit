@@ -6,8 +6,12 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime/debug"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -24,6 +28,75 @@ import (
 // transaction that returns normally commits the half-finished work that caused
 // the panic. Here the panic unwinds past the transaction middleware, which
 // rolls back on its way out, and arrives with an empty buffer.
+// rolls back on its way out, and arrives with an empty buffer.
+
+// renegotiate replaces a held refusal that huma wrote with the answer this package
+// would have written for the same verdict. The guard is the shape, not the status: a
+// body this package's encoder wrote is already the one answer (fault.go ends at
+// writeProblem), so re-writing it would be two writers again.
+//
+// The body is discarded and the encoder's two headers with it; every other header
+// stays, because those are the guard's answer and not the encoder's. Retry-After is
+// the one that matters: a refusal that says "come back in 8 seconds" in its body and
+// drops it from its headers tells a client to stop and not when — which is what
+// buffer's reset would have done, reset being the tool for a held 200 whose
+// transaction failed, where the headers beside it must not survive.
+//
+// It re-answers with the handler's own refusal when the buffer carries one: the body
+// alone lacks the catalogue entry a page shows and whose detail the operator owns.
+func (a *API) renegotiate(b *buffer, r *http.Request) {
+	if a.opts.Fault == nil || b.direct || b.status < http.StatusBadRequest ||
+		!strings.HasPrefix(b.Header().Get("Content-Type"), problem.ContentType) ||
+		!WantsDocument(r) {
+		return
+	}
+	refused := b.refusal()
+	if refused == nil || refused.Status != b.status {
+		var written problem.Problem
+		if err := json.Unmarshal(b.body.Bytes(), &written); err != nil || written.Status != b.status {
+			return
+		}
+		refused = &written
+	}
+	b.body.Reset()
+	b.Header().Del("Content-Type")
+	b.Header().Del("Link") // huma points its own $schema at a document this body does not carry
+	id := requestIDFrom(r.Context())
+	if a.show(b, r, id, refused, false) {
+		return
+	}
+	// The renderer declined: it has no chrome for this request, and it wrote nothing. The
+	// held response is empty now, so the refusal goes back through the kernel's one
+	// encoder, which is the answer fail ends in and the shape every refusal of this
+	// address has always had — no $schema member, no Link, no second writer.
+	writeProblem(b, refused.Status, id, refused.Detail)
+}
+
+// noteCarried tells the held response which refusal its handler answered with, which is
+// the only way the page this response may become learns what the problem document it is
+// built from does not say. See buffer.carried.
+//
+// The test below is huma's own: the framework writes the StatusError errors.As finds and
+// turns anything else into a 500 about its cause, so this records the verdict only where
+// the framework is about to answer with this very object. A problem reachable only through
+// %w is a cause, and the response's verdict is the framework's, not the buried one.
+func noteCarried(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	var refused *problem.Problem
+	if !errors.As(err, &refused) {
+		return
+	}
+	var stated huma.StatusError
+	if !errors.As(err, &stated) || stated != huma.StatusError(refused) {
+		return
+	}
+	if b, ok := bufferFrom(ctx); ok {
+		b.carry(refused)
+	}
+}
+
 func (a *API) respond(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b := &buffer{ResponseWriter: w, header: w.Header().Clone(), public: SurfaceOf(r.Context()) == SurfacePublic}
@@ -92,17 +165,21 @@ func (a *API) respond(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(b, r)
 
-		// The public surface sets no cookie. It is a promise the surface makes to
-		// a visitor — nothing about this request is remembered, which is what lets
-		// it be cached and indexed — and a handler that minted one broke it on a
-		// page a crawler will keep. The writer is where the promise is kept (see
-		// withholdCookies): the cookie never reaches the visitor, whatever size the
-		// body turned out to be. What is left here is the honest *answer*: where
-		// the response is still held, it becomes a 500 naming the fault with the
-		// body discarded, because a route that broke the surface's own promise has
-		// not produced a response worth caching. Where the bytes already went, the
-		// status is one the visitor has seen and the line names the route for
-		// whoever owns it.
+		// The public surface sets no cookie. It is a promise the surface makes to a
+		// visitor — nothing about this request is remembered, which is what lets it be
+		// cached and indexed — and a handler that minted one broke it on a page a
+		// crawler will keep. The writer keeps the promise (see withholdCookies): the
+		// cookie never reaches the visitor, whatever size the body turned out to be.
+		// Where the response is still held it becomes a 500 naming the fault, the body
+		// discarded; where the bytes went, the line names the route.
+		//
+		// The last chance to answer a refusal in the shape the caller asked for. huma
+		// writes the refusals it makes itself — a body over the operation's bound, a
+		// body that will not decode, a handler's 5xx — with its own encoder, past the
+		// reach of fault.go. This is the one place that holds the finished answer, so a
+		// problem document that arrived from huma is read back through the kernel's one
+		// writer. A caller that named a value is untouched, as is a begun response.
+		a.renegotiate(b, r)
 		if minted := b.withheld(); len(minted) > 0 {
 			a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: a public route set a cookie",
 				"code", CodePublicSetsACookie, "method", r.Method, "path", r.URL.Path, "cookies", len(minted))
@@ -119,12 +196,51 @@ func (a *API) respond(next http.Handler) http.Handler {
 // refusal inside the chain reaches it through declared, because huma's writer stamps a
 // schema link into the body and answers a header this encoder does not, which would make
 // two shapes of the one problem. See fault.go.
+//
+// The bytes are the marshalled document and one newline, which is what an encoder
+// writing into the writer produced, kept as two writes rather than one Encode so that
+// writeProbeProblem below can answer with the same encoder and the same field order.
+// Splitting it this way is not a second shape: it is the one document, and the only
+// question the two callers answer differently is whether they end it with a newline.
 func writeProblem(w http.ResponseWriter, status int, id, detail string) {
+	writeProblemBody(w, status, true, id, detail)
+}
+
+// writeProbeProblem answers the two probes. It is the same document from the same
+// encoder with one thing withheld: the instance URN. Not because a probe has no request
+// to name — it has one, and X-Request-ID carries it as it always did — but because this
+// is the body a monitor has diffed since the probe existed, and a member added to a
+// document something parses and compares is a change of contract in the one place the
+// contract is not a human reading a page. A person who is *shown* the failure gets the
+// reference, in the page the negotiated renderer writes.
+//
+// It withholds the trailing newline for the same reason: an orchestrator's readiness
+// stanza, a kubelet exec probe grepping stdout, a shell piping curl into jq -e — every
+// one of those reads the same bytes whether or not the line ends, and every one of them
+// was written against the answer this probe gave before it had a page to hand to a
+// browser. Nothing here is worth breaking to make a document 503-shaped.
+func writeProbeProblem(w http.ResponseWriter, status int, detail string) {
+	writeProblemBody(w, status, false, "", detail)
+}
+
+func writeProblemBody(w http.ResponseWriter, status int, newline bool, id, detail string) {
 	p := problem.New(status, detail)
 	if id != "" {
 		p.Instance = "urn:request:" + id
 	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		// problem.New builds a struct of strings and one int; it does not fail. If it
+		// ever did, the status line is still the verdict, and a body that is not there
+		// is honest in the way a half-written one is not.
+		w.Header().Set("Content-Type", problem.ContentType)
+		w.WriteHeader(status)
+		return
+	}
+	if newline {
+		body = append(body, '\n')
+	}
 	w.Header().Set("Content-Type", problem.ContentType)
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(p)
+	_, _ = w.Write(body)
 }

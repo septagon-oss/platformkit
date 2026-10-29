@@ -2,37 +2,16 @@ package app
 
 // ledger_ops.go mounts the installation's two delivery verbs on the control plane:
 // move a ledger onto this app's durable, and replay one event. The kernel owns the
-// mount because no capability module owns "the sequel to a kernel write": the two
-// commands live in kit/events, they are the only two writes in the kernel that
-// cross tenants by design, and each is reached today from a machine — the boot, the
-// retry job, the relay — with no door an operator can stand at.
+// mount because no capability module owns "the sequel to a kernel write": both
+// commands live in kit/events and are the only two kernel writes that cross
+// tenants by design. They exist only for a composition that names itself, the same
+// condition that keeps the event declared and the retry job registered.
 //
-// Three things the address has to carry, and where each is checked:
-//
-//   - Never through an app's own routes. httpx.classify puts /ops on SurfaceOps,
-//     the surface is served at the installation host and 404s at every tenant host
-//     before routing, the ops chain takes a credential and never a workspace
-//     session, and the mount is httpx.OperatorPermission, which the kernel refuses
-//     at any tenant but the operator's own.
-//   - The app it acts in. The body names an app and the body's answer must be this
-//     process's own: a composition answers only for itself, and a request that
-//     asks `collect`'s process to move `academy`'s ledger would be one process
-//     writing a ledger it does not consume. That refusal is immutable for the
-//     process — the fix is the other deployment, not a different retry — and it
-//     writes and emits nothing. And because a replay names a row rather than a
-//     set, the row is read back to the same rule before anything is cleared: an
-//     event whose tenant belongs to another app is that app's event, wherever its
-//     id happened to be pasted into the address (`events.ReplayForApp`).
-//   - The actor behind it. events.Replay already refuses a call with nobody behind
-//     it; here the principal comes from the credential the surface chain resolved,
-//     so the record each verb writes names a person. A move takes the same actor:
-//     the operator's sentence travels as the record's requestedBy, and the boot and
-//     the job name themselves instead ("boot", the job's own name).
-//
-// The verbs exist only for a composition that names itself: an app-less deployment
-// has no scoped durable to move onto and no app to name in a record, so both routes
-// would be doors onto a zero report. The same condition keeps the event declared
-// (kernelModule) and the retry job registered (kernelJobs); one rule, three places.
+// Three things the address carries, each checked: the surface — /ops is SurfaceOps,
+// served at the installation host only, on a credential and never a workspace
+// session, under httpx.OperatorPermission; the app — the body, and for a replay the
+// row, must name this process's own (events.ReplayForApp); the actor — the principal
+// the credential resolved, so each verb's record names a person.
 
 import (
 	"context"

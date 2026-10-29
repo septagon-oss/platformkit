@@ -2,29 +2,10 @@
 // person says "this is the Portuguese of it".
 //
 // Four doors, all of them commands of the record rather than routes of the
-// translation module, and that placement is the whole design:
-//
-//   - The guard is the record's own write permission. A stranger who cannot edit
-//     the page cannot write its Portuguese either, and there is no second
-//     permission to grant, drift out of step with the first, and be audited
-//     against separately.
-//   - The source row is locked here, by `crud.GetForUpdate`, before the source
-//     text is lifted and handed to the port. A translation measured against a
-//     source the caller never held is a translation that will be wrong the moment
-//     two people write at once, which is the same reason the record's own PATCH
-//     locks before it merges.
-//   - The value is validated by the field's own rules — the same
-//     `richtext.Prepare` the record's own write runs, with the same ceiling and
-//     the same `RichTextFiles` port — because the rules belong to the field and
-//     the translation module has no business knowing what a page body is. A
-//     translated paragraph that would be refused in English is refused in
-//     Portuguese; a door that skipped this would let a construct through the
-//     back of the feature that the front of it never allows.
-//
-// Two verbs name the noun they act on (`review-translation`,
-// `suggest-translation`) rather than the bare `review` and `suggest`: the verb is
-// the command's whole address and its operation id, and a resource that already
-// reviews its own rows would otherwise find two doors mounted at one path.
+// translation module: the guard is the record's own write permission, the source row
+// is locked before its text is lifted, and the value is validated by the field's own
+// rules. README.md, "Translating a record" says why that placement is the design, and
+// why the two verbs name the noun they act on.
 package rest
 
 import (
@@ -119,21 +100,15 @@ func (s Spec[T]) mountTranslationDoors(surfaces httpx.Surfaces) {
 }
 
 // translationDoor is the half all four commands share, and the order in it is the
-// whole safety argument: lock the record, recheck whose it is, then settle the
-// language question, and only then hand anybody the source.
+// whole safety argument: lock the record, recheck whose it is, settle the language
+// question, and only then hand anybody the source.
 //
-// The recheck is not decoration. Row-level security answers a read of a foreign
-// row with "not found" on some tables and with the row itself on a table whose
-// read policy shows it to every tenant; `crud.GetForUpdate` therefore locks
-// without filtering, and it is `RecheckTenant` that refuses. The same reasoning
-// that put it in `updateRow` and `deleteRow` puts it here, one step earlier, in
-// the one function all four write doors pass through.
-//
-// The language is checked against the tenant's own declaration and not against a
-// list in the request: writing "de-DE" into a tenant served in English and
-// Portuguese would file text no reader can be routed to, and writing the
-// tenant's own language would be a request to overwrite the source with a
-// translation of it.
+// The recheck is not decoration: `crud.GetForUpdate` locks without filtering, because
+// a table whose read policy shows the row to every tenant answers a foreign read with
+// the row itself, and it is `RecheckTenant` that refuses — the reasoning that put it
+// in `updateRow` and `deleteRow`, one step earlier. The language is checked against
+// the tenant's own declaration, so nothing is filed in a language no reader can be
+// routed to, nor written over the source.
 func (s Spec[T]) translationDoor(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, lang string) (T, SourceRow, error) {
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
@@ -158,22 +133,15 @@ func (s Spec[T]) translationDoor(ctx context.Context, tx db.Tx[db.Tenant], id uu
 	return e, src, nil
 }
 
-// translationKeys declares the keys the translate body's two maps take: one per
-// field this entity says in another language, in the order its own schema
-// declares them.
-//
-// Nothing else could. `Values map[string]string` says "text, keyed by a string"
-// and no reflection over that type can ever learn that this entity has a title
-// and a body — so the argument's schema, derived from the Go type, offered a
-// shell a map with no keys, which is a form with nothing to fill in and a person
-// who can only watch it refuse them. The keys come from the entity instead,
-// beside the one fact a form needs from the field's own schema: a richtext body
-// is typed into a prose box and a title into a line.
-//
-// `Expected` carries the same keys as hidden revision carriers, because a form
-// that cannot say which revision it read is a form whose every second save is a
-// lost update or a 409 — and the screen does know: it read each field's revision
-// to draw the record at all (see entity.LocaleState.Revisions).
+// translationKeys declares the keys the translate body's two maps take: one per field
+// this entity says in another language, in the order its own schema declares them.
+// Nothing else could: `Values map[string]string` says only "text, keyed by a string",
+// and no reflection over it can learn that this entity has a title and a body, so a
+// schema derived from the Go type offered a map with no keys — a form with nothing to
+// fill in. The keys come from the entity, beside the one fact a form needs from the
+// field's schema: a richtext body is typed into a prose box and a title into a line.
+// `Expected` carries the same keys as hidden revision carriers, because a form that
+// cannot say which revision it read saves twice or 409s.
 func (s Spec[T]) translationKeys(rich map[string]bool) (values, expected []crud.MapKey) {
 	for _, f := range translatableFields[T]() {
 		widget := "text"

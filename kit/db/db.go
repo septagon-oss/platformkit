@@ -8,6 +8,9 @@
 // setting, in Go or in SQL. scripts/check_gucs.sh keeps it that way, because
 // those settings are USERSET: any statement could rewrite them, so the barrier
 // is a grep and a re-read (see Run and RunSystem), not a database privilege.
+//
+// The [Run] example shows a tenant transaction against PostgreSQL.
+// The [RunSystem] example shows the separate system capability.
 package db
 
 import (
@@ -95,36 +98,16 @@ func OpenWithPool(ctx context.Context, url string, pool Pool) (*Conn, error) {
 		unrestricted bool
 		elevated     string
 	)
-	// Two questions, and only the first one was ever asked.
-	//
-	// Does this role hold SUPERUSER or BYPASSRLS? RLS does not apply to it, so
-	// every policy in migrations/ and every isolation test in this repository
-	// would be decorative.
-	//
-	// Can this role become a role that does? BYPASSRLS is not inherited, so a
-	// clean reading of current_user says nothing about `SET ROLE`, which needs no
-	// privilege beyond the membership one GRANT hands out. Inside a transaction
-	// that statement moves the attribute along with the name: the GUC the policies
-	// read stays set, FORCE ROW LEVEL SECURITY stays in place, and the rows of
-	// every tenant answer. pg_has_role walks the membership graph to any depth, so
-	// the chain that decides this is not one hop long and is not visible in the
-	// role's own row. It reads membership rather than the SET option, which is the
-	// strict answer: a grant written SET false today is one ALTER away from true,
-	// and an application role should not be adjacent to a bypassing role either
-	// way.
-	//
-	// What this still does not ask is whether the role can CREATE ROLE, which on
-	// some versions lets it write a role like the one it is not allowed to join.
-	// That is a reason to keep the application role's grants short, not a check
-	// this query could answer.
-	//
-	// pg_has_role takes the candidate by OID, not by name. The list of candidates
-	// comes from this statement's snapshot of pg_roles, but the name form resolves
-	// the role again in the live catalog, so a role dropped by anyone in between —
-	// another test package's probe role on CI (PR 55), a DBA in production — made
-	// Open fail with `role "..." does not exist` for a role it was never going to
-	// be. The OID form answers false for a role that no longer exists, which is the
-	// truth: nothing can become a role that is gone.
+	// Two questions: does this role hold SUPERUSER or BYPASSRLS, and can it become a role that
+	// does? RLS does not apply to the first, so every policy in migrations/ and every
+	// isolation test here would be decorative; BYPASSRLS is not inherited, so a clean reading
+	// of current_user says nothing about `SET ROLE`, which needs no privilege beyond a
+	// membership grant. pg_has_role walks the membership graph to any depth and reads
+	// membership rather than the SET option, which is the strict answer.
+	// The candidate is passed by OID, not by name: the name form resolves again in the live
+	// catalog, so a role dropped between the two reads made Open fail for a role it was never
+	// going to be, where the OID form answers false. What this still does not ask is whether
+	// the role can CREATE ROLE. See README.md, "Which role may bypass row-level security".
 	const q = `
 		SELECT rolname, rolsuper OR rolbypassrls,
 			coalesce((SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname)

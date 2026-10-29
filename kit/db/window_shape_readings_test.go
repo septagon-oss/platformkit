@@ -417,13 +417,13 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // It used to be a deadline, and a deadline measures the machine, not the drain. The drain the
 // bound stops is 10 000 committed transactions: 117 s with a Postgres to itself — the measurement
 // that moved the number from 120 s to five minutes — and past 300 s during the whole-suite run of
-// 2026-10-08, when every other package in the repository was writing into the same server. Both
+// a whole-suite run, when every other package wrote into the same server. Both
 // times the case reported "this drain has no bound" about a drain that was merely slow, which is
 // what any bound on a wait the machine answers eventually reports. A count cannot: it stops the
 // run at twice the rows the tick's own bound allows it to write, a state a drain that stops at its
 // bound is nowhere near at any speed and one that stops nowhere walks into at any speed.
 //
-// The run of 2026-10-06 measured the same drain from the other side and reached the same reading
+// A later run measured the same drain from the other side and reached the same reading
 // from the other direction: 48.6 s against a Postgres nobody else was migrating into, 304.34 s at
 // load average 38-43 with six other rounds' whole-suite runs asking that server, and 301.35 s again
 // with its commits not waiting for a WAL flush. What one window costs there is the server being

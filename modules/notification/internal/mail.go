@@ -52,7 +52,6 @@ var (
 // for the two consequences: a notice deleted in the meantime is a skip, and an
 // address changed in the meantime is the one the mail goes to.
 func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hosts contracts.HostLookup, senders contracts.Senders, secure bool) events.Subscription {
-	m := mailSender{mailer: mailer, recipients: recipients, hosts: hosts, senders: senders, secure: secure}
 	return events.Subscription{
 		Module: "notification", Name: contracts.EventEmailRequested,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -89,104 +88,85 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 					"notification", row.ID, "recipient", req.Recipient)
 				return nil
 			}
-			msg, suppression, err := m.composed(ctx, tx, row)
+			to, err := address(ctx, tx, recipients, row.RecipientID)
 			if err != nil {
 				return err
 			}
-			if suppression != "" {
-				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed, suppression)
+			if to == "" {
+				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed, "the recipient had no email address when the mail was due")
 			}
-			return m.delivered(ctx, tx, row, msg)
+			base, err := baseURL(ctx, tx, hosts, secure)
+			if err != nil {
+				return err
+			}
+			body, err := render(row, base)
+			if err != nil {
+				return err
+			}
+			html, err := renderHTML(row, base)
+			if err != nil {
+				return err
+			}
+			if mailer == nil || contracts.IsNoTransport(mailer) {
+				// No transport in this installation, said on the delivery ledger
+				// rather than in a log line somebody has to notice: the notice stays
+				// and stays readable in the application, and the mail it asked for is
+				// recorded as suppressed with the reason a reader can act on. The
+				// outbox does not retry what no retry can fix.
+				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+					"this installation has no mail server: set mail.host")
+			}
+			// The tenant's own sender, read in this transaction — the same one the
+			// notice's decision read, so the mail leaves as the tenant the person's
+			// settings were applied to. Nil is the deployment's own configured
+			// address, which is what an installation that never wired per-tenant
+			// identity has always sent from, and the header says so plainly rather
+			// than borrowing a name nobody claimed.
+			var sender *contracts.Sender
+			if senders != nil {
+				if sender, err = senders.For(ctx, tx); err != nil {
+					return err
+				}
+				if sender == nil {
+					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+						"this tenant has no sender: mail is refused until its administrator sets one")
+				}
+				// Verification is re-read here, and not carried in from the moment the
+				// notice was raised. The request decided against the sender that existed
+				// then; between that commit and this one the administrator can save a
+				// different domain or selector, which takes the row back to pending, and
+				// a queue is exactly where that gap lives. Signing as a domain that stopped
+				// vouching for itself is the refusal this module exists to make, so the
+				// check is against the row this transaction reads and the answer is terminal:
+				// a failed or suppressed row, not a retry that says the same thing.
+				if sender.Status != contracts.SenderVerified {
+					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+						"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
+				}
+			}
+			msg := contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"}
+			if sender != nil {
+				msg.Sender, msg.ReplyTo = sender, sender.ReplyTo
+			}
+			if err := mailer.Send(ctx, msg); err != nil {
+				// Two answers, and the ledger distinguishes them. A transient one —
+				// the connection dropped, the relay is down — writes no row: this
+				// transaction rolls back and the outbox retries on the kernel's
+				// ladder, which is the only record a retry needs.
+				//
+				// A permanent one (contracts.ErrPermanent: the relay's 5xx, a
+				// signature this deployment cannot make) writes failed with what the
+				// relay said and returns nil, so the message is acknowledged. A
+				// permanent failure that is retried is a channel with no terminal row
+				// until the dead letter, and dead letters are not a ledger.
+				if errors.Is(err, contracts.ErrPermanent) {
+					return record(tx, row.ID, ChannelEmail, OutcomeFailed, reason(err))
+				}
+				return err
+			}
+			return record(tx, row.ID, ChannelEmail, OutcomeSent, "")
 		},
 	}
-}
-
-// mailSender is what one subscription needs to send one notice: the transport, the
-// two reads that turn a recipient id and a host into an address and a base URL, the
-// tenant's own sender where the deployment wires per-tenant identity, and whether
-// this deployment's links are https.
-type mailSender struct {
-	mailer     contracts.Mailer
-	recipients contracts.RecipientLookup
-	hosts      contracts.HostLookup
-	senders    contracts.Senders
-	secure     bool
-}
-
-// composed is the message this notice asks for, or the terminal reason it is not
-// sent. Every suppression here is final rather than deferred: the mail never left,
-// the ledger says why, and a retry would read the same rows and say the same thing.
-func (m mailSender) composed(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Notification) (contracts.Message, string, error) {
-	var msg contracts.Message
-	to, err := address(ctx, tx, m.recipients, row.RecipientID)
-	if err != nil {
-		return msg, "", err
-	}
-	if to == "" {
-		return msg, "the recipient had no email address when the mail was due", nil
-	}
-	base, err := baseURL(ctx, tx, m.hosts, m.secure)
-	if err != nil {
-		return msg, "", err
-	}
-	body, err := render(row, base)
-	if err != nil {
-		return msg, "", err
-	}
-	html, err := renderHTML(row, base)
-	if err != nil {
-		return msg, "", err
-	}
-	// The tenant's own sender, read in this transaction — the same one the
-	// notice's decision read, so the mail leaves as the tenant the person's
-	// settings were applied to. Nil is the deployment's own configured
-	// address, which is what an installation that never wired per-tenant
-	// identity has always sent from, and the header says so plainly rather
-	// than borrowing a name nobody claimed.
-	var sender *contracts.Sender
-	if m.senders != nil {
-		if sender, err = m.senders.For(ctx, tx); err != nil {
-			return msg, "", err
-		}
-		if sender == nil {
-			return msg, "this tenant has no sender: mail is refused until its administrator sets one", nil
-		}
-		// Verification is re-read here, and not carried in from the moment the
-		// notice was raised. The request decided against the sender that existed
-		// then; between that commit and this one the administrator can save a
-		// different domain or selector, which takes the row back to pending, and
-		// a queue is exactly where that gap lives. Signing as a domain that stopped
-		// vouching for itself is the refusal this module exists to make, so the
-		// check is against the row this transaction reads and the answer is terminal:
-		// a failed or suppressed row, not a retry that says the same thing.
-		if sender.Status != contracts.SenderVerified {
-			return msg, "this tenant's sender is " + sender.Status + ", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed", nil
-		}
-	}
-	msg = contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"}
-	if sender != nil {
-		msg.Sender, msg.ReplyTo = sender, sender.ReplyTo
-	}
-	return msg, "", nil
-}
-
-// delivered hands the message to the transport and writes what the ledger learns.
-//
-// Two answers, and the ledger distinguishes them. A transient one — the connection
-// dropped, the relay is down — writes no row: this transaction rolls back and the
-// outbox retries on the kernel's ladder, which is the only record a retry needs. A
-// permanent one (contracts.ErrPermanent: the relay's 5xx, a signature this deployment
-// cannot make) writes failed with what the relay said and returns nil, so the message
-// is acknowledged. A permanent failure that is retried is a channel with no terminal
-// row until the dead letter, and dead letters are not a ledger.
-func (m mailSender) delivered(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Notification, msg contracts.Message) error {
-	if err := m.mailer.Send(ctx, msg); err != nil {
-		if errors.Is(err, contracts.ErrPermanent) {
-			return record(tx, row.ID, ChannelEmail, OutcomeFailed, reason(err))
-		}
-		return err
-	}
-	return record(tx, row.ID, ChannelEmail, OutcomeSent, "")
 }
 
 // closed reports whether this channel already has a terminal row, which is the

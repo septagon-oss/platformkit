@@ -15,6 +15,10 @@ import (
 // mirrors TableSlots one-for-one: the data stays in DetailListProps, and a
 // caller opts into a callback only when the value needs real markup.
 type DetailListSlots struct {
+	// KeepEmpty retains a named fact whose supplied value is empty.
+	KeepEmpty bool
+	// ValueAt identifies a fact by its position when labels are not unique.
+	ValueAt func(int, DetailItem) g.Node
 	// Value returns the markup for one item's value. Nil, or nil for one item,
 	// falls back to the item's own text, exactly as DetailList renders it.
 	Value func(DetailItem) g.Node
@@ -78,11 +82,16 @@ func DetailListWithSlots(p DetailListProps, slots DetailListSlots) g.Node {
 		root = append(root, h.Header(header...))
 	}
 
+	root = append(root, detailItems(p, slots))
+	return h.Section(root...)
+}
+
+func detailItems(p DetailListProps, slots DetailListSlots) g.Node {
 	items := make([]g.Node, 0, len(p.Items)+1)
 	items = append(items, h.Class(clDetailItems.Compile()))
 	validItems := 0
-	for _, item := range p.Items {
-		if strings.TrimSpace(item.Label) == "" || strings.TrimSpace(item.Value) == "" {
+	for i, item := range p.Items {
+		if strings.TrimSpace(item.Label) == "" || (!slots.KeepEmpty && strings.TrimSpace(item.Value) == "") {
 			continue
 		}
 		rowClass := clDetailRow
@@ -109,6 +118,11 @@ func DetailListWithSlots(p DetailListProps, slots DetailListSlots) g.Node {
 				value = h.Dd(h.Class(clDetailValue.Merge(clDetailValueTone[tone]).Compile()), custom)
 			}
 		}
+		if slots.ValueAt != nil {
+			if custom := slots.ValueAt(i, item); custom != nil {
+				value = h.Dd(h.Class(clDetailValue.Merge(clDetailValueTone[tone]).Compile()), custom)
+			}
+		}
 		items = append(items, h.Div(
 			h.Class(rowClass.Compile()),
 			g.Attr("data-detail-item", ""),
@@ -117,10 +131,10 @@ func DetailListWithSlots(p DetailListProps, slots DetailListSlots) g.Node {
 		))
 		validItems++
 	}
-	if validItems > 0 {
-		root = append(root, h.Dl(items...))
+	if validItems == 0 {
+		return nil
 	}
-	return h.Section(root...)
+	return h.Dl(items...)
 }
 
 // validDetailSemanticRole accepts portable machine keys while failing closed

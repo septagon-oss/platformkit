@@ -13,7 +13,7 @@ func TestFakeRecoveryCannotOfferPasswordSetupToEitherRegistrationGate(t *testing
 	users := usertest.NewFake()
 	auth := authtest.NewFake(users)
 	box := &authtest.Mailbox{}
-	auth.Mailer = box
+	auth.Mailer, auth.MailDelivery = box, box
 	ctx, tx := t.Context(), db.Tx[db.Tenant]{}
 	for i, register := range []func() (*user.User, error){
 		func() (*user.User, error) {

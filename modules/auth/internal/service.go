@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -46,6 +45,12 @@ type Delivery struct {
 	// the record exists to close rather than a mode to preserve.
 	Mails contracts.MailLedger
 
+	// MailDelivery is the carrier's own answer to whether it delivers, asked by the
+	// doors that would otherwise promise a person an email. Nil reads as "no": a
+	// composition that wired no answer is a composition that cannot promise a mail,
+	// which is the same reading as a mailer that was never wired.
+	MailDelivery contracts.MailDelivery
+
 	// SetPasswordPage and ConfirmEmailPage are the paths the invitation or reset
 	// link and the sign-up confirmation link open on the tenant's host. Empty is
 	// ResetPath and VerifyEmailPath, the workspace screens.
@@ -58,12 +63,25 @@ type Delivery struct {
 	AccountRequests contracts.AccountRequestBudget
 }
 
+// deliversAccountMail is the one question every mail-promising door asks: is
+// there a sender that could reach a mailbox at all (contracts.MailDeliverable
+// answers for the sender a deployment composed to send nothing), is there a host
+// to build the link's address on, and does that sender attempt what it is handed.
+// The nil reads are kept beside the port on purpose — a Delivery built outside
+// the wiring refuses rather than promising.
+func (d Delivery) deliversAccountMail() bool {
+	return contracts.MailDeliverable(d.Mailer) && d.Hosts != nil &&
+		d.MailDelivery != nil && d.MailDelivery.Available()
+}
+
 // Service is signing in and what a role may do.
 type Service struct {
-	users   contracts.Users
-	notify  contracts.Notifier
-	mail    Delivery
-	limiter *contracts.Limiter
+	authorization contracts.GrantAuthorizer
+	permissions   contracts.PermissionReader
+	users         contracts.Users
+	notify        contracts.Notifier
+	mail          Delivery
+	limiter       *contracts.Limiter
 
 	// catalogue is every permission the application defines, handed over by the
 	// kernel when this module's routes are registered. The hourly sweep reads
@@ -95,6 +113,12 @@ func (s *Service) declared() []tenancy.Grant {
 
 // NewService returns the auth service. module.go constructs it.
 func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery) *Service {
+	reader := &GrantReader{}
+	return NewServiceWithGrants(users, notify, mail, reader, reader)
+}
+
+// NewServiceWithGrants constructs sessions with a complete independent grant policy.
+func NewServiceWithGrants(users contracts.Users, notify contracts.Notifier, mail Delivery, authorization contracts.GrantAuthorizer, permissions contracts.PermissionReader) *Service {
 	if mail.SetPasswordPage == "" {
 		mail.SetPasswordPage = ResetPath
 	}
@@ -104,7 +128,7 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 	// The counters every replica shares. httpx.ConnFrom is where they find the
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.
-	return &Service{users: users, notify: notify, mail: mail,
+	return &Service{users: users, notify: notify, mail: mail, authorization: authorization, permissions: permissions,
 		limiter: contracts.NewBudgetedLimiter(limit.PostgresFor("", httpx.ConnFrom), mail.AccountRequests)}
 }
 
@@ -529,33 +553,9 @@ func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	})
 }
 
-// Permissions is the union of what these roles grant in this tenant: one query,
-// in the request's own transaction, under the tenant's own policy.
-//
-// Nothing is cached. A permission cache is a window in which a revoked grant
-// still works, and the query it would save is a primary-key lookup of at most a
-// handful of rows on a table the size of a role list.
-func (s *Service) Permissions(_ context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error) {
-	if len(roles) == 0 {
-		return nil, nil
-	}
-	var granted []pq.StringArray
-	err := tx.DB().Table("roles").Where("name = ANY(?)", pq.StringArray(roles)).
-		Pluck("permissions", &granted).Error
-	if err != nil {
-		return nil, fmt.Errorf("auth: read the roles: %w", err)
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, list := range granted {
-		for _, p := range list {
-			if !seen[p] {
-				seen[p] = true
-				out = append(out, p)
-			}
-		}
-	}
-	return out, nil
+// Permissions delegates to the independently constructed role reader.
+func (s *Service) Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error) {
+	return s.permissions.Permissions(ctx, tx, roles)
 }
 
 // identify assembles what a response says about the caller.

@@ -1,29 +1,17 @@
 // Package cache is one value every replica can read.
 //
-// A map in one process's memory is three answers when three pods are running and
-// none after a deploy — the same argument kit/limit makes about a counter, run
-// against a value instead of a count. It is also three answers to the question
-// "who may I treat this host as?": a suspension that invalidates one process
-// leaves the other two believing what the installation just stopped believing,
-// for the whole life of the entry. This package holds the port, the key type that
-// names whose value an entry is, and the in-process adapter that is a deployment
-// for one process and the double every test runs on.
+// Multiple replicas need shared invalidation: a host suspension must reach every
+// process that cached the host. This package holds the cache port and the
+// tenant-qualified keys; the in-process adapter runs the same conformance cases
+// as a shared store, so a single-process deployment needs no store of its own.
 //
-// Two things make this more than a shared map. The first is the key: an entry is
-// addressed by the tenant that owns it, and no caller can form a key without
-// saying which of the two constructors it went through — Of, for a value that
-// belongs to a customer, or Shared, for one that belongs to the installation.
-// The second is Move: an invalidation that closes what was *already written*
-// rather than only what is there when it runs. Delete alone loses a race — the
-// replica whose load began before the suspension writes its stale answer back
-// after it, for the full TTL — so every entry carries the generation it was
-// written under, and a move closes a generation. See the comment on Move.
-//
-// The value cache is for values a replica may recompute. Sessions, permission
-// grants and entitlements are never cached here, in this process or in any
-// store: modules/auth's own kernel says why ("A permission cache is a window in
-// which a revoked grant still works"), and the read path for those is the
-// transaction under row-level security. docs/cache.md holds the table.
+// Two things make this more than a shared map. An entry is addressed by the
+// tenant that owns it, and no caller can form a key without saying which
+// constructor it went through — Of for a customer's value, Shared for the
+// installation's. And Move closes what was *already written*, which is the
+// invalidation a racing load needs. Sessions, grants and entitlements are never
+// cached here: their read path is the transaction under row-level security, and
+// docs/cache.md holds the table of what may and may not sit here.
 package cache
 
 import (
@@ -214,20 +202,17 @@ type Cache interface {
 	// Move closes a whole Scope: every entry written under it reads as a miss
 	// from now on, whoever wrote it and whenever it was written.
 	//
-	// A move and not a delete is the invalidation that is correct under a racing
-	// load. Two replicas both miss for one host; both call the loader; replica A
-	// finishes the suspension and deletes the key; replica B, whose load began
-	// before it, writes the tenant it loaded — resurrecting the answer the
-	// installation just revoked for the whole TTL. A delete can only forget what
-	// is there when it runs; a move forbids what arrives afterwards.
+	// A move, not a delete, is the invalidation that survives a racing load. Two
+	// replicas both miss and both call the loader; A finishes the suspension and
+	// deletes the key; B, whose load began before it, writes what it loaded —
+	// resurrecting the answer the installation just revoked, for the whole TTL. A
+	// delete can only forget what is there when it runs.
 	//
-	// Its cost is its coarseness: a move closes every entry in the Scope, so one
-	// suspension costs every other host one loader query on its next request —
-	// including the request whose load is in flight, whose write this move closes.
-	// For host resolution, where the operator changes a handful of hosts a day
-	// and the query is indexed, that is the right trade; a finer generation, one
-	// per entry, is the same mechanism at one key per entry and is deferred until
-	// a deployment measures the difference.
+	// Its cost is its coarseness: one suspension costs every other host in the
+	// Scope one loader query on its next request. For host resolution, where an
+	// operator changes a handful of hosts a day and the query is indexed, that is
+	// the right trade; a per-entry generation is the same mechanism one key per
+	// entry.
 	Move(ctx context.Context, scope Scope) error
 
 	// Close releases what the adapter opened. Nothing else may: the Runtime owns

@@ -2,12 +2,11 @@ package httpx_test
 
 // A refusal comparison that runs against a real server reads what a real server writes, and
 // one of the things it writes is the second it wrote the answer in. Read as bytes, that stamp
-// made the pair in review_round5_refusal_shape_test.go red or green on the clock rather than
-// on the tree: `make check-race` at ca9fdb5 on 2026-10-09 (run 55756, job 56412) refused the
-// head because the control plane answered `Date: Fri, 09 Oct 2026 04:38:34 GMT` and the
-// address nobody mounted answered `… 04:38:35 GMT`, and the same bytes passed that same step
-// on the run before and the run after. A gate that answers differently about an unchanged tree
-// is what this program's CI cannot afford — the task that owns this file is named for it.
+// answers on the clock rather than on the tree: the control plane answering
+// `Date: Fri, 09 Oct 2026 04:38:34 GMT` and the address nobody mounted answering
+// `… 04:38:35 GMT` are two byte-streams over one refusal, so an unchanged tree passes on one
+// run and fails the next. A gate that answers differently about an unchanged tree is what this
+// program's CI cannot afford.
 //
 // So the straddle is taken here on purpose, once. The pair is asked on either side of a second
 // boundary, the two stamps are shown to be different seconds (the case is worthless if they
@@ -42,11 +41,11 @@ func TestTwoRefusalsOfOneHostAskedAcrossASecondBoundaryAnswerAlike(t *testing.T)
 	const nowhere = "/nothing-is-mounted-at-this-address"
 
 	declining := func(http.ResponseWriter, *http.Request, *problem.Problem) bool { return false }
-	router, opsAt, appAt := round5Kernel(t, false, declining)
+	router, opsAt, appAt := controlPlaneKernel(t, false, declining)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	controlPlane := round5Ask(t, server.URL, installationHost, opsAt("/all"), "application/json", id)
+	controlPlane := controlPlaneAsk(t, server.URL, installationHost, opsAt("/all"), "application/json", id)
 	if controlPlane.status != http.StatusNotFound {
 		t.Fatalf("the control plane asked by a tenant that is not the installation's = %d %s; this case compares the 404, so it has to be one",
 			controlPlane.status, controlPlane.body)
@@ -54,12 +53,12 @@ func TestTwoRefusalsOfOneHostAskedAcrossASecondBoundaryAnswerAlike(t *testing.T)
 
 	waitPastTheSecondBoundary(t)
 
-	neverMounted := round5Ask(t, server.URL, installationHost, appAt(nowhere), "application/json", id)
+	neverMounted := controlPlaneAsk(t, server.URL, installationHost, appAt(nowhere), "application/json", id)
 	first, second := controlPlane.header.Get("Date"), neverMounted.header.Get("Date")
 	if first == second {
 		t.Fatalf("both answers carry Date=%s, so the pair never straddled a second boundary and this case compared nothing the other run does not already compare", first)
 	}
 	t.Logf("the pair straddled the boundary: %s then %s", first, second)
 
-	round5Same(t, controlPlane, neverMounted, "the control plane at the installation host", "an address nobody mounted")
+	controlPlaneSame(t, controlPlane, neverMounted, "the control plane at the installation host", "an address nobody mounted")
 }

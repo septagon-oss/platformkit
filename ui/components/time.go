@@ -23,11 +23,13 @@ import (
 type TimeProps struct {
 	ComponentProps
 	Instant TimeText
-	// Title is the exact instant spelled out for a person who hovers the cell, in
-	// the zone the server wrote it in. The reader's browser replaces it with the
-	// same moment in the reader's own zone; until it runs, or where it cannot, the
-	// wall time on the page still says which zone it is in rather than letting a
-	// person guess.
+	// Title is the instant spelled out for a person who hovers the cell, to the
+	// second they can read, in the zone the server wrote it in: a generated screen
+	// passes RFC3339 there and leaves the sub-second digits to the datetime
+	// attribute below, because digits past the second are digits nobody compares.
+	// The reader's browser replaces it with the same moment in the reader's own
+	// zone; until it runs, or where it cannot, the wall time on the page still says
+	// which zone it is in rather than letting a person guess.
 	Title string
 }
 

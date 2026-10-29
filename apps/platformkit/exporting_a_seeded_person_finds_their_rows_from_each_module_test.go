@@ -58,7 +58,7 @@ func TestExportingASeededPersonFindsTheirRowsFromEveryModuleThatHoldsThem(t *tes
 	var tenant tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		tenant, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		tenant, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	})
 	if err != nil {

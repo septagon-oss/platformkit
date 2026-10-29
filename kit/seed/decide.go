@@ -18,21 +18,17 @@ type Snapshot struct {
 }
 
 // Target is the canonical state requested by the embedded record after the
-// owner has normalized its fields, resolved references and dates, and checked
-// the values it accepts.
+// owner has normalized its fields, resolved references and dates, and checked the
+// values it accepts.
 //
-// CreateOnly carries the declared values that are an instruction for the
-// record's creation and not a state to reconcile afterwards. A relative date is
-// the case: `+3d` names three days from the run that writes the row, so its
-// declared value moves with every clock, and the deadline itself belongs to
-// whoever holds the task once it exists. Decide never reads these, so a rerun of
-// the same file reads as unchanged; a writer applies them in Create and must not
-// apply them in Update. The alternative is a value that moves with the clock and
-// so reports an update on every run forever — a seed that rewrote, on every
-// deploy, a field a person can change through its own screen. A file record's
-// `asset` bytes are the other case: an upload writes them once and no rerun puts
-// new bytes behind the same row, so they instruct the record's creation and are
-// never a state to reconcile against what the store holds.
+// CreateOnly carries declared values that are an instruction for the record's
+// creation and not a state to reconcile afterwards. A relative date is the case:
+// +3d names three days from the run that writes the row, so its declared value
+// moves with every clock while the deadline belongs to whoever holds the task.
+// Decide never reads these, so a rerun reads as unchanged; a writer applies them
+// in Create and must not apply them in Update. The alternative is a seed that
+// rewrote, on every deploy, a field a person can change through its own screen. A
+// file record's asset bytes are the other case: an upload writes them once.
 type Target struct {
 	Fields     map[string]any
 	Commands   map[string]any

@@ -23,7 +23,7 @@ func TestAnotherTenantsHoldersDoNotAnswerForTheRolesDoor(t *testing.T) {
 	s := twoAdministrators(t, cfg, compose(cfg))
 	c := s.c
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Deactivate(ctx, tx, s.bob.ID)
+		_, err := c.testUsers().Deactivate(ctx, tx, s.bob.ID)
 		return err
 	}); err != nil {
 		t.Fatalf("deactivating bob: %v", err)
@@ -32,7 +32,7 @@ func TestAnotherTenantsHoldersDoNotAnswerForTheRolesDoor(t *testing.T) {
 	globex := secondTenant(t, cfg, "globex", "root@globex.localhost")
 	// Globex holds "spare" too, with an active person in it.
 	err := db.Run(tenancy.WithTenant(s.ctx(t), globex), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, "spare", []string{authcontracts.PermissionRoleManage}, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, "spare", []string{authcontracts.PermissionRoleManage}, declared)
 		return err
 	})
 	if err != nil {
@@ -45,7 +45,7 @@ func TestAnotherTenantsHoldersDoNotAnswerForTheRolesDoor(t *testing.T) {
 	}
 
 	err = db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
 		return err
 	})
 	if !errors.Is(err, crud.ErrInvalid) {

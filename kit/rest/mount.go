@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,11 @@ import (
 // operator grants; generated screens stay in the workspace. Invalid Specs panic
 // before mounting. Request failures use Fault.
 func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
+	s.Module = mountedUnder(s.Module, surfaces.App, "Spec", s.Entity)
+	if s.input != nil {
+		s.mountReadForm(surfaces)
+		return
+	}
 	s.check()
 	schema := s.Schema()
 	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)
@@ -47,6 +53,35 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		s.mountTranslationDoors(surfaces)
 	}
 	s.annotateFields(read, write, schema)
+}
+
+// mountedUnder is the kernel's fill of the one identity field a resource may
+// leave empty: the module a resource lives in is the module whose router it
+// mounts on, so a manifest with nothing to add can leave Module out and the
+// operation ids, the document tag and the event names all carry the name the
+// composition registered. A Spec that names a different module is refused here,
+// in rest's own shape for a wiring mistake — a panic at the mount site, naming
+// both — because filing routes and events under a module whose manifest declares
+// neither is a fault no later gate could explain.
+func mountedUnder(declared string, app *httpx.Router, kind, entity string) string {
+	// A router that names no module is the composition's own, or the zero
+	// httpx.Surfaces a test mounts on to ask check() alone. Neither fills
+	// anything, so neither contradicts: the declared name stands and check()
+	// stays the one that answers.
+	router := ""
+	if app != nil {
+		router = app.Module()
+	}
+	if router == "" {
+		return declared
+	}
+	if declared == "" {
+		return router
+	}
+	if declared != router {
+		panic(fmt.Sprintf("rest: %s for %q is mounted on module %q's router and names module %q; a resource lives in the module whose manifest declares it", kind, entity, router, declared))
+	}
+	return declared
 }
 
 // faults are the statuses every operation here can answer with: the three a
@@ -112,7 +147,7 @@ func (s Spec[T]) writeRouter(surfaces httpx.Surfaces) *httpx.Router {
 // existed means — which is stated once, on httpx.Resource.Offers, and read here
 // through the value that carries it to the screens.
 func (s Spec[T]) offers(c httpx.CRUD) bool {
-	return httpx.Resource{Operations: s.Operations}.Offers(c)
+	return s.input == nil && httpx.Resource{Operations: s.Operations}.Offers(c)
 }
 
 // offersWrite reports whether this Spec mounts at least one of the three writes.
@@ -123,19 +158,18 @@ func (s Spec[T]) offersWrite() bool {
 	return s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)
 }
 
+// readAuth is this Spec's read guard, asked of httpx rather than derived here:
+// the three fields that can state it go into the value whose method already owns
+// the rule, so one answer decides this route's surface, the registered resource
+// beside it and the document above both.
 func (s Spec[T]) readAuth() httpx.Auth {
-	if s.ReadAuth.Declared() {
-		return s.ReadAuth
-	}
-	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead}).ReadAuth()
+	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead, ReadBy: s.ReadAuth}).ReadAuth()
 }
 
 // writeAuth is the declaration the three write routes and every Command carry.
+// See readAuth for why it is asked and not derived.
 func (s Spec[T]) writeAuth() httpx.Auth {
-	if s.WriteAuth.Declared() {
-		return s.WriteAuth
-	}
-	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite}).WriteAuth()
+	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite, WriteBy: s.WriteAuth}).WriteAuth()
 }
 
 func (s Spec[T]) mountList(read *httpx.Router, schema crud.Schema) {
@@ -174,7 +208,11 @@ func (s Spec[T]) mountCreate(write *httpx.Router) {
 				if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
 					return nil, Fault(err)
 				}
-				e, err := s.createRow(ctx, tx, in.Body)
+				candidate, err := s.choiceCreateBody(in.RawBody, in.Body)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				e, err := s.createRow(ctx, tx, candidate)
 				if err != nil {
 					return nil, Fault(err)
 				}
@@ -225,7 +263,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 						e, err := s.localePatch(ctx, tx, in.ID, in.Lang, in.Body, in.IfMatch)
 						return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, Fault(err)
 					}
-					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					e, err := s.updateChoiceRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
 					if err != nil {
 						return nil, Fault(err)
 					}
@@ -239,7 +277,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 					if err != nil {
 						return nil, err
 					}
-					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					e, err := s.updateChoiceRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
 					if err != nil {
 						return nil, Fault(err)
 					}

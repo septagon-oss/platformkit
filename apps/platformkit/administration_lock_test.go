@@ -191,14 +191,14 @@ func TestTheAdministrationLockQueuesTheOtherModuleBehindIt(t *testing.T) {
 		// auth holds: a new role granting role:manage, which its own floor allows
 		// because the seeded admin role grants it too.
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, "second", []string{authcontracts.PermissionRoleManage}, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, "second", []string{authcontracts.PermissionRoleManage}, declared)
 			return err
 		},
 		// user follows: standing the bootstrap administrator down. It has to read
 		// the roles table to know which names can administer, and must not get an
 		// answer from before the write it is queueing behind.
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 	); err != nil {
@@ -210,11 +210,11 @@ func TestTheAdministrationLockQueuesTheOtherModuleBehindIt(t *testing.T) {
 	s.restore(t)
 	if err := oneHoldsTheOtherWaits(t, s, "auth after user",
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, "second", nil, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, "second", nil, declared)
 			return err
 		},
 	); err != nil {
@@ -253,7 +253,7 @@ func TestTheTwoFloorsComposeIntoOneInvariant(t *testing.T) {
 	// grant rather than taking one away, so it stays allowed — it is the repair
 	// the refusal recommends, and refusing it would refuse the way out too.
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, "spare", []string{authcontracts.PermissionRoleManage}, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, "spare", []string{authcontracts.PermissionRoleManage}, declared)
 		return err
 	})
 	if err != nil {
@@ -263,7 +263,7 @@ func TestTheTwoFloorsComposeIntoOneInvariant(t *testing.T) {
 	// Two. Empty the role both people hold. The spare still grants role:manage,
 	// and now that answers for nothing, because no person holds it.
 	err = db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
 		return err
 	})
 	if !errors.Is(err, crud.ErrInvalid) {
@@ -306,11 +306,11 @@ func TestAnEmptyingWriteAndAStandingDownWriteRace(t *testing.T) {
 
 	if err := oneHoldsTheOtherWaits(t, s, "standing down after an emptying",
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, "second", nil, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, "second", nil, declared)
 			return err
 		},
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 	); !errors.Is(err, crud.ErrInvalid) {
@@ -326,11 +326,11 @@ func TestAnEmptyingWriteAndAStandingDownWriteRace(t *testing.T) {
 	appoint(t, s, s.bob.ID, authcontracts.RoleMember, "second")
 	if err := oneHoldsTheOtherWaits(t, s, "emptying after a standing down",
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, "second", nil, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, "second", nil, declared)
 			return err
 		},
 	); !errors.Is(err, crud.ErrInvalid) {
@@ -358,11 +358,11 @@ func TestTwoAdministratorsStandingDownAtOnce(t *testing.T) {
 
 	if err := oneHoldsTheOtherWaits(t, s, "the second administrator standing down",
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.users.SetRoles(ctx, tx, s.bob.ID, []string{authcontracts.RoleMember})
+			_, err := c.testUsers().SetRoles(ctx, tx, s.bob.ID, []string{authcontracts.RoleMember})
 			return err
 		},
 	); !errors.Is(err, crud.ErrInvalid) {
@@ -387,11 +387,11 @@ func TestTwoAdministeringRolesEmptiedAtOnce(t *testing.T) {
 
 	if err := oneHoldsTheOtherWaits(t, s, "the second administering role emptied",
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
 			return err
 		},
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := c.auth.SetRole(ctx, tx, "second", nil, declared)
+			_, err := c.testAuth().SetRole(ctx, tx, "second", nil, declared)
 			return err
 		},
 	); !errors.Is(err, crud.ErrInvalid) {
@@ -425,7 +425,7 @@ func TestTheComposedCheckJudgesOneTenant(t *testing.T) {
 	// Deactivating the second of two is allowed and is what this case needs: one
 	// administrator left, so the write below is the one that takes the last one.
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Deactivate(ctx, tx, s.bob.ID)
+		_, err := c.testUsers().Deactivate(ctx, tx, s.bob.ID)
 		return err
 	})
 	if err != nil {
@@ -435,7 +435,7 @@ func TestTheComposedCheckJudgesOneTenant(t *testing.T) {
 
 	// Acme stands down while Globex has somebody who could administer it.
 	err = db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+		_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 		return err
 	})
 	if !errors.Is(err, crud.ErrInvalid) {
@@ -512,7 +512,7 @@ func appoint(t *testing.T, s administrationSessions, id uuid.UUID, roles ...stri
 func makeGrant(t *testing.T, s administrationSessions, name string) {
 	t.Helper()
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := s.c.auth.SetRole(ctx, tx, name, []string{authcontracts.PermissionRoleManage}, declared)
+		_, err := s.c.testAuth().SetRole(ctx, tx, name, []string{authcontracts.PermissionRoleManage}, declared)
 		return err
 	})
 	if err != nil {
@@ -525,7 +525,7 @@ func roleGrants(t *testing.T, s administrationSessions, name string) authcontrac
 	t.Helper()
 	var out authcontracts.Permissions
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		roles, err := s.c.auth.Roles(ctx, tx)
+		roles, err := s.c.testAuth().Roles(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -555,15 +555,15 @@ func secondTenant(t *testing.T, cfg config.Config, slug, email string) tenancy.T
 	c := compose(cfg)
 	var out tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		if _, err := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		if _, err := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: slug, Name: strings.ToUpper(slug), Host: slug + ".localhost",
 		}); err != nil {
 			return err
 		}
-		if out, err = c.tenants.ByHost(ctx, tx, slug+".localhost"); err != nil {
+		if out, err = c.testTenants().ByHost(ctx, tx, slug+".localhost"); err != nil {
 			return err
 		}
-		_, err = c.users.Provision(ctx, tx, out.ID, email, "", adminPass,
+		_, err = c.testUsers().Provision(ctx, tx, out.ID, email, "", adminPass,
 			[]string{authcontracts.RoleAdmin})
 		return err
 	})
@@ -592,10 +592,10 @@ func twoAdministrators(t *testing.T, cfg config.Config, c composition) administr
 
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		if s.tenant, e = c.tenants.ByHost(ctx, tx, acmeHost); e != nil {
+		if s.tenant, e = c.testTenants().ByHost(ctx, tx, acmeHost); e != nil {
 			return e
 		}
-		_, e = c.users.Provision(ctx, tx, s.tenant.ID, "bob@acme.localhost", "Bob",
+		_, e = c.testUsers().Provision(ctx, tx, s.tenant.ID, "bob@acme.localhost", "Bob",
 			"correct horse battery staple", []string{authcontracts.RoleAdmin})
 		return e
 	})
@@ -609,10 +609,10 @@ func twoAdministrators(t *testing.T, cfg config.Config, c composition) administr
 
 	err = db.Run(s.ctx(t), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var e error
-		if s.ada, e = c.users.ByEmail(ctx, tx, adminEmail); e != nil {
+		if s.ada, e = c.testUsers().ByEmail(ctx, tx, adminEmail); e != nil {
 			return e
 		}
-		if s.bob, e = c.users.ByEmail(ctx, tx, "bob@acme.localhost"); e != nil {
+		if s.bob, e = c.testUsers().ByEmail(ctx, tx, "bob@acme.localhost"); e != nil {
 			return e
 		}
 		return nil
@@ -655,7 +655,7 @@ func administeringHolders(t *testing.T, s administrationSessions) []string {
 	t.Helper()
 	var names []string
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		roles, err := s.c.auth.Roles(ctx, tx)
+		roles, err := s.c.testAuth().Roles(ctx, tx)
 		if err != nil {
 			return err
 		}

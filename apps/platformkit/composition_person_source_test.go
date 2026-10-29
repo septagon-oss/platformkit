@@ -1,7 +1,7 @@
 package main
 
 // The header's person line is only as real as the wiring beneath it: admin reads
-// the signed-in person through usercontracts.Service, so the resolved composition
+// the signed-in person through usercontracts.Lookup, so the resolved composition
 // must hand admin that contract from the user module, built after it, in every
 // environment. The committed COMPOSITION files are goldens — a regeneration
 // overwrites them — so this asks the resolved plan itself, where a lost edge
@@ -63,7 +63,7 @@ func TestAdminIsComposedWithTheUserServiceThatNamesThePerson(t *testing.T) {
 				after bool
 			}{}
 			for _, u := range m.Uses {
-				if u.Contract == "usercontracts.Service" && u.From == "user" {
+				if u.Contract == "usercontracts.Lookup" && u.From == "user" {
 					admin.uses = true
 				}
 			}
@@ -78,7 +78,7 @@ func TestAdminIsComposedWithTheUserServiceThatNamesThePerson(t *testing.T) {
 			continue
 		}
 		if !admin.uses {
-			t.Errorf("%s: admin is not composed with usercontracts.Service from user — the header would have no name to say for the signed-in person", env)
+			t.Errorf("%s: admin is not composed with usercontracts.Lookup from user — the header would have no name to say for the signed-in person", env)
 		}
 		if !admin.after {
 			t.Errorf("%s: admin does not build after user, so the service it reads the person through could be wired before it exists", env)

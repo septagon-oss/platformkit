@@ -10,25 +10,33 @@ package main
 // the event its owner publishes, which is how it reaches the audit trail.
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
 	"fmt"
+	"mime"
+	"path"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/seed"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/trace"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -61,32 +69,28 @@ func seedService(c composition, demoPassword string) (*seed.Service, error) {
 		Writers: []seed.Writer{
 			&contentSeeder{svc: c.contents},
 			&siteSeeder{sites: c.sites},
-			&userSeeder{users: c.users, demoPassword: demoPassword},
+			&userSeeder{users: c.seedUsers, demoPassword: demoPassword},
 			&taskSeeder{svc: c.tasks},
 			&fileSeeder{svc: c.files},
 		},
-		Authorize: seedGrants{auth: c.auth},
+		Authorize: seedGrants{auth: c.permissions},
 	})
 }
 
 // seeding contributes the tenant-creation hook that fills a new tenant with this
-// application's starter content. It declares one thing — that it contributes a
-// tenantcontracts.Hook — and needs nothing, which is not an omission but the fact
-// the resolver names when it is declared otherwise.
+// application's starter content. It declares one thing and needs nothing, which is
+// not an omission but the fact the resolver names when it is declared otherwise.
 //
-// The owners a seeded record is written through cannot be Needs of this module.
-// task.Module needs jobs.TenantLister, which tenant.Module provides, and auth puts
-// the authorizer behind tenant as well, so a module that both needs either of them
-// and contributes a hook the tenant module takes is the cycle the build refuses:
-// `seed → task → tenant → seed`, and `seed → auth → tenant → seed`. That is a fact
-// about the graph, not about this file: the hook has to exist before the tenant
-// module is built, and the services it writes through are built after it.
+// The owners a seeded record is written through cannot be Needs of this module: task
+// needs jobs.TenantLister, which tenant provides, and auth puts its authorizer behind
+// tenant too, so needing either while contributing a hook tenant takes is the cycle
+// the build refuses — seed → task → tenant → seed. The hook must exist before the
+// tenant module is built, and the services it writes through are built after it.
 //
-// So the provisioner is the one late-bound value in this composition, and it is
-// filled in app.go's composeReference, beside the two values that file already
-// fills the same way (`ask` and the shell) and from the same resolved plan. Its
-// own OnTenantCreate refuses to write anything until then, so a composition that
-// forgot the line fails by name rather than by a nil interface.
+// So the provisioner is the composition's one late-bound value, filled in app.go's
+// composeReference from the resolved plan, beside the two values that file already
+// fills the same way. OnTenantCreate refuses to write anything until then, so a
+// composition that forgot the line fails by name rather than by a nil interface.
 func seeding(provision *seedProvisioner) *pkit.Module {
 	return pkit.NewModule("seed", func(w *pkit.Wiring) (module.Module, error) {
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(provision.OnTenantCreate))
@@ -95,29 +99,25 @@ func seeding(provision *seedProvisioner) *pkit.Module {
 }
 
 // seedProvisioner is this application's second tenant-creation hook: the new
-// tenant's own starter content, written before anybody could ask for it.
+// tenant's own starter content, written before anybody could ask for it, because an
+// app opens on something rather than on an empty site waiting for a command.
 //
-// The reason it exists is the sentence in the brief — an app opens on something,
-// not on an empty site waiting for a command. The reason it is short is that the
-// authority is not its to invent: it calls seed.Service.ApplyProvisioned, which
-// refuses unless the tenant holds no seeded record, and it refuses here unless
-// the tenant holds no person. Together those two conditions say "this tenant
-// came into being in this transaction", which is the only claim a run with
-// nobody to ask the auth module about is entitled to make. What it can write is
-// then exactly the records its own files declare and nobody has written yet,
-// through the same owners, the same grants of the same module, and the same
-// events a person's click produces.
+// The authority is not its to invent: it calls seed.Service.ApplyProvisioned, which
+// refuses unless the tenant holds no seeded record, and it refuses here unless the
+// tenant holds no person. Together those say "this tenant came into being in this
+// transaction", the only claim a run with nobody to ask the auth module about is
+// entitled to make. What it can write is then exactly what its own files declare and
+// nobody has written yet, through the same owners and the same events a click makes.
 //
-// The fields are the owners this application writes through, filled once by
-// composeReference from the plan it resolved; see seeding for why no module can
-// declare them as its needs.
+// The fields are the owners it writes through, filled once by composeReference; see
+// seeding for why no module can declare them as its needs.
 type seedProvisioner struct {
-	users        usercontracts.Service
+	users        usercontracts.SeedWriter
 	contents     contentcontracts.Service
 	sites        sitecontracts.Service
 	tasks        taskcontracts.Service
 	files        filecontracts.Service
-	auth         authcontracts.Auth
+	auth         authcontracts.PermissionReader
 	demoPassword string
 }
 
@@ -182,7 +182,9 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 // could seed anything. What provisioning a brand-new tenant needs instead — a
 // permit minted by the create transaction itself — is named in
 // kit/seed/README.md's Limits and is not composed here.
-type seedGrants struct{ auth authcontracts.Auth }
+type seedGrants struct {
+	auth authcontracts.PermissionReader
+}
 
 func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resource, _ seed.Action) error {
 	// The one run with nobody to ask is the tenant's own creation, and the
@@ -242,7 +244,7 @@ func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resou
 // session whose user is not active, on the side of the run that names who the
 // writes belong to rather than the side that proves who is standing at the
 // terminal (see seedOperator).
-func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Tenant], email string) (context.Context, error) {
+func seedActor(ctx context.Context, users usercontracts.AddressLookup, tx db.Tx[db.Tenant], email string) (context.Context, error) {
 	person, err := users.ByEmail(ctx, tx, email)
 	if err != nil {
 		return ctx, fmt.Errorf("seed: this run writes as %s, who is not a person of this tenant: %w", email, err)
@@ -259,6 +261,818 @@ func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Ten
 	return tenancy.WithPrincipal(ctx, tenancy.Principal{
 		UserID: person.ID, Roles: []string(person.Roles),
 	}), nil
+}
+
+// contentSeeder seeds pages and posts. Slug is the natural key the file names a
+// record by, so the seed finds a page the way a person does: by its address. An
+// address is the owner's to spell, though — contracts.Slugify is what the write
+// path runs and what the public read path looks up by — so this writer asks for
+// the record's key the same way, and meets the row where the module put it. A
+// seed that compared `About The Team` to the `about-the-team` it had just written
+// would be a seed that patched the same page on every run, publishing an event
+// nobody asked for, forever.
+type contentSeeder struct{ svc contentcontracts.Service }
+
+func (contentSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "contents", Module: "content", Entity: "content",
+		NaturalKey: "slug", WriteGrant: contentcontracts.PermissionContentManage,
+		// The slug is how the file addresses the record and how the module stores
+		// it, so provenance, prune and reference lookup spell it the module's way.
+		CanonicalKey: contentcontracts.Slugify,
+		// Content has a delete path — the same soft delete the route uses — so a
+		// file may prune records it declares gone.
+		Prunable: true,
+		Commands: []string{"publish"},
+	}
+}
+
+func (contentSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	text, err := seedTexts(r, "kind", "title", "body")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	// No kind written is the module's default for the question; a kind the file
+	// wrote — as a number, as nothing at all — is a declaration, and it goes to the
+	// check below, which answers it as content's own enum.
+	kind, given := text["kind"]
+	if !given {
+		kind = contentcontracts.KindPage
+	}
+	if kind != contentcontracts.KindPage && kind != contentcontracts.KindPost {
+		return seed.Target{}, fmt.Errorf("kind %q is not %s or %s", kind, contentcontracts.KindPage, contentcontracts.KindPost)
+	}
+	// The body is reconciled in the form the module stores it. content normalises
+	// rich text on write — kit/richtext.Prepare runs in the same write core this
+	// writer calls — and the stored form ends its last line with a newline, so a
+	// declaration read with the trailing whitespace trimmed off never equals what
+	// the row holds and the page is patched on every run forever. Asking the
+	// module's own normaliser here has a second benefit: a body it would refuse
+	// (a level-1 heading, a construct it cannot store) is refused at the file and
+	// line that declared it, before this run has written anything.
+	body, err := richtext.Normalise(text["body"])
+	if err != nil {
+		return seed.Target{}, fmt.Errorf("body: %w", err)
+	}
+	return seed.Target{
+		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": text["title"], "body": body, "kind": kind},
+		Commands: seedCommands(r, "publish"),
+	}, nil
+}
+
+func (w *contentSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, forUpdate bool) (seed.Snapshot, error) {
+	id := key.RecordID
+	if id == uuid.Nil {
+		// Provenance has no id, so this is the natural-key lookup. A seed run may
+		// meet a manually created page with the same slug; the service decides
+		// whether that row is its own to touch, and this only says what is there.
+		rows, _, err := crud.List[*contentcontracts.Content](tx, crud.Query{Limit: 2, Filter: map[string]any{"slug": contentcontracts.Slugify(key.Value)}})
+		if err != nil {
+			return seed.Snapshot{}, err
+		}
+		if len(rows) == 0 {
+			return seed.Snapshot{}, nil
+		}
+		id = rows[0].ID
+	}
+	var row *contentcontracts.Content
+	var err error
+	if forUpdate {
+		row, err = crud.GetForUpdate[*contentcontracts.Content](tx, id)
+	} else {
+		row, err = crud.Get[*contentcontracts.Content](tx, id)
+	}
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return seeded(row), nil
+}
+
+func (w *contentSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	row, err := content.Spec.CreateRow(unactor(ctx), tx, &contentcontracts.Content{
+		Slug: t.Fields["slug"].(string), Title: t.Fields["title"].(string),
+		Body: t.Fields["body"].(string), Kind: t.Fields["kind"].(string),
+	})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.commands(ctx, tx, seeded(row), t)
+}
+
+func (w *contentSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	// The slug is how the record was found, so it is not in the patch: a run that
+	// renamed a page would be a run that deleted one page and created another.
+	row, err := content.Spec.UpdateRow(unactor(ctx), tx, cur.ID, map[string]any{
+		"title": t.Fields["title"], "body": t.Fields["body"], "kind": t.Fields["kind"],
+	})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.commands(ctx, tx, seeded(row), t)
+}
+
+func (w *contentSeeder) Delete(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot) error {
+	_, err := content.Spec.DeleteRow(ctx, tx, cur.ID)
+	return err
+}
+
+// commands runs what the record declares after the row itself exists. Publish is
+// the module's own command, so the lifecycle moves through the transition a
+// person uses and announces itself as content.published rather than as a status
+// some writer set from outside.
+func (w *contentSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	if want, _ := t.Commands["publish"].(bool); !want {
+		return cur, nil
+	}
+	row, err := w.svc.Publish(unactor(ctx), tx, cur.ID)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return seeded(row), nil
+}
+
+// unactor is the context an owner write goes through when the run is a seed.
+// content's PublishBy duty separates the person who wrote a page from the person
+// who puts it in front of the world; the module's own rule says content nobody is
+// credited with — a seed, an import, a row a job wrote where no person is acting —
+// has no authorship to separate, so it publishes. A seed run is that case: nobody
+// signed in (the outbox row holds no actor), and the person the run served travels
+// in the attribution's initiator, beside the file and line that asked for the
+// write. Handing the owner an actor as well would credit the page to that person
+// and then refuse the publish command this file declares, which is what the run is
+// here to run.
+func unactor(ctx context.Context) context.Context {
+	return tenancy.WithActor(ctx, uuid.Nil)
+}
+
+// seeded is content's canonical seed state: the four fields a file declares, and
+// the lifecycle fact the publish command answers. Title, body and kind come back
+// as the module stored them, which is the point — a normalised slug or a trimmed
+// title compares equal on the next run because both sides read the stored value.
+func seeded(row *contentcontracts.Content) seed.Snapshot {
+	return seed.Snapshot{
+		Present: true, ID: row.ID,
+		Fields:   map[string]any{"slug": row.Slug, "title": row.Title, "body": row.Body, "kind": row.Kind},
+		Commands: map[string]any{"publish": row.Status == contentcontracts.StatusPublished},
+	}
+}
+
+// siteSeeder sets which page a tenant's public site opens on. It is a writer
+// because the starter's home page is only "the home page" once the site says so:
+// a seeded, published row that nothing points at leaves a visitor at "/" reading
+// an empty site, which is the half of "your app opens on something" the content
+// files cannot deliver on their own.
+//
+// One record per tenant, keyed by the word the file uses for it, because a site
+// is a settings row and not a list. What the file declares is the home slug and
+// nothing else: the title, tagline and theme of a site are a person's answers,
+// and a seed that rewrote them on every deploy would be a seed that undid them.
+type siteSeeder struct{ sites sitecontracts.Service }
+
+func (siteSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "sites", Module: "site", Entity: "site",
+		NaturalKey: "settings", WriteGrant: sitecontracts.PermissionSiteManage,
+		// The home page is a reference to content, said as one: the seed orderer
+		// resolves it, so the page is written before the site points at it, and a
+		// target that exists in neither the files nor this tenant refuses at the
+		// file's own line. Declaring nothing here would leave site.Save — which
+		// checks that a slug is a slug, not that a page wears it — accepting a
+		// home page that has never existed, and a visitor at "/" reading a
+		// settings row about a row nobody can write.
+		References: []seed.Reference{{Resource: "sites", Path: "fields/homeSlug", Target: "contents"}},
+		// No delete path: the module offers no way to un-have a site, and
+		// blanking a tenant's home slug is a change a person decides.
+		Prunable: false,
+	}
+}
+
+// Target reads the declared home as the reference it is: `contents/<key>`. The
+// value the site module stores is the page's slug, which is what the key means
+// to its owner, so the alias comes off and the key goes through the same
+// function the content writer puts in seed.Resource — the two writers spell a
+// content record one way because they ask the same owner. Handing on the file's
+// own spelling would have site.Save accept a home slug no page wears, and a
+// visitor at "/" reading a settings row about an address nothing serves.
+func (siteSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	text, err := seedTexts(r, "homeSlug")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	ref := text["homeSlug"]
+	alias, key, found := strings.Cut(ref, "/")
+	if !found || alias != "contents" || key == "" {
+		return seed.Target{}, fmt.Errorf("homeSlug names the page a site opens on as contents/<slug>, not %q", ref)
+	}
+	return seed.Target{Fields: map[string]any{"homeSlug": contentcontracts.Slugify(key)}}, nil
+}
+
+func (w *siteSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], _ seed.Key, _ bool) (seed.Snapshot, error) {
+	settings, err := w.sites.Settings(ctx, tx)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	// Present means "this tenant has a site row", not "the module answered": it
+	// answers defaults for a tenant that saved nothing, and a run that read those
+	// defaults as an existing record would call Save a write over nothing. An id
+	// is what says a row was saved.
+	return seed.Snapshot{Present: settings.ID != uuid.Nil, ID: settings.ID,
+		Fields: map[string]any{"homeSlug": settings.HomeSlug}}, nil
+}
+
+// Create and Update are the same three lines, and that is the point: there is
+// one site row per tenant, the module's Settings answers it whether or not
+// anybody has saved anything, and Save is the only door that writes it — the
+// door the settings screen uses, with the event that says the site moved.
+func (w *siteSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	return w.write(ctx, tx, t.Fields["homeSlug"].(string))
+}
+
+func (w *siteSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], _ seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	return w.write(ctx, tx, t.Fields["homeSlug"].(string))
+}
+
+func (w *siteSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("site: a tenant always has a site; this seed unsets no home page")
+}
+
+// write reads the settings as they are now, changes the one field the seed
+// manages, and saves. Reading first is what keeps a person's theme, title and
+// timestamps out of a run that never mentioned them.
+func (w *siteSeeder) write(ctx context.Context, tx db.Tx[db.Tenant], slug string) (seed.Snapshot, error) {
+	settings, err := w.sites.Settings(ctx, tx)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	settings.HomeSlug = slug
+	saved, err := w.sites.Save(ctx, tx, settings)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return seed.Snapshot{Present: true, ID: saved.ID,
+		Fields: map[string]any{"homeSlug": saved.HomeSlug}}, nil
+}
+
+// userSeeder seeds people: an invitation through the user module, the roles the
+// file names, and — when the deployment names a demo password — the password the
+// demo walkthrough signs in with. Roles and password are the module's own
+// commands, SetRoles and SetPassword, so a seeded person holds what a person in
+// the admin screens would hold and the trail says which command gave it.
+//
+// A person is created and never renamed: an invitation is the write the user
+// module offers a seed, and a name a person chose for themselves is theirs from
+// then on. Passwords are never in a seed file — the loader refuses a field named
+// for one — and never in a plan line, which prints keys and addresses only.
+type userSeeder struct {
+	users usercontracts.SeedWriter
+	// demoPassword is config's Demo.Password: the one password a demonstration's
+	// people sign in with. It is the deployment's answer to a record that asks for
+	// a credential, and an empty one asks the run to mint one per person and hand
+	// it to the caller that ran it — see commands and mintedCredential. The loader
+	// refuses any seed field named for a password, so this value has exactly one
+	// door into a seed run.
+	demoPassword string
+}
+
+// signInDeclared is the one word a demo record and the person it names agree on.
+// In the file it is the ask — this person is one the demonstration signs in as.
+// In the snapshot it is the answered fact — that person holds a sign-in
+// credential. The same word on both sides is what makes a rerun of a person who
+// has one read as unchanged, and it names neither a secret nor a hash.
+const signInDeclared = "demo"
+
+func (userSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "users", Module: "user", Entity: "user",
+		NaturalKey: "email", WriteGrant: usercontracts.PermissionUserManage,
+		// An address is the record's key and the module owns its spelling, so a
+		// file that writes `Person@Example.test` declares the person the module
+		// stores as `person@example.test` — one record, one mapping, one run.
+		CanonicalKey: usercontracts.CanonicalEmail,
+		// No delete path, deliberately: deactivating a person is not undoing an
+		// invitation, and a file that stops declaring an address must not be able
+		// to switch a person off.
+		Prunable: false,
+	}
+}
+
+func (w userSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	text, err := seedTexts(r, "displayName", "signIn")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	fields := map[string]any{"email": usercontracts.CanonicalEmail(r.Key), "displayName": text["displayName"]}
+	roles, err := seedRoles_(r.Fields["roles"])
+	if err != nil {
+		return seed.Target{}, err
+	}
+	fields["roles"] = roles
+	// The ask comes from the file, and not from whether this deployment happens to
+	// name a demo password: a record that asks for a sign-in asks whether or not
+	// the answer has arrived yet, which is what makes a deployment that sets
+	// PLATFORMKIT_DEMO_PASSWORD after provisioning a tenant still able to give its
+	// demo people a credential. See signInHeld for the other side.
+	if text["signIn"] == signInDeclared {
+		fields["signIn"] = signInDeclared
+	}
+	return seed.Target{Fields: fields}, nil
+}
+
+// signInHeld is the snapshot's whole answer about sign-in: does this person hold
+// a credential at all. It reads only whether the module has a hash, and never
+// the hash, a comparison against one, or anything that leaves this function
+// other than one word — the same shape the plan prints and no more.
+//
+// "Any credential", and not "the demo credential", is the point. A person who
+// chose their own password holds a credential, so the record reads as settled
+// and the run that comes round again writes no password at all: docs/seed.md
+// promises that a rerun never resets a person's password, and the only way to
+// keep that promise without a second record of who set what is to ask the row
+// whether anybody has.
+func signInHeld(row *usercontracts.User) string {
+	if row.PasswordHash != "" {
+		return signInDeclared
+	}
+	return ""
+}
+
+func (w userSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _ bool) (seed.Snapshot, error) {
+	var (
+		row *usercontracts.User
+		err error
+	)
+	if key.RecordID != uuid.Nil {
+		row, err = w.users.Get(ctx, tx, key.RecordID)
+	} else {
+		row, err = w.users.ByEmail(ctx, tx, key.Value)
+	}
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	fields := map[string]any{
+		"email": row.Email, "displayName": row.DisplayName,
+		// The stored answer, sorted the same way the declared one is, so a file
+		// that lists roles in another order is the same declaration.
+		"roles":  seedRolesSorted(row.Roles),
+		"signIn": signInHeld(row),
+	}
+	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
+}
+
+func (w userSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	row, err := w.users.Invite(ctx, tx, t.Fields["email"].(string), t.Fields["displayName"].(string))
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.commands(ctx, tx, row, t)
+}
+
+// Update touches the two facts a seed owns about a person — the roles the file
+// names, and the demo sign-in the deployment offers — and refuses the rename it
+// was asked not to do. A person's name is theirs; a demo file that changed one
+// fails here, loudly, rather than overwriting whoever that address belongs to.
+func (w userSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	if want, have := t.Fields["displayName"].(string), cur.Fields["displayName"].(string); want != have {
+		return seed.Snapshot{}, fmt.Errorf(
+			"user owns a person after the invitation: this seed changes no name (had %q, the file asks %q)", have, want)
+	}
+	row, err := w.users.Get(ctx, tx, cur.ID)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.commands(ctx, tx, row, t)
+}
+
+// commands runs the module's own role and password commands for one record.
+// Both are idempotent in the way the seed needs: SetRoles with the same set
+// writes and publishes nothing, and a SetPassword is only reached when the
+// record's sign-in fact differs, so a second run of the same files writes no
+// password at all.
+func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *usercontracts.User, t seed.Target) (seed.Snapshot, error) {
+	roles, err := seedRoles_(t.Fields["roles"])
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	// The set the file declares, whenever it differs from the set the person
+	// holds — including when what it declares is nothing. A file that takes a
+	// role back says `roles: []`, and a writer that skipped an empty list would
+	// keep the grant the declaration removed, forever, and call it unchanged.
+	// Taking the last administrator away is the user module's own refusal, and
+	// this run commits nothing when it says so.
+	if !slices.Equal([]string(row.Roles), roles) {
+		if row, err = w.users.SetRoles(ctx, tx, row.ID, roles); err != nil {
+			return seed.Snapshot{}, err
+		}
+	}
+	// The credential a seed gives is the one a person does not have yet. Once a
+	// row holds a hash the answer is settled — see signInHeld — so the deployment
+	// password reaches an invited person and never overwrites a chosen one.
+	if signIn, asked := t.Fields["signIn"].(string); asked && signIn == signInDeclared && row.PasswordHash == "" {
+		password := w.demoPassword
+		if password == "" {
+			// No deployment answer means this demonstration names its people but
+			// not their credential, and an invited person who cannot be signed in
+			// as is not a walkthrough. So the run mints one for this person and
+			// prints it once, the way bootstrap does for the first administrator.
+			if password, err = generatePassword(); err != nil {
+				return seed.Snapshot{}, err
+			}
+			// The minted secret goes to whoever asked for this run and not to the
+			// process's output — see mintedCredential. A run nothing is collecting
+			// for keeps only the hash, which is the honest answer for a create
+			// transaction with no caller on the other side to receive it.
+			mintInto(ctx, row.Email, password)
+		}
+		if err := w.users.SetPassword(ctx, tx, row.ID, password); err != nil {
+			return seed.Snapshot{}, err
+		}
+		if row, err = w.users.Get(ctx, tx, row.ID); err != nil {
+			return seed.Snapshot{}, err
+		}
+	}
+	fields := map[string]any{
+		"email": row.Email, "displayName": row.DisplayName,
+		"roles":  seedRolesSorted(row.Roles),
+		"signIn": signInHeld(row),
+	}
+	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
+}
+
+func (w userSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("user: deactivating a person is not undoing an invitation")
+}
+
+// taskSeeder seeds the work a demonstration opens on. A task is created through
+// task.Spec — the module's own write core, the one its POST route runs — and
+// assigned through its Assign command, so a seeded row arrives with the same
+// validation and the same task.created and task.assigned events a person's click
+// produces. The title is the natural key the record is found by, because a task
+// is named by its one line and the module says so.
+type taskSeeder struct{ svc taskcontracts.Service }
+
+func (taskSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "tasks", Module: "task", Entity: "task",
+		NaturalKey: "title", WriteGrant: taskcontracts.PermissionTaskUpdate,
+		// No delete path: resolving or closing a task is a person's account of
+		// their own work, and a file that stopped declaring a title has no
+		// business writing that account.
+		Prunable: false,
+		// The assignee is a person of these same files, named as
+		// users/<address>, so the orderer writes the people before the work that
+		// names them and a typo in an address refuses at the record.
+		References: []seed.Reference{{Resource: "tasks", Path: "fields/assignee", Target: "users"}},
+	}
+}
+
+func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, now time.Time) (seed.Target, error) {
+	// The deadline first, because it is the one declared value YAML reads into a
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and the
+	// answer is the honest refusal. A fixed day on disk is a deadline no rerun can
+	// honour — this format resolves a deadline against the run that writes the row —
+	// so it is refused in the words that say what to write instead, and not read as
+	// the absence of a deadline.
+	if _, fixed := r.Fields["dueAt"].(time.Time); fixed {
+		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00, and an absolute date names a day no rerun can honour")
+	}
+	// The deadline first, because it is the one declared value YAML reads into a
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and
+	// honest refusal is the grammar's own sentence. This format resolves a deadline
+	// against the run that writes the row, so a fixed day on disk is one no rerun
+	// can honour, and it is refused in the words that say what to write instead —
+	// not read as the absence of a deadline, which is what a silent default would
+	// hand the record instead.
+	if _, fixed := r.Fields["dueAt"].(time.Time); fixed {
+		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00; an absolute date names a day no rerun can honour")
+	}
+	text, err := seedTexts(r, "title", "priority", "assignee", "dueAt")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	// A task nobody gave a priority to is an ordinary one. The default answers
+	// nobody having answered, not a value this run could not read: `priority: 5`
+	// is the number 5, and a run that turned it into `normal` would commit the
+	// task, map its key and never report the record again.
+	priority, given := text["priority"]
+	if !given {
+		priority = taskcontracts.PriorityNormal
+	}
+	assignee := uuid.Nil
+	if ref := text["assignee"]; ref != "" {
+		id, known := resolved[ref]
+		if !known {
+			return seed.Target{}, fmt.Errorf("assignee %q names no person this seed knows", ref)
+		}
+		// Assigning is a person's act in this application, and it is decided twice:
+		// by the grant the seed's authorizer asks the auth module about, and by
+		// policy/task.rego, which is asked with the person as its actor and refuses a
+		// run that carries nobody (modules/task/internal/policy.go). A tenant created
+		// with its own seed in the same transaction has no person yet, so what this
+		// run may ask for is the work, unassigned, and the operator's later run — the
+		// one `make seed` names a person for — is what assigns it. Naming the
+		// assignee here anyway would put a CREATE line in the plan for a write this
+		// run cannot make, which is the thing a plan exists not to do.
+		if _, hasPerson := tenancy.PrincipalFrom(ctx); hasPerson {
+			assignee = id
+		}
+	}
+	target := seed.Target{Fields: map[string]any{
+		"title": text["title"], "priority": priority, "assignee": assignee,
+	}}
+	// A declared deadline reaches its owner. `dueAt: "+3d"` is the seed format's
+	// relative date and the run's clock is what resolves it — the same instant the
+	// row's own timestamps came from — so the demonstration's work is due when the
+	// file that opened it says it is. It is a create-only fact for the reason
+	// kit/seed/decide.go gives: a deadline is a person's field once the task
+	// exists, and a value that moves with the clock is never reconciled. A date the
+	// grammar does not read is refused here, at the record's own line, and the run
+	// writes nothing.
+	if expr := text["dueAt"]; expr != "" {
+		due, err := seed.ResolveDate(now, expr, false)
+		if err != nil {
+			return seed.Target{}, fmt.Errorf("dueAt: %w", err)
+		}
+		target.CreateOnly = map[string]any{"dueAt": due}
+	}
+	return target, nil
+}
+
+func (taskSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, forUpdate bool) (seed.Snapshot, error) {
+	id := key.RecordID
+	if id == uuid.Nil {
+		rows, _, err := crud.List[*taskcontracts.Task](tx, crud.Query{Limit: 1, Filter: map[string]any{"title": key.Value}})
+		if err != nil {
+			return seed.Snapshot{}, err
+		}
+		if len(rows) == 0 {
+			return seed.Snapshot{}, nil
+		}
+		id = rows[0].ID
+	}
+	var (
+		row *taskcontracts.Task
+		err error
+	)
+	if forUpdate {
+		row, err = crud.GetForUpdate[*taskcontracts.Task](tx, id)
+	} else {
+		row, err = crud.Get[*taskcontracts.Task](tx, id)
+	}
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return assigned(row), nil
+}
+
+func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	row, err := task.Spec.CreateRow(ctx, tx, &taskcontracts.Task{
+		Title: t.Fields["title"].(string), Priority: t.Fields["priority"].(string),
+		DueAt: seedTime(t.CreateOnly["dueAt"]),
+	})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.assign(ctx, tx, assigned(row), t)
+}
+
+// Update changes the title and priority and, where the file names a different
+// person, assigns. The title is in the patch because the file declares it as a
+// field of the record and the record is named by its key, not by its title: a
+// run that says the tour task is called "Edited title" means the row it already
+// wrote to be called something else. The deadline is not in the patch, and for
+// the opposite reason: the file declared it as the record's creation date plus a
+// span (see Target), and a person who moved it through the task screen moved it
+// for good.
+func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{
+		"title": t.Fields["title"].(string), "priority": t.Fields["priority"].(string),
+	})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.assign(ctx, tx, assigned(row), t)
+}
+
+func (w taskSeeder) assign(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	want, _ := t.Fields["assignee"].(uuid.UUID)
+	have, _ := cur.Fields["assignee"].(uuid.UUID)
+	if want == uuid.Nil {
+		// The file names nobody. On a create that is an unassigned row, which is what
+		// a run with no person to assign as may write at all (see Target). On an
+		// update it is a record that took the name away — and the module has no
+		// command that takes one back: Assign gives work to a person, and putting it
+		// back on the pile is whoever holds it saying they no longer have it. So the
+		// run refuses in words and writes nothing: patching the row's other fields,
+		// publishing an update and leaving the assignee in place would be a seed that
+		// reported a change it did not make, on every run, forever.
+		if have != uuid.Nil {
+			return seed.Snapshot{}, errors.New("task: this file names no assignee, and the module has no command to take one back: the row is assigned, so this file cannot unassign it")
+		}
+		return cur, nil
+	}
+	if want == have {
+		return cur, nil
+	}
+	row, err := w.svc.Assign(ctx, tx, cur.ID, want)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return assigned(row), nil
+}
+
+func (taskSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("task: resolving a task is not undoing one")
+}
+
+// assigned is a task's canonical seed state: the line a list shows, the urgency
+// beside it, and who is responsible — nobody being uuid.Nil, so an unassigned row
+// and a record that names no person agree.
+func assigned(row *taskcontracts.Task) seed.Snapshot {
+	assignee := uuid.Nil
+	if row.AssigneeID != nil {
+		assignee = *row.AssigneeID
+	}
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"title": row.Title, "priority": row.Priority, "assignee": assignee}}
+}
+
+// fileSeeder seeds the one image a demonstration carries. The bytes live beside
+// the record that names them, in the same embedded tree the records came from, and
+// they go through the file module's own Upload — the door the upload form uses —
+// so a seeded file is counted, hashed, quota-checked, given the visibility its
+// record declares, and announced by file.uploaded exactly as an upload is. No row
+// is written by hand here.
+type fileSeeder struct{ svc filecontracts.Service }
+
+func (fileSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "files", Module: "file", Entity: "file",
+		// No natural key: a file's identity is its id, and the name a person reads
+		// is not unique. The seed finds its own row through seed_keys alone.
+		WriteGrant: filecontracts.PermissionFileManage,
+		// No delete path: the bytes behind a file may be read by something that
+		// linked to them, and a YAML record that stopped existing is not the event
+		// that decides they should go.
+		Prunable: false,
+	}
+}
+
+// A file record's bytes live beside the document that names them. The loader
+// resolves `asset` against its own document, refuses a path that leaves the tree,
+// and Record.AssetBytes reads what that path names out of the filesystem the
+// records were loaded from — so the bytes a record uploads are the bytes that
+// record points at, and a run that read its records from one tree can never upload
+// out of another. The name the upload carries is the last part of the path the
+// record named, the only part a reader of the file can see.
+func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	if r.Asset == "" {
+		return seed.Target{}, errors.New("a file record names the asset beside it")
+	}
+	// Read them here, at the record's own line: bytes that have gone between
+	// loading and applying refuse this record, not the upload.
+	body, err := r.AssetBytes()
+	if err != nil {
+		return seed.Target{}, err
+	}
+	name := path.Base(r.Asset)
+	text, err := seedTexts(r, "name", "contentType", "visibility")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	if declared := text["name"]; declared != "" && declared != name {
+		return seed.Target{}, fmt.Errorf("a file record's key names its asset %q, not %q", name, declared)
+	}
+	// The media type is the name's, because the name is the record's own answer
+	// about the upload. A record that also states one must state the same type:
+	// reading a declared contentType and then storing the extension's answer would
+	// be reading the field and throwing it away.
+	contentType := mime.TypeByExtension(strings.ToLower(path.Ext(name)))
+	if declared := text["contentType"]; declared != "" && declared != contentType {
+		return seed.Target{}, fmt.Errorf("a file record's asset %q has media type %q, not %q", name, contentType, declared)
+	}
+	// Visibility travels to the owner's Upload. Which reader a stored file answers
+	// is the record's own declaration, and the module's two visibilities are the
+	// only answers: a seed that named one of them for every record would hand an
+	// anonymous reader the bytes a file declared private. Public answers a record
+	// that wrote no visibility, and never one this run could not read — a record
+	// whose `visibility: 0` was read as absent would be a private upload that
+	// anybody can open, keyed and reported as settled.
+	visibility, given := text["visibility"]
+	if !given {
+		visibility = filecontracts.VisibilityPublic
+	}
+	if visibility != filecontracts.VisibilityPublic && visibility != filecontracts.VisibilityPrivate {
+		return seed.Target{}, fmt.Errorf("visibility %q is not %s or %s", visibility,
+			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
+	}
+	// Two values are create-only rather than state, and the file module is the reason
+	// for the second. The bytes are the first: an upload writes them once and no rerun
+	// patches them (see Update), so they instruct the record's creation the way a
+	// relative date does. The media type is the second because the owner does not keep
+	// what the record declared: a raster is measured, turned and re-encoded on its way
+	// into storage, and the frame's alpha decides the container (decision 0069 §4). So
+	// a stored row's digest is the digest of the frame a reader is served, and its media
+	// type the container those pixels chose.
+	//
+	// A record that reconciled either would refuse every image on the run after the one
+	// that wrote it, over a row whose bytes no seed run could put there in any case. What
+	// it compares is the two facts the owner keeps as declared: the name a list shows and
+	// the visibility an Open answers. Both create-only values stay named, because a
+	// declared field is accounted for or refused.
+	return seed.Target{
+		Fields:     map[string]any{"name": name, "visibility": visibility},
+		CreateOnly: map[string]any{"asset": body, "contentType": contentType},
+	}, nil
+}
+
+func (fileSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _ bool) (seed.Snapshot, error) {
+	if key.RecordID == uuid.Nil {
+		// Without provenance there is nothing to read: a name is not an identity
+		// here, and guessing which of a tenant's files "looks like" a seeded one
+		// would be a seed that deleted a person's upload.
+		return seed.Snapshot{}, nil
+	}
+	var (
+		row *filecontracts.File
+		err error
+	)
+	row, err = crud.Get[*filecontracts.File](tx, key.RecordID)
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return fileState(row), nil
+}
+
+func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	name := t.Fields["name"].(string)
+	body, uploaded := t.CreateOnly["asset"].([]byte)
+	if !uploaded {
+		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no asset bytes to upload", name)
+	}
+	// The media type is create-only too (see Target): it is what this upload
+	// declares, and the owner answers with the container the frame re-encodes to.
+	contentType, declared := t.CreateOnly["contentType"].(string)
+	if !declared {
+		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no media type for its asset", name)
+	}
+	// The accessor answers with the run's own transaction, because there is
+	// nothing to stream: the bytes are already in the binary, so no connection
+	// stands open while they arrive, which is the only reason Upload takes an
+	// accessor rather than a transaction.
+	row, err := w.svc.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
+		filecontracts.Upload{
+			Name: name, ContentType: contentType,
+			Visibility: t.Fields["visibility"].(string), Declared: -1, Body: bytes.NewReader(body),
+		})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return fileState(row), nil
+}
+
+// fileState is the record as its owner stores it, in the two facts the owner keeps as
+// they were declared: the name a list shows and the visibility that decides which
+// reader an Open answers. Read, Create and the rerun that finds them both equal come
+// through here, because the two sides of the comparison must be the same facts in the
+// same spellings — and a snapshot that left the visibility out would call a record the
+// file declared private unchanged while it sat in a public row.
+//
+// Neither the digest nor the media type the row carries is among them, and the file
+// module's image pass is why (decision 0069 §4): both belong to the frame the module
+// stored rather than to what the record declared, so neither is a value this record
+// could reconcile without refusing the run that found nothing to write. Target says
+// which two create-only instructions the record does send.
+func fileState(row *filecontracts.File) seed.Snapshot {
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"name": row.Name, "visibility": row.Visibility}}
+}
+
+// Update refuses, and the refusal is the design: a rerun reads back the name and the
+// visibility, finds them unchanged, and never reaches here. The alternative —
+// re-uploading the asset every run — would leave a new row and new bytes on every
+// deploy, and the old ones behind. Reaching here means the record and the row disagree
+// about one of the two facts the record manages, and no seed command puts new bytes
+// behind a row that already has some: the name and the visibility of an existing
+// upload are a person's file's, and moving them is that person's own write through the
+// module's own screen.
+func (fileSeeder) Update(_ context.Context, _ db.Tx[db.Tenant], _ seed.Snapshot, _ seed.Target) (seed.Snapshot, error) {
+	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
+}
+
+func (fileSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("file: a seeded upload is a person's file from the moment it exists")
 }
 
 // seedRoles_ reads the record's roles field as the canonical list both sides of
@@ -299,38 +1113,17 @@ func seedRolesSorted(roles []string) []string {
 // seedTexts reads the fields a writer takes from a record as the text its owners
 // hold, and refuses the first value that is not text.
 //
-// What the file left out and what it wrote as something else are different facts,
-// and the answer keeps them apart: a name appears in the map only when the record
-// wrote one, so `kind: page` answers "page", `kind:` and no `kind` at all answer
-// "nobody answered", and `kind: ""` answers the empty text that was written. Only
-// the middle case is an absent field, and an absent field is the only thing a
-// writer's default answers. A default is what this application says when nobody
-// did; saying it on top of the number 7 commits an answer nobody gave, reports
-// CREATE for it and maps the key — and the next run compares the row it defaulted
-// against the same default, calls it unchanged, and never surfaces the record
-// again. So the value refuses, at the record's own line, named as what it is. It is
-// the rule kit/seed holds one level up: decide.go refuses a declared field no
-// writer applies, because a declaration the run reads and then throws away is a
-// declaration nobody honoured (house rule 7). Reading a value and replacing it is
-// the same write.
+// What the file left out and what it wrote as something else are different facts: a
+// name appears in the map only when the record wrote one, so `kind:` and no `kind` at
+// all answer "nobody answered" while `kind: ""` answers the empty text that was
+// written. Only the middle case is an absent field, and that is the only thing a
+// writer's default answers — defaulting on top of the number 7 commits an answer
+// nobody gave, and the next run compares its own default and calls it unchanged. So
+// the value refuses, at the record's own line, as kit/seed does one level up.
 //
-// Text is carried, not judged, and trimmed, because the owners trim: content stores
-// a title without the spaces around it, so a target that kept them would differ
-// from the stored row on every run forever, and the canonical value is the one the
-// owner keeps. `priority: whenever` is text, so it reaches task's own validation and
-// comes back as task's own sentence at this record's line; a check invented here
-// would own the same answer twice, in two words, from two places. Empty text goes on
-// like any other, and its owner answers it as it answers anybody who typed nothing
-// into its form: task defaults an empty priority to `normal`; content and file hold
-// no default for a kind or a visibility, and refuse it.
-//
-// A writer's own Target and Snapshot maps are read back as `.(string)`, not through
-// this function, because whatever is in them this file put there. A value of another
-// type there is a broken run rather than a person's file, and a read that turned it
-// into "" would write an empty title out of our own bug instead of showing it. One
-// record field is read the same way it is written: signIn is asked for or not asked
-// for, Target writes the ask only when the file made it, so its reader asks the map
-// the same question.
+// Text is carried, not judged, and trimmed, because the owners trim: a target that
+// kept the spaces would differ from the stored row on every run. `priority: whenever`
+// reaches task's own validation and comes back as task's own sentence.
 func seedTexts(r seed.Record, names ...string) (map[string]string, error) {
 	text := make(map[string]string, len(names))
 	for _, name := range names {

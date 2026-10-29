@@ -1,21 +1,20 @@
 // Package rest is an entity's projection onto HTTP: five routes, the commands
 // beside them, and the one mapping from kit/crud's errors to statuses.
 //
-// A module declares one Spec per entity and gets list, create, read, update and
-// delete as declared routes, each with its permission, each emitting the events
-// the manifest promises. What a module writes is the struct, in its contracts/
-// package, and the Spec, in its manifest; what it does not write is a
-// repository, a service, a handler, a DTO or a mapper.
+// A module declares its entity in contracts/ and one Spec in its manifest.
+// Spec supplies list, create, read, update and delete routes with declared
+// permissions and events.
 //
-// It is a package of its own, and not the other half of kit/crud, because a
-// contracts/ package imports the entity half and every consumer of a module
-// compiles against its contracts/. Keeping the routes here is what keeps huma,
-// chi and NATS out of the build graph of a module that only wanted to name a
-// Task. See ARCHITECTURE.md, idea 3.
+// Keeping routes separate from entity contracts lets consumers name an entity
+// without importing HTTP dependencies. See ARCHITECTURE.md.
+//
+// The [Spec.Mount] example registers a resource and inspects its routes.
+// The [Command] example adds a command and inspects its authorization and address.
 package rest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -54,6 +53,11 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// input is the typed read-only query declared by ReadForm; nil for every
+	// ordinary CRUD Spec, which is what every other field on this struct reads.
+	input *readInputSpec
+	// Choices supplies finite field declarations copied into this Spec schema.
+	Choices *entity.ChoiceFields
 	// Source replaces storage reads with a service's scope and projection.
 	// Nil keeps ordinary CRUD. See ReadSource for required callbacks and limits.
 	Source *ReadSource[T]
@@ -114,14 +118,17 @@ type Spec[T crud.Entity] struct {
 	// kit/app refuses startup. See docs/adr/0008.
 	OperatorWrite bool
 	// Operations selects the CRUD routes; empty enables all five. Unoffered verbs
-	// have no route or generated action. A list requires Read; without List there
-	// is no generated workspace page. This is a resource declaration, independent
-	// of each caller's permission to use the offered routes.
+	// have no route or generated action, and a list that offers no read draws its
+	// rows unlinked, because no record page exists to link them to. Without List
+	// there is no generated workspace page. This is a resource declaration,
+	// independent of each caller's permission to use the offered routes.
 	Operations []httpx.CRUD
-	// ReadAuth and WriteAuth replace the corresponding permission shorthand;
-	// zero uses Read/Write and the operator flags. Conflicting or Public guards
-	// are refused. SignedIn reads rely on tenant RLS; generic row writes require
-	// a grant. Use Command for writes needing an object-policy decision.
+	// ReadAuth and WriteAuth state the guard as an httpx.Auth, which is the one
+	// spelling a registered resource keeps: Read/Write and the operator flags are
+	// inputs to the same derivation and are refused beside a declared guard, not
+	// overridden by one. Public guards are refused. SignedIn reads rely on tenant
+	// RLS; generic row writes require a grant. Use Command for writes needing an
+	// object-policy decision.
 	ReadAuth httpx.Auth
 	// WriteAuth is the write side of the same two declarations.
 	WriteAuth httpx.Auth
@@ -210,11 +217,25 @@ const (
 // Event is the full name of one of this Spec's events, "<module>.<entity>.<verb>".
 // A module lists these in its manifest's Declared, and kit/app refuses to start
 // when a Spec would publish one that nothing declared.
-func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + "." + verb }
+//
+// It refuses a Spec that names no Module, because the manifest that calls it is
+// built before any router exists: the kernel fills an empty Module at Mount (see
+// Spec.Mount), and an event name formed from what the kernel will later fill is a
+// promise no manifest could make — the name would read ".task.created", and the
+// app gate would refuse a route that published the real one.
+func (s Spec[T]) Event(verb string) string {
+	if s.Module == "" {
+		panic(fmt.Sprintf("rest: the Spec for %q builds the name of its %q event and names no Module; leave Module empty only where a router mounts the Spec, which fills it — Event, Events and Declared need the module the events belong to", s.Entity, verb))
+	}
+	return s.Module + "." + s.Entity + "." + verb
+}
 
 // Events are the three names this Spec publishes, so a manifest can name them
 // without spelling them.
 func (s Spec[T]) Events() []string {
+	if s.input != nil {
+		return nil
+	}
 	return []string{s.Event(Created), s.Event(Updated), s.Event(Deleted)}
 }
 
@@ -223,6 +244,9 @@ func (s Spec[T]) Events() []string {
 // the entity type and nothing else. A module that mounts a Spec puts this in
 // its manifest rather than writing the three types out beside the three names.
 func (s Spec[T]) Declared() []events.Declared {
+	if s.input != nil {
+		return nil
+	}
 	return []events.Declared{
 		events.Declare[T](s.Event(Created)),
 		events.Declare[T](s.Event(Updated)),
@@ -233,5 +257,8 @@ func (s Spec[T]) Declared() []events.Declared {
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
 func (s Spec[T]) Schema() crud.Schema {
-	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T]()}
+	if s.input != nil {
+		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.input.fields}
+	}
+	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.choiceFields()}
 }

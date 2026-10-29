@@ -1,19 +1,7 @@
-// Package pushtest is the conformance suite every push adapter owes: the cases
-// that say an adapter carries a message, refuses a token it cannot carry, and —
-// the one that matters most — does not mistake a bad afternoon at the push
-// service for a device that has gone away.
-//
-// It is written in kit/porttest, the harness every port's suite is written in,
-// and both of its operations are reads as far as this repository's store goes: a
-// send writes no row of ours, so the four refusals a mutating operation owes are
-// not owed here, and what the suite generates instead is the success and the
-// refusals the port itself names.
-//
-// A provider's test supplies a Harness — the tokens its platform speaks, the
-// states its stand-in can be put into, and the world that opens the two — and
-// Run generates the rest. Anything the description cannot express goes through
-// Suite.Own with the reason it is hand-written, which is the harness's rule and
-// not this package's.
+// Package pushtest checks push adapters through kit/porttest. Harness supplies
+// tokens, provider states and fixtures; Run exercises delivery and named refusals,
+// including transient outages that must not be treated as gone devices.
+// Operations write no repository rows; Suite.Own covers assertions outside the descriptors.
 package pushtest
 
 import (
@@ -226,112 +214,6 @@ func validateOp(h Harness) porttest.Op[Fixture] {
 			return "carryable", nil
 		},
 		Names:    map[porttest.Kind]string{porttest.Success: "Validate: a token of this platform is accepted"},
-		Refusals: refusals,
-	}
-}
-
-func sendOp(h Harness) porttest.Op[Fixture] {
-	send := func(f Fixture, token string, m push.Message) error {
-		_, err := f.Adapter.Send(f.Ctx, f.Device(token), m)
-		return err
-	}
-	refusals := []porttest.Refusal[Fixture]{
-		{
-			Kind:  porttest.Named,
-			Name:  "Send: a stored token this adapter cannot carry is refused",
-			Class: porttest.Correctable,
-			Call:  func(f Fixture, _ uuid.UUID) error { return send(f, f.Tokens.Uncarryable, Message()) },
-			Is:    isSentinel(push.ErrMalformed),
-		},
-		{
-			Kind:  porttest.Named,
-			Name:  "Send: a message with neither a title nor a body is refused",
-			Class: porttest.Immutable,
-			Call: func(f Fixture, _ uuid.UUID) error {
-				m := Message()
-				m.Title, m.Body = "", ""
-				return send(f, f.Tokens.Carryable, m)
-			},
-			Is: isSentinel(push.ErrInvalid),
-		},
-		{
-			Kind:  porttest.Named,
-			Name:  "Send: a device of another platform is refused",
-			Class: porttest.Immutable,
-			Call: func(f Fixture, _ uuid.UUID) error {
-				d := f.Device(f.Tokens.Carryable)
-				d.Platform = otherPlatform(d.Platform)
-				_, err := f.Adapter.Send(f.Ctx, d, Message())
-				return err
-			},
-			Is: isSentinel(push.ErrInvalid),
-		},
-	}
-	if h.has(Gone) {
-		refusals = append(refusals, porttest.Refusal[Fixture]{
-			Kind:  porttest.Named,
-			Name:  "Send: a token the provider reports gone is ErrGone",
-			Class: porttest.Immutable,
-			Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
-				f.Put(t, Gone)
-				return row
-			},
-			Call: func(f Fixture, _ uuid.UUID) error { return send(f, f.Tokens.Carryable, Message()) },
-			Is:   isSentinel(push.ErrGone),
-		})
-	}
-	if h.has(Unavailable) {
-		refusals = append(refusals, porttest.Refusal[Fixture]{
-			Kind: porttest.Named,
-			Name: "Send: a provider that is temporarily unavailable is not a gone token",
-			Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
-				f.Put(t, Unavailable)
-				return row
-			},
-			// The class is left out on purpose: a transient failure is not a
-			// refusal this port classifies at all, and the assertion is that it is
-			// not ErrGone, which is the mistake that deletes a working person's
-			// device during a bad hour.
-			Call: func(f Fixture, _ uuid.UUID) error { return send(f, f.Tokens.Carryable, Message()) },
-			Is: func(_ Fixture, err error) bool {
-				return err != nil && !errors.Is(err, push.ErrGone)
-			},
-		})
-	}
-	if h.has(Refused) {
-		refusals = append(refusals, porttest.Refusal[Fixture]{
-			Kind:  porttest.Named,
-			Name:  "Send: a provider that refuses the message is ErrRejected",
-			Class: porttest.Immutable,
-			Provoke: func(t *testing.T, f Fixture, row uuid.UUID) uuid.UUID {
-				f.Put(t, Refused)
-				return row
-			},
-			Call: func(f Fixture, _ uuid.UUID) error { return send(f, f.Tokens.Carryable, Message()) },
-			Is:   isSentinel(push.ErrRejected),
-		})
-	}
-	return porttest.Op[Fixture]{
-		Name: "Send",
-		Ready: func(t *testing.T, f Fixture) uuid.UUID {
-			f.Put(t, Healthy)
-			return uuid.Nil
-		},
-		Call: func(f Fixture, _ uuid.UUID) (string, error) {
-			receipt, err := f.Adapter.Send(f.Ctx, f.Device(f.Tokens.Carryable), Message())
-			if err != nil {
-				return "", err
-			}
-			if receipt.State != h.Answer {
-				return "", errors.New(string(f.Platform) + " answers a healthy send with " + string(receipt.State) +
-					", and this suite says " + string(h.Answer))
-			}
-			if f.Requests() == 0 {
-				return "", errors.New("the send answered without asking the provider anything")
-			}
-			return string(receipt.State) + ":" + receipt.ID, nil
-		},
-		Names:    map[porttest.Kind]string{porttest.Success: "Send: the provider answers a send"},
 		Refusals: refusals,
 	}
 }

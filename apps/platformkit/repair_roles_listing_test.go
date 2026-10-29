@@ -46,7 +46,7 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	})
 	if err != nil {
@@ -179,7 +179,7 @@ func TestTheRepairPrintsNothingThatItsCommitRefused(t *testing.T) {
 
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	})
 	if err != nil {

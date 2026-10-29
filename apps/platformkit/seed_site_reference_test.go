@@ -24,18 +24,18 @@ func TestSiteSeedRefusesAHomePageThatDoesNotExist(t *testing.T) {
 	service, err := seed.New(seed.Deps{
 		Files: fstest.MapFS{"seed/starter/sites.yaml": {Data: []byte("apiVersion: platformkit.seed/v1\nresource: sites\nrecords:\n  - key: site\n    fields: {homeSlug: missing-page}\n")}},
 		Root:  "seed", Clock: seedClock{},
-		Writers: []seed.Writer{&siteSeeder{sites: c.sites}}, Authorize: seedGrants{auth: c.auth},
+		Writers: []seed.Writer{&siteSeeder{sites: c.sites}}, Authorize: seedGrants{auth: c.testAuth()},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	applyErr := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err = seedActor(ctx, c.users, tx, adminEmail)
+			ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail)
 			if err != nil {
 				return err
 			}
@@ -48,7 +48,7 @@ func TestSiteSeedRefusesAHomePageThatDoesNotExist(t *testing.T) {
 		t.Errorf("Apply error = %v; want a dangling-home refusal at the seed record", applyErr)
 	}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}

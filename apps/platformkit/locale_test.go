@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/page"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -22,27 +23,32 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	c.modules = append(c.modules, module.Module{Name: "locale_verification", Routes: func(r httpx.Surfaces) {
+	view := func(name string) screen.ViewRef { return screen.ViewRef("app/locale_verification/custom/" + name) }
+	views := []screen.View{}
+	for _, name := range []string{"provider", "authored", "refusal"} {
+		views = append(views, screen.MustView(screen.ViewSpec{Ref: view(name), Cardinality: screen.One}))
+	}
+	c.modules = append(c.modules, module.Module{Name: "locale_verification", Views: views, Routes: func(r httpx.Surfaces) {
 		shell := page.Shell{Messages: catalogues(), Frame: func(_ context.Context, r page.Request, body []g.Node) g.Node {
 			return h.Main(h.Lang(r.Locale.Language), g.Group(body))
 		}}
 		ownedShell := shell
 		ownedShell.Messages = independentMessages{}
-		page.Serve(r.App, ownedShell, page.Route{ID: "locale-provider", Method: http.MethodGet, Path: "/_locale/provider"}, httpx.Public(),
+		page.Serve(r.App, ownedShell, page.Route{ID: "locale-provider", Method: http.MethodGet, Path: "/_locale/provider", View: view("provider")}, httpx.Public(),
 			func(_ context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 				return page.View{Body: []g.Node{g.Text(r.Locale.Text("welcome", "Welcome, %s", "Camille"))}}, nil
 			})
-		page.Serve(r.App, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english"}, httpx.Public(),
+		page.Serve(r.App, shell, page.Route{ID: "locale-authored", Method: http.MethodGet, Path: "/_locale/english", View: view("authored")}, httpx.Public(),
 			func(context.Context, page.Request, *page.Empty) (page.View, error) {
 				return page.View{Language: "en", Body: []g.Node{g.Text("Authored English")}}, nil
 			})
-		page.Serve(r.App, shell, page.Route{ID: "locale-refusal", Method: http.MethodGet, Path: "/_locale/refusal"}, httpx.Public(),
+		page.Serve(r.App, shell, page.Route{ID: "locale-refusal", Method: http.MethodGet, Path: "/_locale/refusal", View: view("refusal")}, httpx.Public(),
 			func(context.Context, page.Request, *page.Empty) (page.View, error) {
 				return page.View{}, problem.New(http.StatusForbidden, "English refusal")
 			})
 	}})
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	start(t, cfg, c.modules, app.Options{Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans,
+		Authenticate: c.testAuth().Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
 	for _, tc := range []struct {
 		path, accepted, language, text string
 		status                         int

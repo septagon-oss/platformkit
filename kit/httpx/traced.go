@@ -28,25 +28,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// tracing is the router middleware that opens the request's span. It is the
-// first thing on the router for the reason in its comment: everything the router
-// serves is inside it.
+// tracing is the router middleware that opens the request's span. It is the first thing on the
+// router for the reason in its comment: everything the router serves is inside it.
 //
-// The empty operation name is honest rather than tidy. On this path otelhttp names
-// a server span from its HTTP semantic-convention formatter — the method, and the
-// matched pattern where the server records one — and a name passed here would reach
-// a formatter that never sees this router's route, because chi keeps the pattern to
-// itself. A request that matches nothing therefore keeps the method as its name,
-// which is what was actually matched; a request that reached an operation is renamed
-// by traced, below.
+// The empty operation name is honest rather than tidy. otelhttp names a server span from its
+// HTTP semantic-convention formatter, and a name passed here would reach a formatter that never
+// sees this router's route, because chi keeps the pattern to itself: a request that matches
+// nothing keeps the method as its name, and one that reached an operation is renamed by traced.
 //
-// The no-op meter is this runtime's promise, not otelhttp's: the same middleware
-// registers HTTP server instruments, and left to the global they would be live the
-// moment this runtime started measuring for a reason unrelated to this router. What
-// this repository promises is one latency histogram per operation, one refusal
-// counter and one queue gauge — a set somebody chose, with attributes chosen beside
-// them. A deployment that wants otelhttp's instruments makes that decision here, on
-// purpose, with its own reader and its own cardinality.
+// The no-op meter is this runtime's promise, not otelhttp's: the same middleware registers HTTP
+// server instruments, and left to the global they would be live the moment this runtime started
+// measuring for a reason unrelated to this router. What this repository promises is one latency
+// histogram per operation, one refusal counter and one queue gauge, with attributes chosen
+// beside them.
 func tracing(next http.Handler) http.Handler {
 	return otelhttp.NewHandler(next, "", otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()))
 }
@@ -67,22 +61,18 @@ func spanAttr(ctx context.Context, key, value string) {
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String(key, value))
 }
 
-// traced names the request's span after the operation that answered it, says which
-// route that operation is, and records the operation's latency.
+// traced names the request's span after the operation that answered it, says which route that
+// operation is, and records the operation's latency.
 //
-// It runs first among the middlewares that know the operation — second in the
-// chain, after tenant, which is the one thing in it that has to see a request
-// before an operation exists — because it is the answer to a question otelhttp
-// could not ask: the span has to exist before routing, or a request
-// that matches nothing has no span at all, and before routing there is no operation.
-// chi leaves no pattern on the request the way net/http's ServeMux does, so the
-// operation is the only place this router's route is written down, and its id is the
-// name the OpenAPI document already gives the call.
+// It runs first among the middlewares that know the operation — second in the chain, after
+// tenant, the one thing in it that has to see a request before an operation exists — because
+// it answers a question otelhttp could not: the span has to exist before routing, or a request
+// that matches nothing has no span at all, and before routing there is no operation. chi
+// leaves no pattern on the request the way net/http's ServeMux does, so the operation is the
+// only place this router's route is written down, and its id is the name the OpenAPI document
+// already gives the call.
 //
-// The number itself is recorded by tenant.go, which is where the tenant is known:
-// this middleware is handed a context that does not carry the resolved tenant, and a
-// latency bar that cannot be attributed to a tenant is the number this runtime
-// promised it would not be. What is left here is the span's name and its route.
+// The number itself is recorded by tenant.go, which is where the tenant is known.
 func (a *API) traced(ctx huma.Context, next func(huma.Context)) {
 	op := ctx.Operation()
 	span := trace.SpanFromContext(ctx.Context())
@@ -110,33 +100,24 @@ func observeOperation(ctx context.Context, op *huma.Operation, seconds float64) 
 			attribute.String("http.request.method", op.Method))...)
 }
 
-// countRefusal records that this request was answered with a refusal of this
-// class.
+// countRefusal records that this request was answered with a refusal of this class.
 //
-// It has two callers, and what makes two the right number is that each counts a
-// disjoint answer: fail, for the refusal the root router answers before the
-// mounted API exists and so before any response buffer does — the address gate
-// and the static tree — and respond, for every answer of the mounted API,
-// counted once from the status the client was finally answered with. The split is
-// by *where the request was answered*, not by who wrote the body: chi's 404 and
-// 405 are written by a.fail and counted by respond, because the mount matched and
-// the buffered chain ran before chi decided nothing was there — remove fail's
-// guard and those two answers move the counter by two, which is the check that
-// keeps this sentence honest. The second caller is the reason the guards inside the
-// huma chain (refuse) count nothing themselves: the router answers a great deal without
-// any kernel writer in sight — a query value that is not an integer, a body that is
-// not JSON, a handler that returned an error — and a counter that only noticed the
-// answers it wrote with its own hand would read zero while clients were being
-// refused. It also fixes the double count a per-writer counter invites, because the
-// buffer replaces an answer (a held 200 becomes a 500 when the commit fails, a
-// panic replaces whatever was written) and the replaced answer was never the one
-// the client saw.
+// Its two callers count disjoint answers: fail, for the refusal the root router answers
+// before the mounted API exists and so before any response buffer does — the address gate and
+// the static tree — and respond, for every answer of the mounted API, counted once from the
+// status the client was finally answered with. The split is by *where the request was
+// answered*, not by who wrote the body: chi's 404 and 405 are written by a.fail and counted by
+// respond, because the mount matched and the buffered chain ran before chi decided nothing was
+// there.
 //
-// The attributes come from telemetry.MetricAttrs and not from SpanAttrs, and the
-// one key that difference drops is the request id: this counter is asked "how many
-// requests of this class were refused, for whom", and an attribute unique to one
-// request would answer it with one time series per refusal.
+// The second caller is why the guards inside the huma chain (refuse) count nothing themselves:
+// the router answers a great deal without any kernel writer in sight, and the buffer replaces
+// answers (a held 200 becomes a 500 when the commit fails), so a counter that noticed only the
+// answers it wrote itself would both read zero and double count.
 func countRefusal(ctx context.Context, status int) {
+	// MetricAttrs and not SpanAttrs: the one key that difference drops is the request id,
+	// and an attribute unique to one request would answer "how many of this class, for
+	// whom" with one time series per refusal.
 	telemetry.Shared().CountRefusal(ctx, telemetry.RefusalClass(status), telemetry.MetricAttrs(ctx)...)
 }
 

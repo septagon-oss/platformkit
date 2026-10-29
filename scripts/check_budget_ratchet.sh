@@ -220,14 +220,18 @@ allowances="$(awk '
 		}
 	}' <<< "$raised")"
 # A raise of more than 1,000 lines in one bucket is the owner's, not only the reviewer's: every commit
-# raising that bucket names the approval in an `Owner-approved:` trailer. The check reads that the
+# that declares that bucket more than 1,000 lines over main names the approval in an `Owner-approved:`
+# trailer. A raise the branch wrote before it crossed the line stayed within review's reach and owes none:
+# asking it of them retroactively made every branch that crossed in steps rewrite history it had been told
+# never to rewrite (T-0720, T-0424, T-0452 on 2026-10-25), and decision 0100 puts the owner's line on the
+# build(budget) commit that prices the approved raise. The check reads that the
 # claim is recorded where review reads it; it cannot read that the owner made it. A commit that brings a
 # ceiling down spends no allocation — it returns lines to the pool — so it never owed a trailer: the raise
 # that took the allocation carries one, and refusing the tidying would hold an allocation open past the
 # day its owner priced it. What asks for the trailer is the largest raise this branch wrote, not the
 # ceiling standing at HEAD, so a lowering cannot disown an approval the raise still needs.
 for bucket in $(awk '$4 == 1 && $3 > 1000 { print $2 }' <<< "$raised" | sort -u); do
-	for commit in $(awk -v b="$bucket" '$2 == b && $4 == 1 { print $1 }' <<< "$raised"); do
+	for commit in $(awk -v b="$bucket" '$2 == b && $4 == 1 && $3 > 1000 { print $1 }' <<< "$raised"); do
 		if [ -z "$(git log -1 --format='%(trailers:key=Owner-approved,valueonly)' "$commit" | tr -d '[:space:]')" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $bucket rises over 1,000 lines on this branch and ${commit:0:12} carries no Owner-approved: trailer"
 		fi

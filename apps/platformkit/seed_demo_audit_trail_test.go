@@ -36,7 +36,7 @@ func TestSeededWorkAndFilesAreAuditedWithTheirSource(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	var tenantID string
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "demo-audit", Name: "Demo", Host: "demo-audit.localhost", Demo: true,
 		})
 		if err != nil {

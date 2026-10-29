@@ -154,9 +154,9 @@ func (a *API) Surfaces(module string) Surfaces {
 	a.known[module] = true
 	a.mu.Unlock()
 	s := Surfaces{api: a}
-	s.Public = &Router{surface: SurfacePublic, module: module, api: a}
-	s.App = &Router{surface: SurfaceApp, module: module, api: a}
-	s.Ops = &Router{surface: SurfaceOps, module: module, api: a}
+	s.Public = &Router{surface: SurfacePublic, module: module, screenOwner: module, api: a, owner: module}
+	s.App = &Router{surface: SurfaceApp, module: module, screenOwner: module, api: a, owner: module}
+	s.Ops = &Router{surface: SurfaceOps, module: module, screenOwner: module, api: a, owner: module}
 	return s
 }
 
@@ -176,10 +176,11 @@ func (s Surfaces) AddCommand(module, entity string, c Command) {
 	s.api.AddCommand(module, entity, c)
 }
 
-// SystemToken is the credential an in-process caller uses to reach a route that
-// needs a principal where no HTTP request carries one. It belongs to the
-// composition, not to a surface: which router it is presented to is the caller's
-// business. See the API's field of the same name.
+// SystemToken is this module's cross-tenant credential, for the work no tenant
+// transaction can do. It belongs to the module rather than to a surface — which
+// router it is presented to is the caller's business — and it carries the reason
+// the module's manifest declared. A module that declared no SystemAccess is
+// refused at composition; see module.Module.SystemAccess and docs/adr/0006.
 func (s Surfaces) SystemToken() tenancy.SystemToken { return s.App.SystemToken() }
 
 // SurfaceOf is the surface of the request ctx belongs to, as classify answered

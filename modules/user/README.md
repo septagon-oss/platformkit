@@ -1,5 +1,18 @@
 # User module
 
+## Composition
+
+`user.Module` consumes independent `Granting` and `Administration` ports supplied by
+`auth.Grants`; it does not need Auth's sessions service. `New` refuses nil granting
+and an empty `GrantingFunc`. An initialized function adapter remains supported.
+
+**Reused** — the existing command service, administration lock, conformance suite
+and transactional outbox continue to own account state and last-administrator protection.
+**Added** — provider-owned [capabilities](contracts/capabilities.go) project lookup,
+registration, provisioning and command operations without duplicating account logic.
+**Made reusable** — each consumer can construct from its required operations while
+the deprecated `Service` aggregate remains available to existing callers.
+
 `modules/user` is the people in a tenant: one entity, a `rest.Spec` at
 `/api/v1/user/users` guarded by `user:read` and `user:manage`, invitations at
 `/api/v1/user/invitations`, explicit lifecycle commands, and pending
@@ -91,11 +104,9 @@ the row carries actor, tenant, request id and trace context like any other.
 that can grant every other one back. It is required, and a composition that
 omits it panics at `user.New`: who holds a role is this module's table and
 what a role grants is the auth module's, so neither reads the other's rows and
-the application joins them — see `usercontracts.Administration` in
-`apps/platformkit/product.go`. `Deps.Granting` is the one adapter it accepts
-unwired: the answer is the authentication service's, that service is built after
-this module because it looks people up here, and the auth module fills the
-holder's `Ask` in its own build (an unfilled holder refuses the roles write).
+the independent `auth.Grants` provider answers both questions from the same role
+policy. `Deps.Granting` must be ready at construction; it does not wait for Auth
+or permit its `Ask` function to be filled later.
 
 `Provision` is what `platformkit bootstrap` calls to create the first
 administrator with a password; the argon2id parameters are constants here.

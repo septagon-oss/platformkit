@@ -51,7 +51,7 @@ func TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		_, e := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		_, e := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "globex", Name: "Globex", Host: globexHost,
 		})
 		return e
