@@ -155,7 +155,7 @@ The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that 
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 <!-- BEGIN GENERATED: scripts/inventory_figures.py go-test-ceiling -->
-The `go_test` bucket declares a ceiling of 242161 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
+The `go_test` bucket declares a ceiling of 245109 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
 <!-- END GENERATED -->
 
 ## What CI re-checks, after the tiers
