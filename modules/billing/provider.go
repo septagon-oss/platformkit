@@ -32,10 +32,14 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	// first, so the only way to reach a name that is not manual is a processor
 	// module composed beside this one — and that is the ambiguity Choose refuses,
 	// not a provider.
-	plans, manifest := New(Deps{
+	plans, manifest, err := NewChecked(Deps{
 		Tenants:  pkit.Get[jobs.TenantLister](w),
 		Payments: Manual(),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[httpx.Entitler](w, plans)
 	return manifest, nil
 }

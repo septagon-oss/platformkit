@@ -73,7 +73,21 @@ type Deps struct {
 //
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. Hooks arrive as the
+// contributions of the modules that declare them, an empty App name is a
+// deployment of one app, and nothing is refused, so the error is nil for every
+// Deps today. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.App)
 	return svc, module.Module{
 		Name:        "tenant",
@@ -120,7 +134,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Routes: func(s httpx.Surfaces) {
 			internal.RegisterRoutes(s.Ops, internal.RouteServices{Directory: svc, Creation: svc, Lifecycle: svc, Hosts: svc, Locale: svc, OIDC: svc, SAML: svc}, deps.Invite, s.SystemToken())
 		},
-	}
+	}, nil
 }
 
 // Bootstrap creates the first tenant of an empty installation, refusing when

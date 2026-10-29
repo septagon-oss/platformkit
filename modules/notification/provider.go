@@ -136,7 +136,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if !ok {
 		return module.Module{}, fmt.Errorf("notification: the mail carrier %T does not answer whether it delivers", mailer)
 	}
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Recipients: pkit.Get[contracts.RecipientLookup](w),
 		// Nil when this composition hands in no chrome, which is the module's
 		// own answer to a screen nobody composed: no route, and the surface's 404.
@@ -150,6 +150,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// decision says so in the ledger rather than at send time.
 		Push: pkit.Get[push.Adapters](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Notifier](w, svc)
 	pkit.Put[contracts.MailLedger](w, svc)
