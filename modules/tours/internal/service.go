@@ -91,6 +91,21 @@ func (s *Service) Get(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.
 	return run, nil
 }
 
+func (s *Service) Resumable(ctx context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Run, error) {
+	person, err := s.actor(ctx, tx, "", "read")
+	if err != nil {
+		return nil, err
+	}
+	var rows []*contracts.Run
+	err = tx.DB().WithContext(ctx).
+		Where("person_id = ? AND status IN ?", person, []string{"reserved", "active", "paused", "later"}).
+		Order("updated_at DESC, id").Limit(50).Find(&rows).Error
+	if err != nil {
+		return nil, crud.Classify(err)
+	}
+	return rows, nil
+}
+
 func (s *Service) Act(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.UUID, action contracts.Action) (*contracts.Run, error) {
 	actor, err := s.actor(ctx, tx, "", "run")
 	if err != nil {

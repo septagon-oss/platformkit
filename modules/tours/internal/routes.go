@@ -21,10 +21,20 @@ var unavailable = problem.New(http.StatusServiceUnavailable, "the database is no
 func RegisterRoutes(r *httpx.Router, svc contracts.Service) {
 	httpx.Register(r, huma.Operation{OperationID: "tours-offers", Method: http.MethodGet, Path: "/offers", Summary: "List tour offers", Errors: []int{400, 403, 503}}, httpx.Permission(contracts.PermissionRead),
 		func(ctx context.Context, _ *offersInput) (*offersOutput, error) {
-			if _, err := routeTx(ctx); err != nil {
+			tx, err := routeTx(ctx)
+			if err != nil {
 				return nil, err
 			}
-			return &offersOutput{Items: []contracts.Run{}}, nil
+			reader, ok := svc.(interface {
+				Resumable(context.Context, db.Tx[db.Tenant]) ([]*contracts.Run, error)
+			})
+			if !ok {
+				return nil, unavailable
+			}
+			runs, err := reader.Resumable(ctx, tx)
+			return &offersOutput{Body: struct {
+				Items []*contracts.Run `json:"items"`
+			}{Items: runs}}, rest.Fault(err)
 		})
 	httpx.Register(r, huma.Operation{OperationID: "tours-run-create", Method: http.MethodPost, Path: "/runs", Summary: "Start a tour run", Errors: []int{400, 403, 409, 503}}, httpx.Permission(contracts.PermissionRun),
 		func(ctx context.Context, in *contracts.Start) (*rest.Item[*contracts.Run], error) {
@@ -76,7 +86,9 @@ type offersInput struct {
 }
 
 type offersOutput struct {
-	Items []contracts.Run `json:"items"`
+	Body struct {
+		Items []*contracts.Run `json:"items"`
+	}
 }
 
 type runIDInput struct {
