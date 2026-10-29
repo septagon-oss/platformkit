@@ -49,14 +49,13 @@ var mailLadder = []time.Duration{time.Minute, 10 * time.Minute}
 // rule live in rows this job owns, not in the broker's five rungs. It runs per
 // tenant, so the transaction that claims a row is that tenant's own and row level
 // security is what makes "never another tenant's intent" true even of a mistyped
-// statement.
-// , and which transaction writes which row is what a reviewer should
-// check first: claim takes the due rows in one short transaction that commits
-// before any socket opens, re-ask asks each row once more whether it is still
-// wanted, send holds no transaction and no lock across a mail server, and outcome
-// writes the row's state beside the notice's terminal ledger row in one commit. An
-// attempt that physically happened and never got an outcome becomes unknown, by
-// markUnknown, rather than being re-sent on the strength of the lease.
+// statement. Its four steps are its contract: claim takes the due rows in one short
+// transaction that commits before any socket opens,
+// re-ask asks each row once more whether it is still wanted, send holds no
+// transaction and no lock across a mail server, and outcome writes the row's state
+// beside the notice's terminal ledger row in one commit. An attempt that physically
+// happened and never got an outcome becomes unknown, by markUnknown, rather than
+// being re-sent on the strength of the lease.
 func Deliver(svc *Service, tenants jobs.TenantLister, every time.Duration, batch int, lease time.Duration) jobs.Job {
 	if every <= 0 {
 		every = defaultMailInterval
