@@ -72,6 +72,7 @@ func wireRequirednessAllowances(media string) []wiregate.RequirednessAllowance {
 	// plus ` requires <member>`, which is how the comparison names the requirement.
 	moves := []struct{ node, member, declares string }{
 		{"", "deck", "deck for an entry that declares no swipe deck"},
+		{"", "savable", "saving declaration for an entry that is not savable"},
 		{resolvedIdentityNode, "group", "group for an entry outside navigation"},
 		{resolvedSummaryNode, "highlight", "highlight for a card with no declared sub-count"},
 		{resolvedCommandNode, "confirmation", "confirmation for a command that asks nothing first"},

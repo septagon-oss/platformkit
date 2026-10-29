@@ -25,11 +25,11 @@ type Resolved struct {
 	// Deck is absent unless the entry declares a swipe deck.
 	Deck    *ResolvedDeck   `json:"deck,omitempty"`
 	Summary ResolvedSummary `json:"summary"`
-	// Saving is null unless this installation composed the saving capability and
+	// Saving is absent unless this installation composed the saving capability and
 	// this entry declared itself savable, so a shell draws a save control only for
-	// a non-null one. `savable` is the key, because what it answers is the
+	// a present one. `savable` is the key, because what it answers is the
 	// reader's question and not the author's.
-	Saving *ResolvedSaving `json:"savable"`
+	Saving *ResolvedSaving `json:"savable,omitempty"`
 }
 
 // ResolvedSaving is one entry's saving declaration as a screen reads it: the pair

@@ -110,7 +110,10 @@ func savingControl(r Resource, o Options, row map[string]any) []g.Node {
 			Label: d.Words.Save, Type: "submit", Size: "md", Variant: "outline",
 		}))}
 	if s.Pressed {
-		out = append(out, h.P(h.ID("saving-standing"), h.Aria("live", "polite"), g.Text(d.Words.Saved)))
+		out = append(out, components.FormSentence(components.FormSentenceProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"id": "saving-standing", "aria-live": "polite"}},
+			Text:           d.Words.Saved,
+		}))
 		if s.CanRemove && s.UnsaveURL != "" {
 			// The give-back is quiet for the same reason the keep control is: drawn in
 			// the delete's filled danger it would leave the person who kept a copy with
