@@ -118,7 +118,7 @@ func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
 	// The address is the envelope's own subject attribute, from the one
 	// function that writes both: a bridge that reads a subject out of a document
 	// and subscribes to it lands on the messages it came from.
-	if _, err := j.js.Publish(transport.AppSubject(j.app, ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
+	if _, err := j.js.Publish(transport.SubjectFor(j.app, ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
 		return fmt.Errorf("events: publish %s: %w", ev.Name, err)
 	}
 	return nil
@@ -149,7 +149,7 @@ func wanted(app appname.Name, durable, name string) []nats.SubOpt {
 		nats.BindStream(stream),
 		// Both addresses, while a publisher on the previous build is still
 		// writing events this worker reads. See transport.Filters.
-		nats.ConsumerFilterSubjects(transport.AppFilters(app, name)...),
+		nats.ConsumerFilterSubjects(transport.FiltersFor(app, name)...),
 	}
 }
 
@@ -272,7 +272,7 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	// kind and the consumer is remade. Remaking it replays the stream under
 	// DeliverAll, and platformkit_handled claims make the replay safe — the same
 	// argument two settings above.
-	if want := transport.AppFilters(j.app, name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
+	if want := transport.FiltersFor(j.app, name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
 		immutable = append(immutable, fmt.Sprintf("filter_subject %q filters %v to %v",
 			info.Config.FilterSubject, info.Config.FilterSubjects, want))
 	}
@@ -404,7 +404,7 @@ func (j *jetstream) Observe(ctx context.Context, tenantID uuid.UUID, name string
 	if err := j.stream(ctx); err != nil {
 		return nil, fmt.Errorf("events: observe %s in tenant %s: %w", name, tenantID, err)
 	}
-	subject := transport.AppSubject(j.app, tenantID, name)
+	subject := transport.SubjectFor(j.app, tenantID, name)
 	sub, err := j.js.Subscribe(subject, func(msg *nats.Msg) {
 		var ev transport.Event
 		// An undecodable body is dropped, which is the whole of the handling it gets:

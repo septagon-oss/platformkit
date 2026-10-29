@@ -16,8 +16,8 @@ import (
 // Expand subscribes a SubscribeAll module to every kernel event. The first version of this
 // change published it and the trail never saw it; this is the case that says so.
 func TestTheDenialEventIsAKernelEventTheAuditTrailIsSubscribedTo(t *testing.T) {
-	if !slices.Contains(module.KernelEvents, EventDenied) {
-		t.Fatalf("module.KernelEvents %v does not list %q", module.KernelEvents, EventDenied)
+	if !slices.Contains(module.KernelEventNames(), EventDenied) {
+		t.Fatalf("module.KernelEventNames() %v does not list %q", module.KernelEvents, EventDenied)
 	}
 	if !events.ValidName(EventDenied) {
 		t.Fatalf("%q is not a valid event name", EventDenied)
