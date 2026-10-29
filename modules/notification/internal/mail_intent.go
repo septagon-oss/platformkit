@@ -42,13 +42,17 @@ func (s *Service) Queue(_ context.Context, tx db.Tx[db.Tenant], mail contracts.O
 		return nil, false, err
 	}
 	var id uuid.UUID
+	// available_at is the module's clock and not the column's default: the same
+	// clock writes the ladder's rungs and the drain judges them due, and a row made
+	// due by one clock and judged by the other is a send that waits for a drift
+	// nobody intended. created_at and updated_at stay the database's.
 	err = tx.DB().Raw("INSERT INTO "+intentTable+
-		" (tenant_id, purpose, cause, person_id, notification_id, recipient, subject, body, html, lang, reply_to, state)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"+
+		" (tenant_id, purpose, cause, person_id, notification_id, recipient, subject, body, html, lang, reply_to, state, available_at)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"+
 		" ON CONFLICT (tenant_id, purpose, cause) WHERE cause <> '' DO NOTHING RETURNING id",
 		db.TenantOf(tx).ID, prepared.Purpose, prepared.Cause, prepared.Person, prepared.Notice,
 		prepared.Message.To, prepared.Message.Subject, prepared.Message.Body, prepared.Message.HTML,
-		prepared.Message.Lang, prepared.Message.ReplyTo, contracts.MailIntentQueued).Row().Scan(&id)
+		prepared.Message.Lang, prepared.Message.ReplyTo, contracts.MailIntentQueued, s.clock()).Row().Scan(&id)
 	switch {
 	case err == nil:
 		out, err := readIntent(tx, "id = ?", id)
