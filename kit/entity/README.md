@@ -212,3 +212,44 @@ resolved fields, at the version it already publishes: nothing an older shell cou
 misread was added to it, which is why its number did not move. Native rendering and
 catalogue-version negotiation belong to the native shell. Unknown stored IDs remain visible for native correction rather than being
 silently discarded or enhanced into a valid-looking selection.
+
+## Sketch values
+
+Declare `Drawing entity.Sketch` with `json:"drawing" required:"false" gorm:"type:jsonb"`.
+Do not use JSON omission tags or a competing storage serializer. Reflection publishes
+`type: sketch`; `*entity.Sketch` is also supported. Labels, help, visibility,
+requiredness and immutability use the existing field contracts. Scalar hints,
+defaults, sorting/filtering and image-cover hints are refused at mount.
+
+A sketch is an array of strokes, each a nonempty array of `[x,y,ms]` int64 tuples.
+Coordinates range from 0 to 1000 inclusive; elapsed milliseconds start at zero in
+each stroke, never decrease, and cannot exceed 9007199254740991. The fixed limits
+are 400 strokes and 20,000 total points. Decimal/exponent tokens, malformed tuples
+and values beyond the limits are refused with `ErrInvalidSketch`. JSON and SQL
+preserve stroke order, all integers, unset `null` and explicit empty `[]`.
+`Scan` and `UnmarshalJSON` replace their receiver only on success. Assignment
+aliases slices; copy them before independent editing or concurrent mutation.
+`Sketch.Strokes` validates and returns a deep copy as primitive integer tuples,
+preserving unset versus empty and returning no strokes for an invalid value.
+It satisfies `components.SketchValue` without making components import entity.
+
+`Sketch.Validate` is the common decision for the codec and owning commands.
+`ValidateSketchFields` also checks containing fields marked required. CRUD checks
+it before SQL; command preparation checks it before effects. Adopting commands
+still own grant checks, request transactions, revision locking and outbox events.
+There is no drawing table, permission or domain event in this value package.
+
+### Composition
+
+**Reused** — entity reflection, REST/CRUD validation, the resolved presentation
+policy, forms, shared component styles and generated resource value slots.
+**Added** — the bounded tuple codec, canvas editor and SVG reader, because scalar
+lists and media references cannot represent a drawing's ordered strokes.
+**Made reusable** — one value and its editor/reader for every declaring resource
+or command, including custom screens composed through `ui/forms.Control`.
+
+The kernel catalogue golden contains a reflected sketch field and command input.
+Phone adoption follows with a parser that admits `sketch` and refreshed catalogue
+provenance; existing phone builds with a closed type list reject it. Product
+exposure must wait for that update. Recognition, scoring, signature validity,
+server deadlines and drawing ownership remain product decisions.

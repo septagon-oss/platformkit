@@ -24,7 +24,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Language: r.Resolved.Language, Status: status, Modules: richtextModules(r), Body: []g.Node{
+	return document.View{Title: title, Language: r.Resolved.Language, Status: status, Modules: formModules(r), Body: []g.Node{
 		breadcrumb(o, r.collectionName(), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
@@ -133,12 +133,14 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		}
 		if f.Definition.Widget == "richtext" {
 			f.Editor = richtextEditor(r, row, create, control.Path[0], detail != "")
+		} else if f.Definition.Type == entity.TypeSketch {
+			f.Editor.Submitted = detail != "" || len(errs) > 0
 		}
 		fields = append(fields, f)
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
-		values[name] = scalarText(value)
+		values[name] = formValueString(r.Schema.Fields, name, value)
 	}
 	// An edit carries the observed revision, including after a refused write.
 	// A create has no observed row and quotes nothing.
