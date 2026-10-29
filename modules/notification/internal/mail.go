@@ -54,113 +54,95 @@ func SendMail(svc *Service, hosts contracts.HostLookup, secure bool) events.Subs
 	return events.Subscription{
 		Module: "notification", Name: contracts.EventEmailRequested,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
-			var req contracts.EmailRequested
-			if err := json.Unmarshal(ev.Payload, &req); err != nil {
-				return fmt.Errorf("notification: read the mail request: %w", err)
-			}
-			row, err := crud.Get[*contracts.Notification](tx, req.NotificationID)
-			if errors.Is(err, crud.ErrNotFound) {
-				// Somebody deleted the notice between the request and the send.
-				// That is an answer rather than a failure — there is nothing to
-				// say any more — and it is logged because a mail that silently
-				// never arrives is the hardest kind of bug to be told about.
-				slog.InfoContext(ctx, "notification: the notice was gone before its mail was sent",
-					"notification", req.NotificationID, "recipient", req.Recipient)
-				return record(tx, req.NotificationID, ChannelEmail, OutcomeSuppressed, "the notice was deleted before its mail was sent")
-			}
-			if err != nil {
-				return err
-			}
-			// A delivery the ledger already closed is not sent again. The outbox
-			// redelivers anything it did not see acknowledged — the answer was
-			// lost, the worker died after the send — and a second attempt at a
-			// message the person already received is the thing this table exists to
-			// make visible. Seeing it and *not sending* is the other half of the
-			// partial unique index 000056: the index stops the second row, this
-			// stops the second message.
-			done, err := closed(tx, row.ID, ChannelEmail)
-			if err != nil {
-				return err
-			}
-			if done {
-				slog.InfoContext(ctx, "notification: the mail was already delivered; the redelivery was acknowledged",
-					"notification", row.ID, "recipient", req.Recipient)
-				return nil
-			}
-			to, err := address(ctx, tx, svc.recipients, row.RecipientID)
-			if err != nil {
-				return err
-			}
-			if to == "" {
-				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed, "the recipient had no email address when the mail was due")
-			}
-			base, err := baseURL(ctx, tx, hosts, secure)
-			if err != nil {
-				return err
-			}
-			body, err := render(row, base)
-			if err != nil {
-				return err
-			}
-			html, err := renderHTML(row, base)
-			if err != nil {
-				return err
-			}
-			if svc.mailer == nil || contracts.IsNoTransport(svc.mailer) {
-				// No transport in this installation, said on the delivery ledger
-				// rather than in a log line somebody has to notice: the notice stays
-				// and stays readable in the application, and the mail it asked for is
-				// recorded as suppressed with the reason a reader can act on. The
-				// outbox does not retry what no retry can fix.
-				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
-					"this installation has no mail server: set mail.host")
-			}
-			// The tenant's own sender, read in this transaction — the same one the
-			// notice's decision read, so the mail leaves as the tenant the person's
-			// settings were applied to. Nil is the deployment's own configured
-			// address, which is what an installation that never wired per-tenant
-			// identity has always sent from, and the header says so plainly rather
-			// than borrowing a name nobody claimed.
-			var sender *contracts.Sender
-			if svc.senders != nil {
-				if sender, err = svc.senders.For(ctx, tx); err != nil {
-					return err
-				}
-				if sender == nil {
-					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
-						"this tenant has no sender: mail is refused until its administrator sets one")
-				}
-				// Verification is re-read here, and not carried in from the moment the
-				// notice was raised. The request decided against the sender that existed
-				// then; between that commit and this one the administrator can save a
-				// different domain or selector, which takes the row back to pending, and
-				// a queue is exactly where that gap lives. Signing as a domain that stopped
-				// vouching for itself is the refusal this module exists to make, so the
-				// check is against the row this transaction reads and the answer is terminal:
-				// a failed or suppressed row, not a retry that says the same thing.
-				if sender.Status != contracts.SenderVerified {
-					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
-						"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
-				}
-			}
-			// The mail is owed, so it is written rather than sent. The cause is this
-			// event's own id, which is the identity the outbox keeps across a
-			// redelivery and an operator's replay of the same event: one mail request
-			// is one intent, and the unique partial index of 000076 is what makes that
-			// a fact rather than an intention. ReplyTo is left empty on purpose — the
-			// worker sets it from the tenant's sender when it sends, and a reply
-			// address copied here would be a stale reading of a row the tenant may
-			// still change.
-			_, _, err = svc.Queue(ctx, tx, contracts.OutgoingMail{
-				Purpose: contracts.EventEmailRequested,
-				Cause:   ev.ID.String(),
-				Person:  row.RecipientID,
-				Notice:  row.ID,
-				Message: contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"},
-			})
-			return err
+			return queueRequestedMail(ctx, tx, ev, svc, hosts, secure)
 		},
 	}
+}
+
+func queueRequestedMail(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event, svc *Service, hosts contracts.HostLookup, secure bool) error {
+	var req contracts.EmailRequested
+	if err := json.Unmarshal(ev.Payload, &req); err != nil {
+		return fmt.Errorf("notification: read the mail request: %w", err)
+	}
+	row, err := crud.Get[*contracts.Notification](tx, req.NotificationID)
+	if errors.Is(err, crud.ErrNotFound) {
+		slog.InfoContext(ctx, "notification: the notice was gone before its mail was sent",
+			"notification", req.NotificationID, "recipient", req.Recipient)
+		return record(tx, req.NotificationID, ChannelEmail, OutcomeSuppressed, "the notice was deleted before its mail was sent")
+	}
+	if err != nil {
+		return err
+	}
+	message, wanted, err := requestedMessage(ctx, tx, svc, hosts, secure, req, row)
+	if err != nil || !wanted {
+		return err
+	}
+	_, _, err = svc.Queue(ctx, tx, contracts.OutgoingMail{
+		Purpose: contracts.EventEmailRequested,
+		Cause:   ev.ID.String(),
+		Person:  row.RecipientID,
+		Notice:  row.ID,
+		Message: message,
+	})
+	return err
+}
+
+func requestedMessage(ctx context.Context, tx db.Tx[db.Tenant], svc *Service, hosts contracts.HostLookup, secure bool, req contracts.EmailRequested, row *contracts.Notification) (contracts.Message, bool, error) {
+	// The ledger closes a redelivered event before it can owe another intent.
+	done, err := closed(tx, row.ID, ChannelEmail)
+	if err != nil || done {
+		if done {
+			slog.InfoContext(ctx, "notification: the mail was already delivered; the redelivery was acknowledged",
+				"notification", row.ID, "recipient", req.Recipient)
+		}
+		return contracts.Message{}, false, err
+	}
+	to, err := address(ctx, tx, svc.recipients, row.RecipientID)
+	if err != nil {
+		return contracts.Message{}, false, err
+	}
+	if to == "" {
+		return contracts.Message{}, false, record(tx, row.ID, ChannelEmail, OutcomeSuppressed, "the recipient had no email address when the mail was due")
+	}
+	base, err := baseURL(ctx, tx, hosts, secure)
+	if err != nil {
+		return contracts.Message{}, false, err
+	}
+	body, err := render(row, base)
+	if err != nil {
+		return contracts.Message{}, false, err
+	}
+	html, err := renderHTML(row, base)
+	if err != nil {
+		return contracts.Message{}, false, err
+	}
+	if svc.mailer == nil || contracts.IsNoTransport(svc.mailer) {
+		return contracts.Message{}, false, record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+			"this installation has no mail server: set mail.host")
+	}
+	if err := verifySender(ctx, tx, svc, row); err != nil {
+		return contracts.Message{}, false, err
+	}
+	return contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"}, true, nil
+}
+
+func verifySender(ctx context.Context, tx db.Tx[db.Tenant], svc *Service, row *contracts.Notification) error {
+	if svc.senders == nil {
+		return nil
+	}
+	sender, err := svc.senders.For(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if sender == nil {
+		return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+			"this tenant has no sender: mail is refused until its administrator sets one")
+	}
+	if sender.Status != contracts.SenderVerified {
+		return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+			"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
+	}
+	return nil
 }
 
 // closed reports whether this channel already has a terminal row, which is the

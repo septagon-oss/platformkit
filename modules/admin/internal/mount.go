@@ -254,53 +254,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })
 
-	// What the application answers, asked of the kernel's own recording plus
-	// what this mount is about to add — it is composed last, so nothing else
-	// will record them. A hand-written page counts as much as a generated one,
-	// and there is no second list to keep in step.
-	served := page.Served(s.Recorded())
-	own := ownScreens(served, resources)
-	for _, r := range resources {
-		// A Spec that offers no list has no screen address, so it serves no path:
-		// recording "" and "/new" would call them addresses something answers.
-		if r.Screen != "" {
-			served = append(served, r.Screen, r.Screen+"/new")
-		}
-	}
-	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
-	if composed(app, authcontracts.Namespace) {
-		// Both are served only when the auth module is composed: a forgot page
-		// that posts to a route nobody mounted is a door painted on a wall, and
-		// the composition that has no auth module has no password to forget.
-		served = append(served, a.forgot.at, a.reset.at, a.verify.at)
-	}
-	if sh.Registration != nil {
-		// The page is served only where the composition offers a door it posts
-		// to, which is the same rule that keeps the link off the sign-in card.
-		served = append(served, a.register.at)
-	}
-	if sh.Roles != nil {
-		served = append(served, a.roles.at)
-	}
-	if sh.Sessions != nil {
-		served = append(served, a.sessions.at)
-	}
-	nav := page.NewNavigation(sh.Nav, served, s.Required())
-	// A nav entry nothing answers is a mistake in a module's manifest, and it
-	// is reported here, once, at boot — not rendered as a disabled row that
-	// every person using the application sees for the life of the deployment.
-	for _, entry := range nav.Unserved() {
-		slog.Default().Warn("admin: a nav entry leads to a path no route serves",
-			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
-	}
-	var primary page.Navigation
-	if sh.Primary.Screen != "" {
-		primary = page.NewNavigation([]module.NavEntry{sh.Primary}, served, s.Required())
-		for _, entry := range primary.Unserved() {
-			slog.Default().Warn("admin: the primary action leads to a path no route serves",
-				"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
-		}
-	}
+	own, nav, primary := navigation(s, sh, a, app, resources)
 
 	frameAt := a
 	if sh.Sessions == nil {
@@ -342,6 +296,45 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// screen offers it as checkboxes; auth checks a write against it. The route
 	// itself is the composition's — see app.Options.WorkspaceCatalog.
 	pages{Shell: sh, shell: shell, at: a, nav: nav, primary: primary, resources: resources, declared: s.Permissions()}.mount(s, home, app)
+}
+
+func navigation(s httpx.Surfaces, sh Shell, a addresses, app *httpx.Router, resources []httpx.Resource) (map[string]bool, page.Navigation, page.Navigation) {
+	// Start with what the kernel recorded; this module is composed last, so its
+	// pages are the final additions to the served-address set.
+	served := page.Served(s.Recorded())
+	own := ownScreens(served, resources)
+	for _, r := range resources {
+		if r.Screen != "" {
+			served = append(served, r.Screen, r.Screen+"/new")
+		}
+	}
+	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	if composed(app, authcontracts.Namespace) {
+		served = append(served, a.forgot.at, a.reset.at, a.verify.at)
+	}
+	if sh.Registration != nil {
+		served = append(served, a.register.at)
+	}
+	if sh.Roles != nil {
+		served = append(served, a.roles.at)
+	}
+	if sh.Sessions != nil {
+		served = append(served, a.sessions.at)
+	}
+	nav := page.NewNavigation(sh.Nav, served, s.Required())
+	for _, entry := range nav.Unserved() {
+		slog.Default().Warn("admin: a nav entry leads to a path no route serves",
+			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
+	}
+	var primary page.Navigation
+	if sh.Primary.Screen != "" {
+		primary = page.NewNavigation([]module.NavEntry{sh.Primary}, served, s.Required())
+		for _, entry := range primary.Unserved() {
+			slog.Default().Warn("admin: the primary action leads to a path no route serves",
+				"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
+		}
+	}
+	return own, nav, primary
 }
 
 // frame is the admin's arrangement: the sidebar the caller may follow, the

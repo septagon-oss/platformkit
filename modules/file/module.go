@@ -218,7 +218,7 @@ func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	svc := internal.NewService(deps.Storage, max, quota, deps.MaxImagePixels)
 	sweep, scheduled := fileJobs(deps, svc)
 	library := fileLibrary(deps, svc)
-	return svc, fileModule(deps, svc, library, sweep, scheduled)
+	return svc, fileModule(deps, svc, library, sweep, scheduled), nil
 }
 
 func fileLibrary(deps Deps, svc *internal.Service) internal.LibraryPages {
@@ -275,7 +275,7 @@ func fileModule(deps Deps, svc *internal.Service, library internal.LibraryPages,
 			// so the grid's meter and the upload's refusal cannot be two sums.
 			internal.MountLibrary(s, library)
 		},
-	}, nil
+	}
 }
 
 // fileJobs builds the scheduled work and returns the store-facing sweep for its
