@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -31,6 +32,7 @@ import (
 // names this — the same reason it names SignIn rather than writing the auth
 // module's address down here.
 type Registration struct {
+	OperationID string
 	// Kind is which of the two forms the page renders.
 	Kind RegistrationKind
 	// Address is the composed door the form posts to.
@@ -69,7 +71,8 @@ const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.
 type Shell struct {
-	Nav []module.NavEntry
+	SignInOperationID string
+	Nav               []module.NavEntry
 	// Primary is the action the home leads with, filtered like a nav entry. The
 	// zero value draws none.
 	Primary   module.NavEntry
@@ -167,18 +170,43 @@ func at(r *httpx.Router, rel string) route { return route{rel, r.PagePath(rel)} 
 // another module's name — the tenant switcher lives beside the tenant screens,
 // not beside the shell that renders it — and falls back to the shell's own
 // namespace in a composition that has no such module.
-func inNamespace(app *httpx.Router, module, rel string) route {
-	return at(namespace(app, module), rel)
+//
+// The namespace arrives as the owner's typed value, from the owner's contracts:
+// a page mounted beside someone else's screens names the owner rather than a
+// string that still compiles after that module is renamed or dropped.
+func inNamespace(app *httpx.Router, ns tenancy.Namespace, rel string) route {
+	return at(namespace(app, ns), rel)
 }
 
 // namespace is the router a page of one module mounts on: the workspace, in
 // that module's own namespace — which is where the workspace puts a module's
-// screens, whether this shell generated them or wrote them by hand.
-func namespace(app *httpx.Router, module string) *httpx.Router {
+// screens, whether this shell generated them or wrote them by hand. A
+// composition without that module has no namespace to mount into, and the
+// shell's own router is where the page then lives.
+func namespace(app *httpx.Router, ns tenancy.Namespace) *httpx.Router {
+	if app.Known(ns.Module()) {
+		return app.ForModule(ns.Module())
+	}
+	return app
+}
+
+// namespaceOf is namespace's other door, for a page this shell generates rather
+// than wrote: the register mounts in the namespace of the module whose resource
+// it renders, and that module is read off the catalog this composition built, so
+// no owner's Namespace value exists to hand over. The composition bounded the
+// name when it registered the module, which is the guarantee ForModule checks.
+func namespaceOf(app *httpx.Router, module string) *httpx.Router {
 	if app.Known(module) {
 		return app.ForModule(module)
 	}
 	return app
+}
+
+// composed asks whether this installation has the named module at all. The
+// shell uses it for the pages that only exist beside another module's routes:
+// a link to an address nobody serves is a door painted on a wall.
+func composed(app *httpx.Router, ns tenancy.Namespace) bool {
+	return app.Known(ns.Module())
 }
 
 // Mount is the whole shell. Everything a page shares is built here, once, as a
@@ -204,15 +232,15 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		login:         at(app, "/login"),
 		health:        at(app, "/health"),
 		gallery:       at(app, "/_gallery"),
-		tenants:       inNamespace(app, "tenant", "/tenants"),
-		roles:         inNamespace(app, "auth", "/roles"),
+		tenants:       inNamespace(app, tenantcontracts.Namespace, "/tenants"),
+		roles:         inNamespace(app, authcontracts.Namespace, "/roles"),
 		forgot:        at(app, "/login/forgot"),
-		reset:         inNamespace(app, "auth", "/reset"),
-		verify:        inNamespace(app, "auth", "/verify-email"),
+		reset:         inNamespace(app, authcontracts.Namespace, "/reset"),
+		verify:        inNamespace(app, authcontracts.Namespace, "/verify-email"),
 		register:      at(app, "/register"),
-		sessions:      inNamespace(app, "auth", "/sessions"),
-		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
-		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
+		sessions:      inNamespace(app, authcontracts.Namespace, "/sessions"),
+		sessionRevoke: inNamespace(app, authcontracts.Namespace, "/sessions/revoke"),
+		sessionsRest:  inNamespace(app, authcontracts.Namespace, "/sessions/revoke-rest"),
 	}
 	// Static files are outside every middleware chain: a stylesheet has no
 	// tenant, no session and no transaction to pay for.
@@ -240,7 +268,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		}
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
-	if app.Known("auth") {
+	if composed(app, authcontracts.Namespace) {
 		// Both are served only when the auth module is composed: a forgot page
 		// that posts to a route nobody mounted is a door painted on a wall, and
 		// the composition that has no auth module has no password to forget.
@@ -307,7 +335,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 				"module", r.Module, "entity", r.Entity, "screen", r.Screen)
 			continue
 		}
-		screens.Mount(namespace(app, r.Module), shell, opts, r)
+		screens.Mount(namespaceOf(app, r.Module), shell, opts, r)
 	}
 	// The catalogue as the kernel read it off every manifest, taken here because
 	// this module is composed last and it is therefore complete. The roles

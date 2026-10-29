@@ -60,6 +60,9 @@ func (s Spec[T]) check() {
 	if bad == "" {
 		bad = conditionFault(s.choiceFields())
 	}
+	if bad == "" {
+		bad = formHintsFault(httpx.Resource{Schema: s.Schema(), Present: s.Present, Immutable: s.Immutable, Operations: s.Operations})
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
 	}
@@ -72,7 +75,7 @@ func (s Spec[T]) check() {
 // button leads to a 404, or a guard that guards nothing.
 //
 // The set is checked before the guards because a guard is only coherent beside
-// the routes it guards: R7's refusal of a signed-in write is a sentence about
+// the routes it guards: the refusal of a signed-in write is a sentence about
 // Update and Delete being offered.
 func (s Spec[T]) operationsFault() string {
 	seen := map[httpx.CRUD]bool{}
@@ -88,16 +91,10 @@ func (s Spec[T]) operationsFault() string {
 	// An empty Operations means all five, and nil and an empty slice both mean
 	// it: nothing here refuses it, and nothing here reads it as "none".
 	//
-	// A list with no read is the one withheld verb that leaves a lie on a page that
-	// *is* mounted: ui/resource.table makes the identity column the way into the
-	// record, so every row of a list whose read route is not mounted would link to
-	// the 404 of a place nothing is served. That is the sentence the doors were
-	// gated with, and here it is refused rather than drawn without its links: a
-	// table of rows nobody may open is not a screen with one door missing, it is a
-	// screen that does not work.
-	if s.offers(httpx.CRUDList) && !s.offers(httpx.CRUDRead) {
-		return "offers list without read: the list page links every row to the record route, and a resource that offers no read mounts no record route to answer it"
-	}
+	// A list with no read is legal: the collection page is mounted and its rows
+	// are drawn unlinked, because ui/resource asks whether a record route exists
+	// before it links a row to one. What stays refused is a door drawn in front of
+	// no route, which is what the operation set decides.
 	for _, d := range []struct {
 		field, shorthand string
 		auth             httpx.Auth
@@ -118,28 +115,16 @@ func (s Spec[T]) operationsFault() string {
 			// face has a door of its own — rest.Singleton's Public and Face — and a
 			// route a module mounts itself has both the surface and the sentence.
 			return fmt.Sprintf("%s is public; a Spec serves a tenant's rows, so a public face is rest.Singleton's Face or a route you mount yourself", d.field)
-		case d.auth.NamesAGrant() && d.auth.Feature() == "":
-			// A permission has a shorthand, and two spellings of one guard is two
-			// things to keep honest. With .Needing it is the only spelling that can
-			// say "the grant *and* the plan feature", so that one stays. An operator
-			// permission is refused here too, and its sentence has to name *both*
-			// fields: its shorthand is the permission and the operator flag, and the
-			// declaration beside that flag is the doubling R4 refuses above. Naming
-			// only the permission would send an author to the customer's surface with
-			// the operator's grant in hand.
-			shorthand := strings.TrimSuffix(d.field, "Auth")
-			if d.auth.Operator() {
-				return fmt.Sprintf("%s names an operator permission (%s); say it with %s and Operator%s, which is the spelling kit/app checks against the manifest", d.field, d.auth, shorthand, shorthand)
-			}
-			return fmt.Sprintf("%s names a plain permission (%s); say it with %s, and name a plan feature with .Needing when the grant is not the whole question", d.field, d.auth, shorthand)
 		}
 	}
 	// A write whose row the caller names, under a guard that decides nothing but
 	// membership: the generic PATCH and DELETE reach the row through
 	// crud.RecheckTenant, which asks whose tenant and never whose row. The door
 	// for this is rest.Command, which carries an Auth and runs the module's own
-	// service, where tenancy.RequirePolicy decides the object.
-	if s.WriteAuth.Declared() && !s.WriteAuth.NamesAGrant() && (s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)) {
+	// service, where tenancy.RequirePolicy decides the object. The question is
+	// asked of the answer rather than of the field, because either spelling of a
+	// guard can be the one that names nothing.
+	if auth := s.writeAuth(); !auth.NamesAGrant() && (s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)) {
 		return "mounts update or delete under a write guard that is no grant; a write about a row the caller names is a rest.Command or a permission, because the generic routes check the tenant and not the row"
 	}
 	// Immutable is refused at the create and the patch, and shown read-only in
@@ -182,6 +167,11 @@ func (s Spec[T]) identityFault() string {
 		strings.HasPrefix(s.Path, "/api/v1") || strings.HasPrefix(s.Path, "/app") ||
 		strings.HasPrefix(s.Path, "/ops") || strings.HasPrefix(s.Path, "/public"):
 		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
+	case s.Module == "":
+		// Checked before the event name below, which needs the module to exist:
+		// the fault is the missing name itself, and Mount fills it from the router
+		// a Spec mounts on, so an empty one here is a Spec nobody mounted.
+		bad = fmt.Sprintf("Module %q names no module; Mount fills it from the router the Spec mounts on, and a Spec checked before that names the module its events belong to", s.Module)
 	case !events.ValidName(s.Event(Created)):
 		bad = fmt.Sprintf("Module %q and Entity %q do not make an event name", s.Module, s.Entity)
 	case !s.ReadAuth.Declared() && !httpx.ValidPermission(s.Read):

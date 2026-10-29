@@ -95,6 +95,278 @@
         ]
       },
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": false,
+                "interactions": []
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "publish",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "publish"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "archive",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "archive"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "later",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "later"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -103,7 +375,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -122,6 +393,28 @@
           "summary": []
         },
         "layout": {
+          "forms": {
+            "updateForm": {
+              "layout": "steps",
+              "steps": [
+                {
+                  "key": "unsectioned",
+                  "section": "",
+                  "label": "Details",
+                  "fields": [
+                    "title",
+                    "body",
+                    "rank",
+                    "pinned",
+                    "tags"
+                  ],
+                  "primaryLabel": "Save the note",
+                  "answerField": "",
+                  "emptyLabel": ""
+                }
+              ]
+            }
+          },
           "columns": [
             "title",
             "createdAt",
@@ -159,7 +452,6 @@
         },
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "id",
             "label": "Id",
@@ -178,15 +470,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "createdAt",
             "label": "Created at",
@@ -209,14 +497,11 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
@@ -239,14 +524,11 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "title",
             "label": "Title",
@@ -265,15 +547,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "body",
             "label": "Body",
@@ -292,15 +570,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "status",
             "label": "Status",
@@ -319,13 +593,10 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "open",
@@ -334,7 +605,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "done",
@@ -342,11 +612,9 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
-            "choice": null,
             "figure": null,
             "name": "rank",
             "label": "Rank",
@@ -365,15 +633,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "pinned",
             "label": "Pinned",
@@ -392,15 +656,11 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "tags",
             "label": "Tags",
@@ -419,12 +679,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -450,7 +707,6 @@
               "kind": "enum",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "open",
@@ -459,7 +715,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "done",
@@ -475,7 +730,6 @@
               "kind": "bool",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "true",
@@ -484,7 +738,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "false",
@@ -505,7 +758,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -516,7 +768,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -527,7 +778,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
@@ -573,7 +823,6 @@
           }
         },
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },

@@ -461,6 +461,138 @@
     ],
     "translation": "Juntar à mão"
   },
+  "forms.richtext.bold.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Negrito"
+  },
+  "forms.richtext.italic.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Itálico"
+  },
+  "forms.richtext.link.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Ligação"
+  },
+  "forms.richtext.quote.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Citação"
+  },
+  "forms.richtext.code.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Código em linha"
+  },
+  "forms.richtext.undo.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Anular"
+  },
+  "forms.richtext.redo.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "%[1]s — Repetir"
+  },
+  "forms.field.choose": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "%[1]s: selecione uma opção"
+  },
+  "forms.field.note.immutable": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Alterado por um comando próprio, não por este formulário."
+  },
+  "forms.field.note.entityPicker": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "O identificador do registo relacionado. Ainda não existe um seletor para ele."
+  },
+  "forms.field.note.list": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Separados por vírgulas."
+  },
+  "forms.form.fieldError": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "%[2]s — verifique %[1]s"
+  },
+  "forms.form.fieldsToCorrect": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Campos a corrigir"
+  },
+  "forms.form.cancel": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Cancelar"
+  },
+  "forms.form.submit": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Guardar"
+  },
+  "forms.form.failureTitle": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Não foi possível guardar"
+  },
+  "forms.step.progress": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Passo %d de %d"
+  },
+  "forms.step.back": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Voltar"
+  },
+  "forms.step.cancel": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Cancelar"
+  },
+  "forms.step.correct": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Verifique as suas respostas"
+  },
+  "forms.step.details": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Detalhes"
+  },
+  "forms.step.restart": {
+    "references": [
+      "ui/screens/form_steps.go"
+    ],
+    "translation": "Recomeçar"
+  },
   "forms.choice.order": {
     "references": [
       "ui/forms/choice.go"

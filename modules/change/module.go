@@ -122,6 +122,7 @@ func NewChecked(deps Deps) (module.Module, error) {
 	}
 	return module.Module{
 		Name:       "change",
+		Views:      contracts.Views(deps.Reviews.Read != nil),
 		Migrations: Migrations.Files,
 		PersonalData: personaldata.Implements(personaldata.Table{
 			Name:      "change_proposals",

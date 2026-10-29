@@ -11,10 +11,25 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )
+
+// hint joins the field's own help line with the lines this surface has to say
+// about the control it chose. The choice surface draws its own help paragraph
+// rather than a component's, so the joining happens here; every other control
+// hands its notes to ui/components, which draws one sentence per author.
+func hint(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, " ")
+}
 
 func validateChoiceField(f Field) error {
 	if err := entity.ValidateChoices(f.Definition); err != nil {
@@ -43,7 +58,9 @@ func choiceModelValues(m Model, f entity.Field) []string {
 	return nil
 }
 
-func choiceControl(p ControlProps) g.Node {
+// choiceControl draws one choice's editing surface. anchor names the composed
+// screen's own control for this field; empty leaves a standalone form unmarked.
+func choiceControl(p ControlProps, anchor screen.AnchorRef) g.Node {
 	if err := validateChoiceField(p.Field); err != nil {
 		return g.NodeFunc(func(io.Writer) error { return err })
 	}
@@ -96,7 +113,7 @@ func choiceControl(p ControlProps) g.Node {
 	} else {
 		content = append(content, chips)
 	}
-	return h.FieldSet(content...)
+	return h.FieldSet(append(content, anchorNodes(anchor)...)...)
 }
 
 func choiceItems(p ControlProps, errorText string, word func(string, string) string) g.Node {

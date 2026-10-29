@@ -76,6 +76,8 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+	// SignInOperationID must name SignIn's mounted operation; empty values panic in New.
+	SignInOperationID string
 
 	// PictureSource is the address template a generated `present:image` cell
 	// fetches its bytes from, `{id}` standing for the file id the field holds —
@@ -186,11 +188,15 @@ func New(deps Deps) module.Module {
 func NewChecked(deps Deps) (module.Module, error) {
 	return module.Module{
 		Name:          "admin",
+		Views:         screenViews(deps),
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},
 		Declared:      nil,
 		Nav:           nil,
 		Jobs:          nil,
 		Subscriptions: nil,
+		// The switcher lists every tenant, which is a question no tenant's own
+		// transaction can answer. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "list every tenant for the workspace's tenant switcher"},
 		Routes: func(s httpx.Surfaces) {
 			internal.Mount(s, internal.Shell{
 				Nav:       navigation(deps.Modules),
@@ -206,12 +212,13 @@ func NewChecked(deps Deps) (module.Module, error) {
 				Locale:    deps.Locale,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
-				// tenant switcher lists. See docs/adr/0006.
-				Token:          s.SystemToken(),
-				SignIn:         deps.SignIn,
-				PictureSource:  deps.PictureSource,
-				ComposedSource: deps.ComposedSource,
-				Registration:   deps.Registration,
+				// tenant switcher lists.
+				Token:             s.SystemToken(),
+				SignIn:            deps.SignIn,
+				SignInOperationID: deps.SignInOperationID,
+				PictureSource:     deps.PictureSource,
+				ComposedSource:    deps.ComposedSource,
+				Registration:      deps.Registration,
 			})
 		},
 	}, nil

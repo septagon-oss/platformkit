@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
 // ErrStaleTag is a conditional write whose tag the row has passed: the caller read it
@@ -261,6 +262,10 @@ func (s Spec[T]) removeRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // Authorization is not one of them: a route asks httpx, a seed run asks its
 // Authorizer, and neither answer belongs in this file.
 func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
+	}
 	return s.createRow(ctx, tx, e)
 }
 
@@ -273,10 +278,18 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
+	}
 	return s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
+	}
 	return s.deleteRow(ctx, tx, id, "")
 }
 

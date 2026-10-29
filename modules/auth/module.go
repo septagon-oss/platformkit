@@ -338,6 +338,7 @@ func NewChecked(deps Deps) (contracts.Auth, module.Module, error) {
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
 		Name:       "auth",
+		Views:      contracts.Views(deps.EmailRegistration != nil),
 		Migrations: Migrations.Files,
 		Adopts:     Migrations.Adopts,
 		RulesFrom:  Migrations.RulesFrom,

@@ -11,7 +11,7 @@ import (
 type ResolvedChoice struct {
 	Cardinality     string                `json:"cardinality"`
 	Empty           entity.ChoiceEmpty    `json:"empty"`
-	Maximum         *entity.ChoiceMaximum `json:"maximum"`
+	Maximum         *entity.ChoiceMaximum `json:"maximum,omitempty"`
 	NoPreference    string                `json:"noPreference"`
 	SearchThreshold int                   `json:"searchThreshold"`
 	SearchEnabled   bool                  `json:"searchEnabled"`

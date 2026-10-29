@@ -72,20 +72,52 @@ type Entity = entity.Entity
 // Validator is the optional check run before a storage write.
 type Validator = entity.Validator
 
-// Query is a list request: a page, an order and a set of equality filters.
-// Sort is "field" or "-field" and every name is checked against the entity's
-// schema, so a column name never comes from a caller.
+// Query is a list request: a page, an order, a set of equality filters and a set of
+// comparisons. Sort is "field" or "-field" and every name is checked against the
+// entity's schema, so a column name never comes from a caller.
+//
+// Filter and Where narrow together: one row is on the page when the lifecycle clause
+// and every equality key and every predicate hold. A field named by both is narrowed
+// twice rather than overwritten, and a pair that contradicts answers an empty page
+// rather than a refusal. Where is built by server code from a declaration or a
+// command the module checked; no request parameter of this repository reaches it.
 type Query struct {
 	Limit, Offset int
 	Sort          string
-	Filter        map[string]any
+
+	// Filter is one value per field name, each read as that column's own Go type by
+	// the rule Predicate states: any integer kind for a count, any float or integer
+	// kind for an amount, and exactly string, bool, time.Time or uuid.UUID for a
+	// word, a flag, a moment and an id. A value of another shape refuses the whole
+	// question with ErrInvalid before a statement is sent; none of it is coerced. A
+	// value of the right shape and a number too wide for the column is the driver's
+	// refusal and not ErrInvalid: the rule is on a shape, and a column's width is no
+	// fact this package reads. Where takes the same rule.
+	Filter map[string]any
+
+	// Where is the comparisons of the same question, narrowed with Filter and bound
+	// by the same rule on an operand's shape.
+	Where Where
 }
 
-// The page bounds. A caller that asks for nothing gets a screenful; a caller
-// that asks for everything gets the most a single response should carry.
+// The page and operand bounds. A caller that asks for nothing gets a screenful; a
+// caller that asks for everything gets the most a single response should carry.
 const (
 	DefaultLimit = 50
 	MaxLimit     = 200
+
+	// MaxInValues is how many values one In predicate carries. It is MaxLimit
+	// because the set a caller lists is bounded by the page it came from: a page
+	// reads at most MaxLimit rows, so a list assembled from rows never needs more,
+	// and a caller holding a longer list is asking a question a page cannot answer.
+	MaxInValues = 200
+
+	// MaxQueryValues is how many values one question carries in total — every
+	// equality key plus every predicate operand, at the total and the page built
+	// from the same list. Postgres counts the parameters of a statement in sixteen
+	// bits, so this ceiling is the product's own, set far under the wire's: a
+	// question that trips it is a bug, not a tuning request.
+	MaxQueryValues = 2000
 )
 
 // Get reads one row of this tenant. A soft-deleted row is not found.
@@ -164,17 +196,18 @@ func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
 
 // ListCtx reads a page of this tenant's rows and the total the page came from. The
 // order always ends in the id, so two pages of equal-keyed rows neither overlap nor
-// skip. A filter or a sort naming no field of the schema is refused ErrInvalid
-// before the caller is asked and before anything connects — an unanswerable query is
-// the caller's bug, and it is answered whatever the caller's own state. ctx is
+// skip. A filter, a predicate or a sort naming no field of the schema is refused
+// ErrInvalid before the caller is asked and before anything connects — an
+// unanswerable query is the caller's bug, and it is answered whatever the caller's
+// own state. The total and the page are built from one set of conditions, so a
+// narrowed page and the number under it are answers about one set of rows. ctx is
 // checked before the statements and rebinds nothing — see GetCtx.
 func ListCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
-	fields := Fields[T]()
-	where, args, err := conditions(fields, q.Filter)
+	clauses, err := fragments(Fields[T](), q.Filter, q.Where)
 	if err != nil {
 		return nil, 0, err
 	}
-	order, err := ordering(fields, q.Sort)
+	order, err := ordering(Fields[T](), q.Sort)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -193,8 +226,8 @@ func ListCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]T, 
 	// inherits a LIMIT counts the page instead of the table.
 	build := func() *gorm.DB {
 		g := stmt.Model(blank[T]()).Where("deleted_at IS NULL")
-		for i, w := range where {
-			g = g.Where(w, args[i])
+		for _, c := range clauses {
+			g = g.Where(c.sql, c.args...)
 		}
 		return g
 	}
@@ -424,23 +457,6 @@ func validate(ctx context.Context, e any) error {
 	return nil
 }
 
-// conditions turns a filter map into predicates, one per field, with the column
-// taken from the schema. A name the schema does not know is refused rather than
-// ignored: a filter that silently does nothing returns the wrong page.
-func conditions(fields []Field, filter map[string]any) ([]string, []any, error) {
-	where := make([]string, 0, len(filter))
-	args := make([]any, 0, len(filter))
-	for name, v := range filter {
-		sql, arg, err := predicateSQL(fields, Predicate{Field: name, Op: OpEq, Value: v})
-		if err != nil {
-			return nil, nil, err
-		}
-		where = append(where, sql)
-		args = append(args, arg...)
-	}
-	return where, args, nil
-}
-
 // ordering turns "field" or "-field" into an ORDER BY, always ending in the id
 // so the order is total.
 func ordering(fields []Field, sort string) (string, error) {
@@ -480,7 +496,9 @@ func comparable(fields []Field, name, what string) (Field, error) {
 // Classify names the two database failures a caller can do something about: a
 // row that is not there, and a unique constraint the write contradicts.
 // Everything else is ours and comes back unchanged, to be logged and answered
-// with a 500.
+// with a 500. One failure that is not ours arrives through here too: a value of a
+// kind this package admits that the column's own type cannot hold, which the driver
+// refuses on the way to the wire.
 //
 // It is exported because a module that writes rows this package cannot still
 // has to answer with the same errors. A tenant carries no tenant_id, so it is

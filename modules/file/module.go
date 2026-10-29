@@ -253,6 +253,7 @@ func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	}
 	return svc, module.Module{
 		Name:       "file",
+		Views:      contracts.Views(deps.Library != nil, true, true),
 		Migrations: Migrations.Files,
 		// Bytes go, rows stay, and the certificate names both a subject and an actor.
 		PersonalData: personaldata.Implements(
@@ -300,6 +301,10 @@ func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
 		Subscriptions: []events.Subscription{internal.EraseBlobs(deps.Storage)},
+		// The sweep walks the object store and asks which rows still point at
+		// each blob, which is a question across every tenant: the bytes exist
+		// whether or not the row that owns them does. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "sweep stored bytes no row references, across every tenant"},
 		Routes: func(s httpx.Surfaces) {
 			sweep.Use(s.Ops.SystemToken())
 			internal.RegisterRoutes(s, svc)

@@ -4,6 +4,7 @@
 package screens
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,8 +37,10 @@ func described(r httpx.Resource, o Options) resource.Resource {
 }
 
 func resolvedResource(r httpx.Resource, o Options) resource.Resource {
+	r.Schema.Module = cmp.Or(r.Schema.Module, r.Module)
+	r.Schema.Entity = cmp.Or(r.Schema.Entity, r.Entity)
 	v := resource.Resource{CommandsOnly: r.CommandsOnly, Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
+		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path, ScreenOwner: r.Module}
 	text := func(key, fallback string) string { return o.Text(key, fallback, []any{}...) }
 	language := "en"
 	if o.Locale != nil {
@@ -61,6 +64,17 @@ func writeAvailable(r httpx.Resource, verb httpx.CRUD) bool {
 		return !r.Singleton && r.Delete != nil
 	}
 	return false
+}
+
+// mountedOperations is that same route table in the form the resource carries its
+// offered verbs in, so a policy resolved from it is resolved from what answers.
+func mountedOperations(r httpx.Resource) []httpx.CRUD {
+	words := screenOperations(r)
+	out := make([]httpx.CRUD, 0, len(words))
+	for _, word := range words {
+		out = append(out, httpx.CRUD(word))
+	}
+	return out
 }
 
 // screenOperations keeps an explicit empty set distinct from the all-verbs default.
@@ -87,24 +101,25 @@ func screenOperations(r httpx.Resource) []string {
 // what the renderer needs to build an action without knowing how paths are derived.
 func view(r httpx.Resource, ctx context.Context, at string, o Options) resource.Resource {
 	r.Commands = r.CommandsFor(ctx)
+	// A mounted screen is resolved against the routes this adapter mounts, not against
+	// everything the resource declares: an unwired closure or an undeclared guard
+	// answers no page, so a door in front of one is a refusal with a button on it. An
+	// exported screen has no routes at all and keeps the declared reading.
+	r.Operations = mountedOperations(r)
 	v := resolvedResource(r, o)
-	v.Commands = commands(r.Commands, at)
+	v.Commands = commands(r, r.Commands, at)
 	return v
 }
 
 // commands carries only authorized callable routes into the pure renderer.
 // Execution closures and guards remain with the HTTP adapter.
-func commands(available []httpx.Command, at string) []resource.Command {
+func commands(r httpx.Resource, available []httpx.Command, at string) []resource.Command {
 	out := make([]resource.Command, 0, len(available))
 	for _, c := range available {
 		if c.Run == nil {
 			continue
 		}
-		out = append(out, resource.Command{
-			Bindings: c.Bindings,
-			Verb:     c.Verb, Label: c.Summary, Description: c.Description,
-			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
-		})
+		out = append(out, describedCommand(r, c, at))
 	}
 	return out
 }
@@ -190,7 +205,8 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 
 // historyPanel reads the current row's version series under its existing guard.
 // Unavailable history leaves the record readable; restore requires an authorized
-// command and quotes the revision already displayed.
+// command and quotes the revision already displayed, as the text a count reaches
+// this page in whether or not its form answers as steps.
 func historyPanel(r httpx.Resource, v resource.Resource, ctx context.Context, o Options, at string, row map[string]any) *resource.HistoryPanel {
 	if r.History == nil || r.History.Versions == nil {
 		return nil

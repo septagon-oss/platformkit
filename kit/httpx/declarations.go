@@ -108,7 +108,8 @@ func (a *API) ValidateDeclarations() error {
 		// The surface gate runs last and only when nothing else failed, because
 		// a route that was never declared has no surface either and the two
 		// messages together would read as two faults where one was made.
-		if refusals := a.validateSurfaces(); len(refusals) > 0 {
+		refusals := append(a.untakenDeclarations(), a.validateSurfaces()...)
+		if len(refusals) > 0 {
 			return fmt.Errorf("httpx: %d route(s) contradict the router they are mounted on:\n  %s",
 				len(refusals), strings.Join(refusals, "\n  "))
 		}

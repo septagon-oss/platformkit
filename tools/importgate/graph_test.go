@@ -34,11 +34,11 @@ func testRecords(p goPackage) []goPackage {
 
 func normalizedFixture(t *testing.T, packages []goPackage) *graph {
 	t.Helper()
-	edges, err := normalize(module{Path: product, Dir: "/fixture", Main: true}, packages)
-	if err != nil {
+	g := fixtureGraph()
+	if err := normalize(g, packages); err != nil {
 		t.Fatal(err)
 	}
-	return fixtureGraph(edges...)
+	return g
 }
 
 func TestTestAugmentationPreservesProduction(t *testing.T) {
@@ -49,7 +49,7 @@ func TestTestAugmentationPreservesProduction(t *testing.T) {
 	records := testRecords(p)
 	records = append(records, records...)
 	g := normalizedFixture(t, records)
-	got := decide(g, nil, nil).refused
+	got := decideFixture(g, nil, nil).refused
 	if len(got) != 1 || got[0].rule != "test-helper-in-production" || got[0].context != "production" {
 		t.Fatalf("refusals = %+v", got)
 	}
@@ -61,7 +61,7 @@ func TestTestAugmentationPreservesProduction(t *testing.T) {
 		t.Fatal(report)
 	}
 	p.Imports = nil
-	if got := decide(normalizedFixture(t, testRecords(p)), nil, nil).refused; len(got) != 0 {
+	if got := decideFixture(normalizedFixture(t, testRecords(p)), nil, nil).refused; len(got) != 0 {
 		t.Fatalf("actual tests refused: %+v", got)
 	}
 }
@@ -74,11 +74,11 @@ func TestRebuiltDependencyRetainsProductionProvenance(t *testing.T) {
 	rebuilt := q
 	rebuilt.ForTest, rebuilt.ImportPath = p.ImportPath, q.ImportPath+" ["+p.ImportPath+".test]"
 	records := append(testRecords(p), q, rebuilt)
-	got := decide(normalizedFixture(t, records), nil, nil).refused
+	got := decideFixture(normalizedFixture(t, records), nil, nil).refused
 	if len(got) != 1 || got[0].from != q.ImportPath || got[0].context != "production" {
 		t.Fatalf("refusals = %+v", got)
 	}
-	if _, err := normalize(*p.Module, append(testRecords(p), rebuilt)); err == nil {
+	if err := normalize(fixtureGraph(), append(testRecords(p), rebuilt)); err == nil {
 		t.Fatal("accepted a rebuilt dependency with no ordinary provenance")
 	}
 }
@@ -95,7 +95,7 @@ func TestOrdinaryTestSuffixesGrantNothing(t *testing.T) {
 		if suffix == ".test" {
 			baseRecords = baseRecords[:len(baseRecords)-1]
 		}
-		got := decide(normalizedFixture(t, append(baseRecords, p)), nil, nil).refused
+		got := decideFixture(normalizedFixture(t, append(baseRecords, p)), nil, nil).refused
 		if len(got) != 1 || got[0].from != p.ImportPath || got[0].rule != "test-helper-in-production" {
 			t.Fatalf("%s: %+v", suffix, got)
 		}
@@ -123,7 +123,7 @@ func TestImportMapUsesValidatedSyntheticIdentities(t *testing.T) {
 		t.Fatal(g.edges)
 	}
 	records[1].Imports = []string{q.ImportPath + " [absent.test]"}
-	if _, err := normalize(*p.Module, records); err == nil {
+	if err := normalize(fixtureGraph(), records); err == nil {
 		t.Fatal("accepted an unvalidated annotation")
 	}
 }
@@ -144,7 +144,7 @@ func TestIncompleteGraphIsRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := packageFixture("modules/a")
 			mutate(&p)
-			if _, err := normalize(module{Path: product, Dir: "/fixture"}, []goPackage{p}); err == nil {
+			if err := normalize(fixtureGraph(), []goPackage{p}); err == nil {
 				t.Fatal("accepted incomplete metadata")
 			}
 		})
@@ -153,12 +153,12 @@ func TestIncompleteGraphIsRefused(t *testing.T) {
 	p.TestGoFiles, p.TestImports = []string{"local_test.go"}, []string{"testing"}
 	records := testRecords(p)
 	records[1].Imports = nil
-	if _, err := normalize(*p.Module, records); err == nil || !strings.Contains(err.Error(), "provenance") {
+	if err := normalize(fixtureGraph(), records); err == nil || !strings.Contains(err.Error(), "provenance") {
 		t.Fatalf("missing direct test import was accepted: %v", err)
 	}
 	records = testRecords(p)
 	records[1].Imports = append(records[1].Imports, product+"/modules/b")
-	if _, err := normalize(*p.Module, records); err == nil || !strings.Contains(err.Error(), "provenance") {
+	if err := normalize(fixtureGraph(), records); err == nil || !strings.Contains(err.Error(), "provenance") {
 		t.Fatalf("test import without source provenance was accepted: %v", err)
 	}
 }

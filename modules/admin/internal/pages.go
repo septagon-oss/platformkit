@@ -2,6 +2,9 @@ package internal
 
 import (
 	"context"
+	"github.com/septagon-oss/platformkit/kit/screen"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,7 +45,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	// The sign-in page needs no separate wiring: it is mounted on the shell, and
 	// the shell carries the catalog and the preference resolver.
 	loginShell := p.shell
-	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
+	page.Serve(app, loginShell, page.Route{View: admincontracts.Screen("login"), Targets: []screen.Target{{OperationID: p.SignInOperationID, Method: "POST", Path: p.SignIn}}, ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			var register string
 			if p.Registration != nil {
@@ -51,12 +54,12 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 			return p.login(ctx, r, p.at.dashboard.at, p.SignIn, p.at.forgot.at, register), nil
 		})
 
-	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
+	page.Serve(home, p.shell, page.Route{View: admincontracts.Screen("dashboard"), ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
 		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return p.dashboard(ctx, r.Tenant, resource.Options{Locale: r.Locale}), nil
 		})
 
-	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
+	page.Serve(app, p.shell, page.Route{View: admincontracts.Screen("health"), ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
 		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return healthPage(checks(ctx), resource.Options{Locale: r.Locale}), nil
 		})
@@ -75,7 +78,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	// wildcard they hold in their own tenant must not answer a question about
 	// everybody's. The kernel refuses it before the Authorizer is asked; the
 	// sidebar drops the link for the same reason, so the two agree.
-	page.Serve(namespace(s.App, "tenant"), p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
+	page.Serve(namespace(s.App, tenantcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("tenants"), ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
 		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 			return p.tenants(ctx)
@@ -138,25 +141,7 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		}
 		return locale.Text("admin.login."+key, fallback)
 	}
-	// The two ways in below the form. The forgotten-password link is always offered:
-	// the sentence that refuses a wrong password points at it, and a person who
-	// cannot sign in has to be able to find the way that answers them. The register
-	// link is the composition's to offer — forgetting a password is never an
-	// opt-in, signing up is — and it leads to the page that renders the form, not
-	// to the JSON door, so a person sees what signing up asks for first.
-	ways := []g.Node{
-		components.Link(components.LinkProps{Href: forgot, Variant: "text",
-			Label: text("forgot", "Forgot your password?")}),
-	}
-	// The register link is the one way in that is the composition's to offer:
-	// forgetting a password is never an opt-in, signing up is. It appears when
-	// admin.Deps.Registration is wired and leads to the page that renders the
-	// form, not to the JSON door, so a person sees what signing up asks for
-	// before they are asked for it.
-	if register != "" {
-		ways = append(ways, components.Link(components.LinkProps{Href: register, Variant: "text",
-			Label: text("register", "Create an account")}))
-	}
+	ways := loginWays(text, forgot, register)
 	title := text("title", "Sign in")
 	// Someone pushed off a screen is told to come back to it, not asked who they are.
 	again := text("description", "Use the address this tenant knows you by.")
@@ -181,13 +166,15 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 				Tone: "danger", Message: "", Bordered: true,
 			}),
 			components.Input(components.InputProps{
-				Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("login", "field.email")},
+				Name:           "email", Type: "email", Label: text("email", "Email"), Required: true,
 				Autocomplete: "username", AutoFocus: true, FullWidth: true}),
 			components.Input(components.InputProps{
-				Name: "password", Type: "password", Label: text("password", "Password"), Required: true,
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("login", "field.password")},
+				Name:           "password", Type: "password", Label: text("password", "Password"), Required: true,
 				Autocomplete: "current-password", FullWidth: true}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: title, Type: "submit", FullWidth: true})),
+				components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("login", "action.submit")}, Label: title, Type: "submit", FullWidth: true})),
 		),
 		// The way in for everybody the password did not answer: the person whose
 		// address is not here, the one whose account is waiting to be verified, and
@@ -272,10 +259,12 @@ func registerPage(ctx context.Context, locale *page.Locale, kind RegistrationKin
 			Message: text("sent", "If this address can receive an account email, a link will be sent. Check your inbox."),
 		}),
 		components.Input(components.InputProps{
-			Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
+			ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "field.email")},
+			Name:           "email", Type: "email", Label: text("email", "Email"), Required: true,
 			Autocomplete: "username", AutoFocus: true, FullWidth: true}),
 		components.Input(components.InputProps{
-			Name: "displayName", Type: "text", Label: text("name", "Name"),
+			ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "field.displayName")},
+			Name:           "displayName", Type: "text", Label: text("name", "Name"),
 			Autocomplete: "name", FullWidth: true}),
 	}
 	// The two doors take different fields, and session.js already tells them apart
@@ -283,18 +272,21 @@ func registerPage(ctx context.Context, locale *page.Locale, kind RegistrationKin
 	if kind == RegistrationKindPassword {
 		slots = append(slots,
 			components.Input(components.InputProps{
-				Name: "password", Type: "password", Label: text("password", "Password"), Required: true,
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "field.password")},
+				Name:           "password", Type: "password", Label: text("password", "Password"), Required: true,
 				MinLength: 12, FullWidth: true, Autocomplete: "new-password"}),
 			components.Input(components.InputProps{
-				Name: "confirmation", Type: "password", Label: text("confirmation", "Confirm the password"),
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "field.confirmation")},
+				Name:           "confirmation", Type: "password", Label: text("confirmation", "Confirm the password"),
 				Required: true, MinLength: 12, FullWidth: true, Autocomplete: "new-password"}),
 			components.Checkbox(components.CheckboxProps{
-				Name: "termsAccepted", Label: text("terms", "I accept the terms of this tenant."),
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "field.termsAccepted")},
+				Name:           "termsAccepted", Label: text("terms", "I accept the terms of this tenant."),
 				Required: true}),
 		)
 	}
 	slots = append(slots, components.FormActions(components.FormActionsProps{},
-		components.Button(components.ButtonProps{Label: text("submit", "Create the account"),
+		components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("register", "action.submit")}, Label: text("submit", "Create the account"),
 			Type: "submit", FullWidth: true})))
 	return accessPage(title,
 		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1, Size: 2, Description: text("description",
@@ -303,7 +295,7 @@ func registerPage(ctx context.Context, locale *page.Locale, kind RegistrationKin
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-auth-form": kind.form()}},
 			Action:         action, Label: title,
 		}, slots...),
-		backToSignIn(text, back),
+		backToSignIn(text, back, "register"),
 	)
 }
 
@@ -337,9 +329,9 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 				Tone: "danger", Message: "", Bordered: true,
 			}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: text("submit", "Confirm the address"), Type: "submit", FullWidth: true})),
+				components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("verify-email", "action.submit")}, Label: text("submit", "Confirm the address"), Type: "submit", FullWidth: true})),
 		),
-		backToSignIn(text, back),
+		backToSignIn(text, back, "verify-email"),
 	)
 }
 
@@ -357,7 +349,7 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 // having. ui/assets/js/session.js has known the forgot and reset form kinds since
 // it was written; what was missing was any page that rendered one.
 func (p pages) mountPasswordDoors(app, public *httpx.Router) {
-	if !app.Known("auth") {
+	if !composed(app, authcontracts.Namespace) {
 		return
 	}
 	// Unlike Deps.SignIn, which the composition names because it is the pinned
@@ -372,10 +364,10 @@ func (p pages) mountPasswordDoors(app, public *httpx.Router) {
 	// and answers 307, and ui/assets/js/session.js posts with redirect: "error", so a
 	// person pressing "Forgot your password?" would be told the outcome is unknown and
 	// nothing would be sent. A form posts to the address that answers it.
-	auth, asks := namespace(app, "auth"), namespace(public, "auth")
+	auth, asks := namespace(app, authcontracts.Namespace), namespace(public, authcontracts.Namespace)
 	ask, set := asks.Path("/password/forgot"), auth.Path("/password/reset")
 
-	page.Serve(app, p.shell, page.Route{ID: "admin-forgot", Method: http.MethodGet, Path: p.at.forgot.rel,
+	page.Serve(app, p.shell, page.Route{View: admincontracts.Screen("forgot"), ID: "admin-forgot", Method: http.MethodGet, Path: p.at.forgot.rel,
 		Summary: "Ask for a link to set a new password"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return forgotPassword(ctx, r.Locale, ask, p.at.login.at), nil
@@ -384,7 +376,7 @@ func (p pages) mountPasswordDoors(app, public *httpx.Router) {
 	// The set-password page is mounted in auth's namespace, because it is the
 	// address the auth module mails: its ResetPath is this workspace screen, and a
 	// link that led anywhere else is a mail whose page answers nothing.
-	page.Serve(auth, p.shell, page.Route{ID: "admin-set-password", Method: http.MethodGet, Path: p.at.reset.rel,
+	page.Serve(auth, p.shell, page.Route{View: admincontracts.Screen("set-password"), ID: "admin-set-password", Method: http.MethodGet, Path: p.at.reset.rel,
 		Summary: "Choose a new password"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return setPassword(ctx, r.Locale, set, p.at.login.at, p.at.dashboard.at), nil
@@ -392,7 +384,7 @@ func (p pages) mountPasswordDoors(app, public *httpx.Router) {
 
 	// The same argument for the confirmation link a sign-up mails: auth names
 	// this workspace screen in that mail, so this is where the mount goes.
-	page.Serve(auth, p.shell, page.Route{ID: "admin-verify-email", Method: http.MethodGet, Path: p.at.verify.rel,
+	page.Serve(auth, p.shell, page.Route{View: admincontracts.Screen("verify-email"), ID: "admin-verify-email", Method: http.MethodGet, Path: p.at.verify.rel,
 		Summary: "Confirm an email address"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return verifyEmailPage(ctx, r.Locale, asks.Path("/verify-email"), p.at.login.at), nil
@@ -408,7 +400,7 @@ func (p pages) mountRegistration(app *httpx.Router) {
 	if p.Registration == nil {
 		return
 	}
-	page.Serve(app, p.shell, page.Route{ID: "admin-register", Method: http.MethodGet, Path: p.at.register.rel,
+	page.Serve(app, p.shell, page.Route{View: admincontracts.Screen("register"), Targets: []screen.Target{{OperationID: p.Registration.OperationID, Method: "POST", Path: p.Registration.Address}}, ID: "admin-register", Method: http.MethodGet, Path: p.at.register.rel,
 		Summary: "Create an account"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return registerPage(ctx, r.Locale, p.Registration.Kind, p.Registration.Address, p.at.login.at), nil
@@ -452,12 +444,13 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 				Message: text("sent", "If this address can receive an account email, a link will be sent. Check your inbox."),
 			}),
 			components.Input(components.InputProps{
-				Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("forgot", "field.email")},
+				Name:           "email", Type: "email", Label: text("email", "Email"), Required: true,
 				Autocomplete: "username", AutoFocus: true, FullWidth: true}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: text("submit", "Send me a link"), Type: "submit", FullWidth: true})),
+				components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("forgot", "action.submit")}, Label: text("submit", "Send me a link"), Type: "submit", FullWidth: true})),
 		),
-		backToSignIn(text, back),
+		backToSignIn(text, back, "forgot"),
 	)
 }
 
@@ -526,21 +519,22 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back, home st
 				Tone: "danger", Message: "", Bordered: true,
 			}),
 			components.Input(components.InputProps{
-				Name: "new", Type: "password", Label: text("password", "New password"), Required: true,
+				ComponentProps: components.ComponentProps{Attrs: screenAnchor("set-password", "field.new")},
+				Name:           "new", Type: "password", Label: text("password", "New password"), Required: true,
 				MinLength: 12, AutoFocus: true, FullWidth: true, Autocomplete: "new-password"}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: text("submit", "Save the password"), Type: "submit", FullWidth: true})),
+				components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("set-password", "action.submit")}, Label: text("submit", "Save the password"), Type: "submit", FullWidth: true})),
 		),
-		backToSignIn(text, back),
+		backToSignIn(text, back, "set-password"),
 	)
 }
 
 // backToSignIn is the way out of a bare page. A person who followed a link they
 // were not expecting, or whose address is not known here, is not trapped on the
 // page that refused them.
-func backToSignIn(text func(key, fallback string) string, back string) g.Node {
+func backToSignIn(text func(key, fallback string) string, back, view string) g.Node {
 	return components.Flex(components.FlexProps{Direction: "row", Gap: "2"},
-		components.Link(components.LinkProps{Href: back, Variant: "text",
+		components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor(view, "action.back")}, Href: back, Variant: "text",
 			Label: text("signIn", "Back to sign in")}))
 }
 
@@ -589,7 +583,7 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 			}
 			body = append(body, components.Flex(components.FlexProps{Gap: "3", Align: "center", Wrap: true},
 				components.Badge(components.BadgeProps{Label: message, Tone: tone, Dot: true}),
-				components.Link(components.LinkProps{Href: p.at.health.at, Label: o.Text("admin.workspace.review_health", "Review health"), Variant: "text"})))
+				components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: screenAnchor("dashboard", "action.health")}, Href: p.at.health.at, Label: o.Text("admin.workspace.review_health", "Review health"), Variant: "text"})))
 		}
 	}
 	if len(sections) == 0 {
