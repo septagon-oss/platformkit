@@ -32728,6 +32728,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_refused_stale_finish_preserves_progress_test.go",
+   "id": "kit/rest/guided_refused_stale_finish_preserves_progress_test.go#TestRefusedStaleGuidedFinishPreservesProgress",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestRefusedStaleGuidedFinishPreservesProgress",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_rest_page_past_an_hour_test.go",
    "id": "kit/rest/guided_rest_page_past_an_hour_test.go#TestTheRestPagePastAnHourSaysItsLengthInHours",
    "kind": "go",
@@ -84383,7 +84402,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2305,
+  "files": 2306,
   "forge_runs": [
    408,
    413,
@@ -84417,7 +84436,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3656,
+   "behaviour": 3657,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84436,9 +84455,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4278,
+  "rows": 4279,
   "tiers": {
-   "merge": 2647,
+   "merge": 2648,
    "nightly": 110,
    "push": 1521
   },
@@ -84446,13 +84465,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2060,
+   "keep": 2061,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3892,
+   "keep": 3893,
    "keep-rewrite": 170,
    "merge": 216
   }
