@@ -107,9 +107,16 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// work of its own: it is what the other modules' periodic work walks.
 		Jobs:          nil,
 		Subscriptions: nil,
+		// A tenant belongs to no tenant: the directory, the creation and the
+		// suspension are all asked from the installation, and no row-level
+		// security policy can answer them. The declaration is what lets the
+		// kernel mint this module's own credential below, so the audit trail of
+		// every cross-tenant transaction says "tenant" and this sentence.
+		// See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "create, list and suspend tenants, which belong to no tenant"},
 		// The one call in the application that takes cross-tenant access, at
 		// the one moment the kernel offers it, in the manifest a reviewer is
-		// already reading. See docs/adr/0006.
+		// already reading.
 		Routes: func(s httpx.Surfaces) {
 			internal.RegisterRoutes(s.Ops, internal.RouteServices{Directory: svc, Creation: svc, Lifecycle: svc, Hosts: svc, Locale: svc, OIDC: svc, SAML: svc}, deps.Invite, s.SystemToken())
 		},

@@ -456,10 +456,10 @@ func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + 
 // place for this too.
 var systemToken = syscap.NewSystemToken("a test writing across tenants")
 
-// SystemToken is that capability, for a test of something the application hands
-// one to: a module's control-plane routes take api.SystemToken(), and a job
-// that has to cross tenants takes it in Module.Routes, so a test of either has
-// to be able to stand where the kernel stands.
+// SystemToken is that capability, for a test that has to stand where a kernel
+// runner stands: one that opens a cross-tenant transaction directly, or runs the
+// sweep a module's declared SystemAccess credential opens in production. A
+// module's control-plane routes take that per-module credential, not this one.
 func SystemToken() tenancy.SystemToken { return systemToken }
 
 // System runs fn in a cross-tenant transaction, for a test that has to reach

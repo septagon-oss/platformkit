@@ -50,7 +50,8 @@ func widthsMount(t *testing.T, store contracts.Storage) (chi.Router, *db.Conn, m
 	_, conn := dbtest.Schema(t, file.Migrations)
 	hosts := map[string]tenancy.Tenant{host: acme}
 	api, router := httpx.New(httpx.Options{
-		Cache: cache.Memory("pkit"), PublicHost: host, Tenants: caller{hosts: hosts},
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"), PublicHost: host, Tenants: caller{hosts: hosts},
 		Conn: conn, Authorize: caller{hosts: hosts},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil

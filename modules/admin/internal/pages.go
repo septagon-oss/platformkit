@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/septagon-oss/platformkit/kit/screen"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,7 +78,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	// wildcard they hold in their own tenant must not answer a question about
 	// everybody's. The kernel refuses it before the Authorizer is asked; the
 	// sidebar drops the link for the same reason, so the two agree.
-	page.Serve(namespace(s.App, "tenant"), p.shell, page.Route{View: admincontracts.Screen("tenants"), ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
+	page.Serve(namespace(s.App, tenantcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("tenants"), ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
 		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 			return p.tenants(ctx)
@@ -348,7 +349,7 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 // having. ui/assets/js/session.js has known the forgot and reset form kinds since
 // it was written; what was missing was any page that rendered one.
 func (p pages) mountPasswordDoors(app, public *httpx.Router) {
-	if !app.Known("auth") {
+	if !composed(app, authcontracts.Namespace) {
 		return
 	}
 	// Unlike Deps.SignIn, which the composition names because it is the pinned
@@ -363,7 +364,7 @@ func (p pages) mountPasswordDoors(app, public *httpx.Router) {
 	// and answers 307, and ui/assets/js/session.js posts with redirect: "error", so a
 	// person pressing "Forgot your password?" would be told the outcome is unknown and
 	// nothing would be sent. A form posts to the address that answers it.
-	auth, asks := namespace(app, "auth"), namespace(public, "auth")
+	auth, asks := namespace(app, authcontracts.Namespace), namespace(public, authcontracts.Namespace)
 	ask, set := asks.Path("/password/forgot"), auth.Path("/password/reset")
 
 	page.Serve(app, p.shell, page.Route{View: admincontracts.Screen("forgot"), ID: "admin-forgot", Method: http.MethodGet, Path: p.at.forgot.rel,
