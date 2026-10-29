@@ -201,6 +201,11 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	}
 	svc := internal.NewService(deps.Storage, max, quota, deps.MaxImagePixels)
 	sweep, scheduled := fileJobs(deps, svc)
+	library := fileLibrary(deps, svc)
+	return svc, fileModule(deps, svc, library, sweep, scheduled)
+}
+
+func fileLibrary(deps Deps, svc *internal.Service) internal.LibraryPages {
 	// The library's page is composed over the service this function just built, so
 	// the meter on it and the refusal in an upload are the same sum, and the grid
 	// reads through the same row-level policy the list door answers by. No chrome
@@ -212,7 +217,11 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			Read: svc, Shown: svc, Remove: svc, Add: svc, Widths: svc,
 		}
 	}
-	return svc, module.Module{
+	return library
+}
+
+func fileModule(deps Deps, svc *internal.Service, library internal.LibraryPages, sweep *internal.Reconcile, scheduled []jobs.Job) module.Module {
+	return module.Module{
 		Name:       "file",
 		Views:      contracts.Views(deps.Library != nil, true, true),
 		Migrations: Migrations.Files,
