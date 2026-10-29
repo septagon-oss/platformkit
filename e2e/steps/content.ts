@@ -38,7 +38,9 @@ export async function makePublisher(page: Page, email: string, password: string)
   });
   expect(invited.status(), await invited.text()).toBe(201);
   const { id } = await invited.json();
-  const seeded = await page.request.post(`/api/v1/user/users/${id}/set-password`, { data: { password } });
+  const seeded = await page.request.post(`/api/v1/user/users/${id}/set-password`, {
+    data: { password, expectedRevision: 1 },
+  });
   expect(seeded.status(), await seeded.text()).toBe(200);
 }
 

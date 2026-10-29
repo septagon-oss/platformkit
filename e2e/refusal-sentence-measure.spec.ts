@@ -67,7 +67,7 @@ test('the page that says an access request was sent keeps its sentences to a rea
   expect(invited.status(), await invited.text()).toBe(201);
   const id = (await invited.json()).id as string;
   const activated = await page.request.post(`/api/v1/user/users/${id}/set-password`, {
-    data: { password: member.password },
+    data: { password: member.password, expectedRevision: 1 },
   });
   expect(activated.status(), await activated.text()).toBe(200);
 

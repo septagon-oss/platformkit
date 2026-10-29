@@ -43,7 +43,7 @@ test('a person whose role opens one screen is landed on a page that offers it', 
   expect(invited.status(), await invited.text()).toBe(201);
   const id = (await invited.json()).id as string;
   const activated = await page.request.post(`/api/v1/user/users/${id}/set-password`, {
-    data: { password: person.password },
+    data: { password: person.password, expectedRevision: 1 },
   });
   expect(activated.status(), await activated.text()).toBe(200);
 

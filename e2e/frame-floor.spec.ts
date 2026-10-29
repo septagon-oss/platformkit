@@ -59,7 +59,7 @@ test.beforeAll(async ({ browser }) => {
   memberId = (await invited.json()).id as string;
   expect(memberId).toBeTruthy();
   const activated = await page.request.post(`/api/v1/user/users/${memberId}/set-password`, {
-    data: { password: member.password },
+    data: { password: member.password, expectedRevision: 1 },
   });
   expect(activated.status(), await activated.text()).toBe(200);
 

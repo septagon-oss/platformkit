@@ -250,7 +250,7 @@ test('a passkey the browser enrolled answers its owner\u2019s password and opens
   const created = (await invited.json()).id as string;
   expect(created).toBeTruthy();
   expect((await page.request.post(`/api/v1/user/users/${created}/set-password`, {
-    data: { password: personPassword },
+    data: { password: personPassword, expectedRevision: 1 },
   })).status()).toBe(200);
 
   // The person, in a browser of their own, with a device of their own.

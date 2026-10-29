@@ -38,7 +38,7 @@ test('a person who added a passkey on the sessions screen finishes a password si
   expect(invited.status(), await invited.text()).toBe(201);
   const id = (await invited.json()).id as string;
   expect((await page.request.post(`/api/v1/user/users/${id}/set-password`, {
-    data: { password },
+    data: { password, expectedRevision: 1 },
   })).status()).toBe(200);
 
   const context = await browser.newContext();

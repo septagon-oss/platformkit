@@ -99,7 +99,7 @@ test('one ask tells each holder of role management once, and both kernel doors a
   expect(invitedHolder.status(), await invitedHolder.text()).toBe(201);
   const holderID = (await invitedHolder.json()).id as string;
   const activatedHolder = await page.request.post(`/api/v1/user/users/${holderID}/set-password`, {
-    data: { password: holder.password },
+    data: { password: holder.password, expectedRevision: 1 },
   });
   expect(activatedHolder.status(), await activatedHolder.text()).toBe(200);
 
@@ -109,7 +109,7 @@ test('one ask tells each holder of role management once, and both kernel doors a
   expect(invitedAsker.status(), await invitedAsker.text()).toBe(201);
   const askerID = (await invitedAsker.json()).id as string;
   const activatedAsker = await page.request.post(`/api/v1/user/users/${askerID}/set-password`, {
-    data: { password: asker.password },
+    data: { password: asker.password, expectedRevision: 1 },
   });
   expect(activatedAsker.status(), await activatedAsker.text()).toBe(200);
 

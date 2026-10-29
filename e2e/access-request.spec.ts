@@ -58,7 +58,9 @@ test('a refused person asks from the page that refused them and is granted', asy
   const id = (await invited.json()).id as string;
   expect(id).toBeTruthy();
 
-  const activated = await page.request.post(`/api/v1/user/users/${id}/set-password`, { data: { password: member.password } });
+  const activated = await page.request.post(`/api/v1/user/users/${id}/set-password`, {
+    data: { password: member.password, expectedRevision: 1 },
+  });
   expect(activated.status(), await activated.text()).toBe(200);
 
   // The person who holds nothing, in a browser of their own.

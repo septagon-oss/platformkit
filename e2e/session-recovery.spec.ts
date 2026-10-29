@@ -179,7 +179,7 @@ test('an account changed in another tab cannot receive the original form write',
   expect(invited.status()).toBe(201);
   const second = await invited.json();
   expect((await request.post(`/api/v1/user/users/${second.id}/set-password`, {
-    data: { password: secondPassword },
+    data: { password: secondPassword, expectedRevision: 1 },
   })).status()).toBe(200);
   await page.goto(`${tasks}/new`);
   const title = 'Keep the original task author';
