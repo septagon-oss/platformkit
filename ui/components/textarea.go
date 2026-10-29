@@ -9,6 +9,8 @@ import (
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Textarea renders TextareaProps as a labelled multi-line field.
@@ -26,6 +28,57 @@ func Textarea(p TextareaProps) g.Node {
 	} else {
 		cl = cl.Merge(clTextareaManual)
 	}
+	rows, minRows, maxRows := textareaDimensions(p)
+	showCount := p.ShowCount || p.MaxLength > 0
+	area := textareaControlAttrs(p, id, cl, rows)
+	area = textareaEnhancementAttrs(p, area, minRows, maxRows, showCount)
+	area = textareaValue(p.Value, area)
+
+	rootClass := clFieldWrap
+	if p.FullWidth {
+		rootClass = clFieldWrapFull
+	}
+	field := []g.Node{
+		h.Class(rootClass.Compile()),
+		g.Attr("data-component", "textarea"),
+	}
+	if p.Hidden {
+		field = append(field, g.Attr("hidden"))
+	}
+	if showCount {
+		field = append(field, g.Attr("data-controller", "textarea-counter"))
+	}
+	if p.Label != "" {
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
+	}
+	field = append(field, h.Textarea(area...))
+	supportingNode := textareaSupporting(p, id)
+	if showCount {
+		current := utf8.RuneCountInString(p.Value)
+		count := itoa(current)
+		if p.MaxLength > 0 {
+			count += " / " + itoa(p.MaxLength)
+		}
+		field = append(field, h.Div(
+			h.Class(clTextareaMeta.Compile()),
+			supportingNode,
+			h.Span(
+				h.Class(clTextareaCounter.Compile()),
+				g.Attr("data-textarea-counter-target", "display"),
+				g.Attr("aria-live", "polite"),
+				g.Attr("aria-atomic", "true"),
+				g.Text(count),
+			),
+		))
+	} else if supportingNode != nil {
+		field = append(field, supportingNode)
+	}
+	return h.Div(field...)
+}
+
+func textareaDimensions(p TextareaProps) (int, int, int) {
 	rows := p.Rows
 	if rows <= 0 {
 		rows = 4
@@ -41,12 +94,15 @@ func Textarea(p TextareaProps) g.Node {
 	if p.AutoResize {
 		rows = minRows
 	}
-	showCount := p.ShowCount || p.MaxLength > 0
+	return rows, minRows, maxRows
+}
+
+func textareaControlAttrs(p TextareaProps, id string, cl style.ClassList, rows int) []g.Node {
 	describedBy := make([]string, 0, 2)
 	if id != "" && p.ErrorMessage != "" {
 		describedBy = append(describedBy, id+"-error")
 	}
-	if id != "" && p.HelperText != "" {
+	if id != "" && hasHelp(p.HelperText, p.HelperNotes) {
 		describedBy = append(describedBy, id+"-helper")
 	}
 	area := []g.Node{
@@ -90,6 +146,10 @@ func Textarea(p TextareaProps) g.Node {
 	if p.Label == "" && p.Name != "" {
 		area = append(area, g.Attr("aria-label", p.Name))
 	}
+	return area
+}
+
+func textareaEnhancementAttrs(p TextareaProps, area []g.Node, minRows, maxRows int, showCount bool) []g.Node {
 	actions := make([]string, 0, 2)
 	if p.AutoResize {
 		area = append(area,
@@ -106,32 +166,19 @@ func Textarea(p TextareaProps) g.Node {
 	if len(actions) > 0 {
 		area = append(area, g.Attr("data-action", strings.Join(actions, " ")))
 	}
+	return area
+}
+
+func textareaValue(value string, area []g.Node) []g.Node {
 	// HTML normalizes CR/LF and consumes the first LF after <textarea>.
-	if strings.HasPrefix(p.Value, "\n") || strings.HasPrefix(p.Value, "\r") {
+	if strings.HasPrefix(value, "\n") || strings.HasPrefix(value, "\r") {
 		area = append(area, g.Text("\n"))
 	}
-	area = append(area, g.Text(p.Value))
+	area = append(area, g.Text(value))
+	return area
+}
 
-	rootClass := clFieldWrap
-	if p.FullWidth {
-		rootClass = clFieldWrapFull
-	}
-	field := []g.Node{
-		h.Class(rootClass.Compile()),
-		g.Attr("data-component", "textarea"),
-	}
-	if p.Hidden {
-		field = append(field, g.Attr("hidden"))
-	}
-	if showCount {
-		field = append(field, g.Attr("data-controller", "textarea-counter"))
-	}
-	if p.Label != "" {
-		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
-			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
-		}))
-	}
-	field = append(field, h.Textarea(area...))
+func textareaSupporting(p TextareaProps, id string) g.Node {
 	var supporting []g.Node
 	if p.ErrorMessage != "" {
 		errorAttrs := []g.Node{h.Class(clFieldErr.Compile()), h.Role("alert")}
@@ -140,12 +187,12 @@ func Textarea(p TextareaProps) g.Node {
 		}
 		supporting = append(supporting, h.P(append(errorAttrs, g.Text(p.ErrorMessage))...))
 	}
-	if p.HelperText != "" {
+	if hasHelp(p.HelperText, p.HelperNotes) {
 		helperAttrs := []g.Node{h.Class(clHelp.Compile())}
 		if id != "" {
 			helperAttrs = append(helperAttrs, h.ID(id+"-helper"))
 		}
-		supporting = append(supporting, h.P(append(helperAttrs, g.Text(p.HelperText))...))
+		supporting = append(supporting, helpParagraph(p.HelperText, p.HelperNotes, helperAttrs...))
 	}
 	var supportingNode g.Node
 	if len(supporting) == 1 {
@@ -153,25 +200,5 @@ func Textarea(p TextareaProps) g.Node {
 	} else if len(supporting) > 1 {
 		supportingNode = h.Div(h.Class(clTextareaSupporting.Compile()), g.Group(supporting))
 	}
-	if showCount {
-		current := utf8.RuneCountInString(p.Value)
-		count := itoa(current)
-		if p.MaxLength > 0 {
-			count += " / " + itoa(p.MaxLength)
-		}
-		field = append(field, h.Div(
-			h.Class(clTextareaMeta.Compile()),
-			supportingNode,
-			h.Span(
-				h.Class(clTextareaCounter.Compile()),
-				g.Attr("data-textarea-counter-target", "display"),
-				g.Attr("aria-live", "polite"),
-				g.Attr("aria-atomic", "true"),
-				g.Text(count),
-			),
-		))
-	} else if supportingNode != nil {
-		field = append(field, supportingNode)
-	}
-	return h.Div(field...)
+	return supportingNode
 }

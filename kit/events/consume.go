@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -85,12 +86,30 @@ func deliverSubscription(ctx context.Context, conn *db.Conn, s Subscription, ev 
 	ctx = request.WithOperation(ctx, ev.Operation)
 	request.DeferOperation(ctx)
 	ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
+	// The pool this delivery runs on, put on the context of its work. A deferred
+	// effect records what became of it after the transaction that produced it has
+	// ended, and the only pool it may record that on is this one. See Defer.
+	ctx = db.WithConn(ctx, conn)
 	// One span per delivery, on the trace of the work that published the
 	// event rather than of the worker that woke up. See trace.go.
 	ctx, span := startDelivery(ctx, ev)
 	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return handleClaim(ctx, tx, s, ev, durable, older)
 	})
+	if errors.Is(err, db.ErrEffectNotRun) {
+		// The rows committed and an effect deferred past the commit did not run. The
+		// claim marks the delivery done and it is not done, so the claim goes back and
+		// the failure goes to the transport: the work comes round on its own ladder
+		// instead of acking over an effect nobody ran. See Defer.
+		slog.ErrorContext(ctx, "events: delivery committed its rows and its deferred effect did not run, releasing the claim",
+			"event", ev.Name, "id", ev.ID, "durable", durable, "error", err)
+		if rerr := releaseClaim(ctx, conn, ev.ID, durable); rerr != nil {
+			// Nothing left to do but say it: the claim stands, so the event is
+			// terminal until an operator reviews it, which is what replay is for.
+			slog.ErrorContext(ctx, "events: the claim of an unfinished delivery is still held",
+				"event", ev.Name, "id", ev.ID, "durable", durable, "error", rerr)
+		}
+	}
 	endSpan(span, err)
 	return err
 }

@@ -204,15 +204,12 @@ func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *ht
 // Start, because the bus worth watching is the one the composition's own relay
 // publishes the outbox onto.
 //
-// One transport is the point, not one dial saved. The in-process transport delivers
-// inside one process, so a transport the door dials for itself is a bus nobody ever
-// publishes to: the connection would open, send its resync, and be told nothing
-// forever. Over a broker two dials still reach the same subjects, which is why the
-// mistake is invisible in the deployment that names one and total in the default.
-//
-// fill hands over the transport Start opened, which that Runtime owns and closes.
-// open is for the role with no worker half, which has none to be handed and still
-// needs one to watch, and what this holder dials is what release gives back.
+// One transport is the point, not one dial saved: the in-process transport
+// delivers inside one process, so a transport the door dials for itself is a bus
+// nobody ever publishes to. fill hands over the transport Start opened, which that
+// Runtime owns and closes; open is for the role with no worker half, which has
+// none to be handed and still needs one to watch, and what this holder dials is
+// what release gives back.
 type heldTransport struct {
 	mu       sync.Mutex
 	observed events.Transport

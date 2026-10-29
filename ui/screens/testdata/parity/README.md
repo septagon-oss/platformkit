@@ -42,3 +42,19 @@ another language reads the same files.
   file. Re-review, then rewrite the hashes with the reviewer's name.
 - `expected` is written by hand and reviewed; it is never produced by running the
   resolver. A fixture update is a review.
+
+## Web assertions
+
+[policy_html_test.go](../../policy_html_test.go) renders each fixture through
+`ui/resource` and parses semantic HTML. [web/expectations.json](web/expectations.json)
+adds hand-written column labels, sort labels and explicitly synthetic probes for
+values the original fixture leaves unspecified. Each companion pins the reviewed
+source input/expected hashes. Its author and pending independent review are stated
+separately; it does not replace or claim ownership of the reviewed corpus. The
+corpus is shared, so the test names each fixture whose HTML it leaves unasserted
+and refuses any other gap, or a companion naming no fixture of the corpus.
+
+The tests compare titles, membership, field and option order, command copy/flags,
+query values, pill tones and picture references. Supplemental value, mounted-query
+and browser tests cover clocks, exact numbers, authorization and rejected input;
+the original 17 fixtures are not claimed to cover those cases by themselves.

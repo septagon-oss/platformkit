@@ -13,22 +13,18 @@ var ErrNoProvider = errors.New("locale: no machine translation is configured")
 
 // Translator asks an external service for a draft of text in another language.
 //
-// It is one method, because that is the whole request, and it is optional,
-// because a machine translation nobody asked for is a liability: a composition
-// with no translator has no client object, draws no button, and answers the
-// route with a refusal naming the setting that would make it exist. Off by
-// default is not a flag here — the interface is nil unless an operator writes a
-// provider's URL down.
+// It is one method, because that is the whole request, and it is optional, since
+// a machine translation nobody asked for is a liability: with no translator a
+// composition has no client object, draws no button, and answers the route with a
+// refusal naming the setting that would make it exist. The interface stays nil
+// until an operator writes a provider's URL down.
 //
-// What a draft is worth is decided by a person, not by this interface: a saved
-// machine draft is labelled and is never served on a public page until
-// somebody marks it reviewed. That rule is enforced where the row is read, not
-// here, so no caller can forget it.
+// A saved machine draft is labelled and never served on a public page until
+// somebody marks it reviewed — enforced where the row is read, not here, so no
+// caller can forget it.
 //
-// The provider is a separate program reached over HTTP — LibreTranslate is the
-// adapter this repository ships — which is what keeps an AGPL service out of
-// this Apache-2.0 binary: nothing is linked, nothing is vendored, and the only
-// coupling is a URL and a JSON body.
+// The provider is a separate program over HTTP, which keeps an AGPL service out
+// of this Apache-2.0 binary: a URL and a JSON body are the whole coupling.
 type Translator interface {
 	// Translate returns the text as the provider renders it in the target
 	// language. An error is the provider's own words where it has any: the

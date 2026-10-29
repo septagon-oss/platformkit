@@ -15,13 +15,28 @@ explains the boundaries; this page maps the packages and the rules the gates enf
 | [ui](ui.go) | `Compose`, `Sheet`, `Controllers`, `Assets`: what a shell serves. | design, ui/style, ui/components. |
 | [ui/forms](forms/README.md) | Portable entity forms without a router or a database. | kit/entity, ui/components, ui/components/examples. |
 | [ui/document](document/document.go) | Chrome, a plain Request, View, `Document`, `Render`, the recovery notices: an HTML document as values. | kit/locale, ui, ui/components/examples. |
-| [ui/resource](resource/resource.go) | List, detail and form screens rendered from an entity schema and plain rows. | kit/entity, kit/entity/display, ui/forms, ui/document. |
+| [ui/resource](resource/README.md) | List, detail and form screens rendered from resolved policy and plain rows. | kit/entity, kit/entity/display, kit/entity/present, ui/forms, ui/document. |
 | [ui/page](page/README.md) | The typed Request, `Serve`, `Render` into an `httpx.Page`, navigation, the locale seam; aliases the document types. | kit/httpx, ui/document. |
 | [ui/screens](screens/render.go) | The screens of an `httpx.Resource` behind `page.Serve` — up to the seven of a collection, fewer where its operation set withholds a verb, the two of a resource that is not one, and one POST per declared command — and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
 | [ui/export](export/README.md) | Snapshots, DTCG tokens, proposals, the Storybook composition. | ui, ui/components/examples. |
 | [ui/source](source/source.go) | Development-time persistence of proposals into Go source. | ui/export, go/packages, dst. |
 | [ui/storybook](storybook/README.md) | The optional Storybook.js build (Node). | An `export.Export` snapshot. |
 | [ui/assets/js](assets/js/) | htmx and the browser controllers `ui.Controllers` lists. | — |
+
+## Composition
+
+**Reused** — `style.For`, component renderers and captures, `forms.Control`,
+`resource.List`/`FormExample`, `page.Serve` and `screens.Mount` remain the shared
+presentation path. **Added** — private rendering, validation and projection steps
+within those packages, because the existing owners already carry the capability.
+**Made reusable** — focused steps for controls, grouped tables, token projection
+and request rendering, with the same public contracts and output.
+
+Class compilation is organized by family; component Props and class-list
+inventories have separate source files. Resource [lists](resource/list.go),
+[details](resource/detail.go) and [forms](resource/form.go) share the existing
+[resource contract](resource/resource.go). The package boundaries above stay the
+same, so consumers keep their imports and constructors.
 
 ## Dependency rules
 
@@ -32,7 +47,7 @@ and refuses growth beyond these recorded closures:
 - `ui/forms` reaches kit/entity, design, ui/css, ui/style, ui/icon,
   ui/components, ui/components/examples and gomponents, nothing else.
 - `ui/document` adds kit/locale and `ui` to that list; `ui/resource` adds
-  kit/entity/display, ui/forms and ui/document. Neither reaches kit/db,
+  kit/entity/display, kit/entity/present, ui/forms and ui/document. Neither reaches kit/db,
   net/http or a module: a document is values, and a screen is a schema plus
   the rows a caller read.
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
@@ -84,6 +99,34 @@ review reads:
   beside `components.ClassLists()`, which the class vocabulary is computed from
   rather than copied out of a rendered sheet.
 
+### Client-sheet admission
+
+[The admission check](client_sheet.go) reads emitted CSS, including keyframe
+stops, so a declaration cannot hide syntax in its property or value. It refuses
+consumer layers, block/comment delimiters, HTML style terminators, leading
+at-rules and unquoted semicolons in rule heads. CSS names are decoded before
+checking protected attributes, component-layer classes, `:root`, literal colours
+and `--pk-` declarations. Variable references remain available to client rules.
+Closed strings and URL arguments are masked for colour checks; spaces preserve
+token separation. An escaped `@` remains an identifier, not an at-rule token.
+
+The policy checks names, including class-attribute comparisons, wherever they
+occur in a selector. It does not implement selector reachability. Type and ID
+selectors can still reach kernel elements; the product owns the CSS it supplies.
+Named colour words also need author review. Violations panic at composition,
+before the refused sheet supplies bytes. `ComposeDesign` uses the same placement
+and fingerprinting while admitting proposals that need measurement.
+
+### Browser assets
+
+[Assets](assets.go) overlays computed stylesheets, consumer trees and embedded
+browser files in that order. `Controllers` remains declared in [ui.go](ui.go).
+Calendar/map engines, live-region SSE and the rich-text editor load only when
+needed. The editor bundle lives under `assets/richtext`, with its licenses and
+locked build under `tools/richtext-bundle`; a directory named `vendor` would be
+omitted from Go module archives and break consumers' embedded assets.
+Design snapshots and Storybook composition remain in [ui/export](export/README.md).
+
 ## The frame's floor
 
 The four refusals every client's design gate reported on every generated page
@@ -127,9 +170,10 @@ were drawn here, so the cure is here too.
 
 ## Generated command controls
 
-Generated resource commands use outline buttons so the toolbar's Edit or New
-action remains the screen's filled action; each command retains its named native
-POST form and submit button.
+Generated resource commands follow the [resolved policy](resource/README.md):
+the primary command is filled, destructive commands use danger tone, and ordinary
+commands use outline buttons. New/Edit become secondary when a primary command
+is present. Each command retains its named native POST form and submit button.
 
 Each argument has a deterministic DOM ID scoped to its command action (including
 the record path), locale and field name. In `resource.commandFormFor`, the format
@@ -184,3 +228,44 @@ assets or measurements fail the test. Install the pinned browser prerequisites w
 [The e2e adapter](../e2e/design_floor.ts) retains its existing helper API and delegates
 to the same instrument. The floor is a mechanical presentation check; keyboard and
 screen-reader journeys remain separate verification.
+
+The instrument is a port and the numbers are the loop's: `design_gate.py` owns
+them, and [the boundary cases](testdata/design_floor_cases.mjs) — what
+`go test ./ui` asserts — refuse a port that drifted from them. They cannot refuse a
+gate that moved them: the gate sits outside this repository and no test here reads
+it, so the two sets of numbers agree only while someone reads both. Three
+routes run the gate itself instead of the port, behind four opt-in
+doors, each of them opt-in because it reads files outside this repository.
+`PLATFORMKIT_SHELL_DESIGN_GATE=<path to
+design_gate.py>` makes that reference-app test run the gate by URL at
+`--widths 390,1440` on the five pages it measures with the port.
+`PLATFORMKIT_PICTURE_DESIGN_GATE=<path to design_gate.py>` makes
+[the composed-picture test](../apps/platformkit/composed_picture_test.go) run the
+same gate, at the same widths, through a proxy that carries the administrator's
+session, on `/app/picturefixture/pictures` — the generated list page whose row opens
+a composed picture door, which neither of the other two routes reaches.
+`DESIGN_GATE_DIR=<directory holding the gate>` and `DESIGN_GATE_OUT=<directory for
+its dumps>` make [the generated-page journey](../e2e/generated-pages-design-gate.spec.ts)
+— `./scripts/e2e.sh generated-pages-design-gate` — judge six framed pages fetched
+behind the administrator's session and written out with a `<base>` pointing their
+sheet back at the live server, plus sign-in and the public home by URL; the journey
+skips where either variable is absent, and a page written to disk is judged on its
+markup and computed style alone, since a `file://` document cannot fetch the sheet
+it links. `make check` therefore judges the port; the gate runs when a caller names
+where its files are.
+
+`go test ./ui` holds this paragraph to the tree: a door named here must still be read
+out of the environment by a test or journey that starts a process in the same file, a
+door naming where the gate lives must hand that process the value the environment gave
+it rather than a path written out by hand in its place, and a door naming where the
+gate's dumps go must be answered at every call that puts bytes on disk in the file
+reading it, each writing at a path built from the value read. Each check reads one
+file at a time, so a write carried into a helper of its own must carry the door's read with it.
+
+**Reused** — the port, `shell_design_floor_test.go`'s rendered run of the reference
+app's five pages, the loop's gate behind the doors named above, and the journey that
+already judges eight pages by it. **Added** — the
+naming of those variables where the floor is documented: no README, Makefile line or
+CI file carried them, so the gate behind the port was runnable only by someone who
+already knew they existed. **Made reusable** — the invocation, in the section a
+reader of this floor already reaches.

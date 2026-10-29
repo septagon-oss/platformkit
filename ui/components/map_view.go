@@ -84,63 +84,22 @@ func (p MapViewProps) Validate() error {
 		}
 		return nil
 	}
-	if !required(p.ID, p.MapLabel, p.ListLabel, p.StatusLabel, p.MapUnavailableText, p.ZoomInLabel, p.ZoomOutLabel, p.SnapshotText) || !coordinate(p.Viewport.Latitude, p.Viewport.Longitude) || p.Viewport.Zoom < 0 || p.Viewport.Zoom > 24 {
-		return fmt.Errorf("MapView: labels and bounded viewport required")
+	if err := validateMapDisplay(p); err != nil {
+		return err
 	}
-	if p.View != "" && p.View != "list" && p.View != "map" {
-		return fmt.Errorf("MapView: unknown view")
+	legends, err := validateMapLegend(p.Legend)
+	if err != nil {
+		return err
 	}
-	legends := map[string]bool{}
-	for _, legend := range p.Legend {
-		if !required(legend.Key, legend.Label) || legends[legend.Key] {
-			return fmt.Errorf("MapView: unique legend keys and labels required")
-		}
-		legends[legend.Key] = true
-		switch legend.Symbol {
-		case "circle", "square", "triangle":
-		default:
-			return fmt.Errorf("MapView: unknown legend symbol")
-		}
+	ids, err := validateMapPoints(p, legends)
+	if err != nil {
+		return err
 	}
-	ids := map[string]bool{}
-	for _, point := range p.Points {
-		if !required(point.ID, point.Title, point.StatusText, point.Href) || ids[point.ID] || !legends[point.StatusKey] || !coordinate(point.Latitude, point.Longitude) {
-			return fmt.Errorf("MapView: unique labeled points, valid coordinates and legend membership required")
-		}
-		ids[point.ID] = true
+	if err := validateMapTiles(p); err != nil {
+		return err
 	}
-	if p.SelectedID != "" && !ids[p.SelectedID] {
-		return fmt.Errorf("MapView: selection must match a supplied point")
-	}
-	if p.Tiles != nil {
-		tile := p.Tiles
-		parsed, err := url.Parse(tile.URLTemplate)
-		if err != nil || !strings.HasPrefix(tile.URLTemplate, "/") || strings.HasPrefix(tile.URLTemplate, "//") || strings.Contains(tile.URLTemplate, "\\") || parsed.Host != "" || parsed.Fragment != "" || tile.MinZoom < 0 || tile.MaxZoom > 24 || tile.MaxZoom < tile.MinZoom || p.Viewport.Zoom < tile.MinZoom || p.Viewport.Zoom > tile.MaxZoom {
-			return fmt.Errorf("MapView: same-origin tiles and valid zoom bounds required")
-		}
-		for _, part := range []string{"{z}", "{x}", "{y}"} {
-			if strings.Count(tile.URLTemplate, part) != 1 {
-				return fmt.Errorf("MapView: tile URL needs each coordinate placeholder once")
-			}
-		}
-		if len(tile.Attributions) == 0 {
-			return fmt.Errorf("MapView: tile attribution required")
-		}
-		for _, a := range tile.Attributions {
-			if !required(a.Text) {
-				return fmt.Errorf("MapView: empty attribution")
-			}
-		}
-	}
-	if p.Detail != nil {
-		if p.SelectedID == "" || !ids[p.SelectedID] || p.Detail.State.ready() && p.Detail.ItemID != p.SelectedID {
-			return fmt.Errorf("MapView: detail must match selected authorized point")
-		}
-		detail := *p.Detail
-		detail.ID = p.ID + "-detail"
-		if err := detail.Validate(); err != nil {
-			return err
-		}
+	if err := validateMapDetail(p, ids); err != nil {
+		return err
 	}
 	return validateChoices(p.Views)
 }
@@ -217,4 +176,82 @@ func MapViewWithSlots(p MapViewProps, slots MapViewSlots) g.Node {
 		}
 	}
 	return sharedSection(p.ComponentProps, "map-view", p.Label, stateBody(p.State, slots.StateSlots), choiceLinks(views, p.Disabled), Text(TextProps{Content: p.SnapshotText, Size: "sm"}), Flex(FlexProps{Wrap: true, Gap: "3"}, legend...), mapNode, Flex(FlexProps{Wrap: true, Gap: "2"}, attributions...), list, detail)
+}
+
+func validateMapDisplay(p MapViewProps) error {
+	if !required(p.ID, p.MapLabel, p.ListLabel, p.StatusLabel, p.MapUnavailableText, p.ZoomInLabel, p.ZoomOutLabel, p.SnapshotText) || !coordinate(p.Viewport.Latitude, p.Viewport.Longitude) || p.Viewport.Zoom < 0 || p.Viewport.Zoom > 24 {
+		return fmt.Errorf("MapView: labels and bounded viewport required")
+	}
+	if p.View != "" && p.View != "list" && p.View != "map" {
+		return fmt.Errorf("MapView: unknown view")
+	}
+	return nil
+}
+
+func validateMapLegend(items []MapLegend) (map[string]bool, error) {
+	legends := map[string]bool{}
+	for _, legend := range items {
+		if !required(legend.Key, legend.Label) || legends[legend.Key] {
+			return nil, fmt.Errorf("MapView: unique legend keys and labels required")
+		}
+		legends[legend.Key] = true
+		switch legend.Symbol {
+		case "circle", "square", "triangle":
+		default:
+			return nil, fmt.Errorf("MapView: unknown legend symbol")
+		}
+	}
+	return legends, nil
+}
+
+func validateMapPoints(p MapViewProps, legends map[string]bool) (map[string]bool, error) {
+	ids := map[string]bool{}
+	for _, point := range p.Points {
+		if !required(point.ID, point.Title, point.StatusText, point.Href) || ids[point.ID] || !legends[point.StatusKey] || !coordinate(point.Latitude, point.Longitude) {
+			return nil, fmt.Errorf("MapView: unique labeled points, valid coordinates and legend membership required")
+		}
+		ids[point.ID] = true
+	}
+	if p.SelectedID != "" && !ids[p.SelectedID] {
+		return nil, fmt.Errorf("MapView: selection must match a supplied point")
+	}
+	return ids, nil
+}
+
+func validateMapTiles(p MapViewProps) error {
+	if p.Tiles != nil {
+		tile := p.Tiles
+		parsed, err := url.Parse(tile.URLTemplate)
+		if err != nil || !strings.HasPrefix(tile.URLTemplate, "/") || strings.HasPrefix(tile.URLTemplate, "//") || strings.Contains(tile.URLTemplate, "\\") || parsed.Host != "" || parsed.Fragment != "" || tile.MinZoom < 0 || tile.MaxZoom > 24 || tile.MaxZoom < tile.MinZoom || p.Viewport.Zoom < tile.MinZoom || p.Viewport.Zoom > tile.MaxZoom {
+			return fmt.Errorf("MapView: same-origin tiles and valid zoom bounds required")
+		}
+		for _, part := range []string{"{z}", "{x}", "{y}"} {
+			if strings.Count(tile.URLTemplate, part) != 1 {
+				return fmt.Errorf("MapView: tile URL needs each coordinate placeholder once")
+			}
+		}
+		if len(tile.Attributions) == 0 {
+			return fmt.Errorf("MapView: tile attribution required")
+		}
+		for _, a := range tile.Attributions {
+			if !required(a.Text) {
+				return fmt.Errorf("MapView: empty attribution")
+			}
+		}
+	}
+	return nil
+}
+
+func validateMapDetail(p MapViewProps, ids map[string]bool) error {
+	if p.Detail != nil {
+		if p.SelectedID == "" || !ids[p.SelectedID] || p.Detail.State.ready() && p.Detail.ItemID != p.SelectedID {
+			return fmt.Errorf("MapView: detail must match selected authorized point")
+		}
+		detail := *p.Detail
+		detail.ID = p.ID + "-detail"
+		if err := detail.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

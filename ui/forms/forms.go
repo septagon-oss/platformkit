@@ -1,5 +1,12 @@
 // Package forms composes portable entity forms from detached presentation inputs.
 // Handlers own authorization, parsing, persistence and the meaning of errors.
+//
+// Nothing here reads a request, a transaction or a catalogue: this package holds
+// its own copy under messages/ and asks the formatter its caller composed to
+// answer that copy in the language of the request, naming no provider, no tenant
+// and no language. That is what the package gate holds to kit/entity, kit/locale,
+// design, ui/icon, ui/css, ui/style, ui/components, ui/components/examples and
+// gomponents.
 package forms
 
 import (
@@ -11,6 +18,9 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/locale"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -22,6 +32,10 @@ import (
 // words explicitly; they do not change the definition's names or enum values.
 // Empty labels use the field name, and absent options use the declared enum text.
 type Field struct {
+	Resolved                      *present.ResolvedField
+	PictureSource, ComposedSource string
+	// Anchor names this composed control; empty keeps standalone forms unanchored.
+	Anchor     screen.AnchorRef
 	Definition entity.Field
 	Label      string
 	// Help is the line under the control: what resource.Words.FieldHelp answers for
@@ -80,12 +94,13 @@ type Editor struct {
 // A missing value uses the declared default only on create; an explicit empty
 // value remains empty. ReadOnly fields are omitted, as are immutable create fields.
 type Model struct {
-	Fields    []Field
-	Values    map[string]string
-	Errors    map[string]string
-	Immutable []string
-	Detail    string
-	Create    bool
+	ChoiceValues map[string][]string
+	Fields       []Field
+	Values       map[string]string
+	Errors       map[string]string
+	Immutable    []string
+	Detail       string
+	Create       bool
 }
 
 // Options supplies presentation and command addresses. Namespace is a DOM scope,
@@ -93,6 +108,8 @@ type Model struct {
 // rendered instance. It must start with an ASCII letter and contain only letters,
 // digits, underscores or hyphens. The resulting form ID is Namespace + "-form".
 type Options struct {
+	// View names this composed form, independently of its DOM namespace.
+	View                                   screen.ViewRef
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
@@ -102,8 +119,24 @@ type Options struct {
 	// and no alarm is owed. It says nothing where Model.Detail is empty, because no
 	// notice is drawn then.
 	DetailTone string
-	Text       func(key, fallback string) string
+	// Format answers this form's chrome in the request's language: a catalogue
+	// key, the readable source text to use when no catalogue holds it, and the
+	// values the phrase interpolates. It is the kernel's own formatter, not a
+	// signature this package invented, so the provider keeps ownership of
+	// interpolation, plural rules and regional number format. Nil — the default —
+	// answers every phrase with its source text.
+	Format locale.Formatter
+	// Text answers one phrase that carries no value. Format answers every phrase,
+	// and Format is asked first whenever both are composed.
+	//
+	// Deprecated: a phrase that asks for a value is answered from its source text
+	// and never asked of Text, so this seam answers only the phrases carrying none.
+	// Compose Format instead.
+	Text func(key, fallback string) string
 }
+
+// phrases is this form's chrome, asked of the formatter the render composed.
+func (o Options) phrases() phraser { return phrasesFor(o.Format, o.Text) }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
 var ErrNamespace = errors.New("forms: namespace must start with a letter and contain only letters, digits, underscores or hyphens")
@@ -161,6 +194,9 @@ func Example(id string, model Model, options Options) (examples.Example, error) 
 	}
 	seen := make(map[string]bool, len(model.Fields))
 	for _, field := range model.Fields {
+		if err := validateChoiceField(field); err != nil {
+			return examples.Example{}, err
+		}
 		name := field.Definition.Name
 		// The name is in the error because it is the thing to fix: one field with no
 		// name has no label to write, and two of one name draw two controls the
@@ -197,10 +233,13 @@ func MustExample(id string, model Model, options Options) examples.Example {
 
 func example(id string, model Model, options Options) examples.Example {
 	formID := options.Namespace + "-form"
+	word := options.phrases()
 	body := []g.Node{}
 	if model.Detail != "" {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: cmp.Or(options.DetailTone, "danger"), Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
+			components.AlertProps{Tone: cmp.Or(options.DetailTone, "danger"),
+				Title:   cmp.Or(options.FailureTitle, word("forms.form.failureTitle", "That could not be saved")),
+				Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
 		var links []g.Node
 		richtextError := false
@@ -208,11 +247,12 @@ func example(id string, model Model, options Options) examples.Example {
 			if message := model.Errors[field.Definition.Name]; message != "" {
 				richtextError = richtextError || field.Definition.Widget == "richtext"
 				id := options.Namespace + "-field-" + hex.EncodeToString([]byte(field.Definition.Name))
-				links = append(links, h.Li(h.A(h.Href("#"+id), g.Text(cmp.Or(field.Label, field.Definition.Name)+": "+message))))
+				links = append(links, h.Li(h.A(h.Href("#"+id),
+					g.Text(word("forms.form.fieldError", "%[1]s: %[2]s", cmp.Or(field.Label, field.Definition.Name), message)))))
 			}
 		}
 		if len(links) > 0 && richtextError {
-			body = append(body, h.Nav(g.Attr("aria-label", "Fields to correct"), h.Ul(links...)))
+			body = append(body, h.Nav(g.Attr("aria-label", word("forms.form.fieldsToCorrect", "Fields to correct")), h.Ul(links...)))
 		}
 	}
 	for _, field := range model.Fields {
@@ -232,15 +272,19 @@ func example(id string, model Model, options Options) examples.Example {
 		body = append(body, Control(ControlProps{Field: field,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
-			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
+			ID:           options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
+			ChoiceValues: choiceModelValues(model, f), Value: value, Error: model.Errors[f.Name], Immutable: immutable, Format: options.Format, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.CancelLabel, "Cancel"), Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "cancel")},
+					Label:   cmp.Or(options.CancelLabel, word("forms.form.cancel", "Cancel")),
+					Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "submit")},
+					Label: cmp.Or(options.SubmitLabel, word("forms.form.submit", "Save")),
+					Type:  "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
 	// A file control submits a body a urlencoded form cannot carry, and the
 	// encoding belongs to the form rather than to whoever composed it: one
@@ -256,6 +300,12 @@ func example(id string, model Model, options Options) examples.Example {
 	}
 	if rendersFile(model) {
 		props.Attrs = map[string]string{"enctype": "multipart/form-data"}
+	}
+	if options.View != "" {
+		if props.Attrs == nil {
+			props.Attrs = map[string]string{}
+		}
+		props.Attrs["data-screen-view"] = string(options.View)
 	}
 	return examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, props,
@@ -292,21 +342,3 @@ func validNamespace(value string) bool {
 }
 
 func letter(c byte) bool { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') }
-
-// hint joins the field's documentation with notes about its chosen control.
-func hint(parts ...string) string {
-	kept := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			kept = append(kept, part)
-		}
-	}
-	return strings.Join(kept, " ")
-}
-
-func immutableNote(immutable bool) string {
-	if immutable {
-		return "Changed by a command of its own, not by this form."
-	}
-	return ""
-}

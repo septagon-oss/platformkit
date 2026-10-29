@@ -178,8 +178,9 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
-		Cache:      cache.Memory("pkit"),
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: authorize,
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"),
+		PublicHost:   host, Tenants: caller{}, Conn: app, Authorize: authorize,
 		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}, true, nil
@@ -237,7 +238,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	}
 	deps := admin.Deps{
 		Modules: []module.Module{notes, catalogue, rolesModule}, Authorize: authorize,
-		SignIn: "/api/v1/auth/login",
+		SignIn: "/api/v1/auth/login", SignInOperationID: "auth-login",
 	}
 	for _, apply := range configure {
 		apply(&deps)

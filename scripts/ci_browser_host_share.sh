@@ -27,7 +27,10 @@
 #
 # Usage:
 #   ci_browser_host_share.sh wait [MAX_WAIT_SECONDS] [LOADAVG_FILE]
-#       Return once the 1-minute load average is at most one per core, printing each wait. After
+#       Return once the 1-minute and 5-minute load averages are at most one per core, printing each
+#       wait. The second term is what makes the first one mean something: a queue that has been over
+#       one runnable task per core for five minutes is still being worked off whatever the last
+#       minute looked like, and a renderer cannot outwait it. After
 #       MAX_WAIT_SECONDS (default 720) it returns 0 anyway and says so: refusing would report no
 #       verdict in place of the one it distrusts, and the queue belongs to nobody here. Reads
 #       LOADAVG_FILE (default /proc/loadavg) so a case can ask both answers of a file.
@@ -140,7 +143,12 @@ wait_for_a_share() { # <max-seconds> <loadavg-file> <poll-seconds>
             return 0
         fi
         reading=$(cut -d' ' -f1-3 "$loadavg")
-        if awk -v cores="$cores" '{ exit ($1 <= cores) ? 0 : 1 }' "$loadavg"; then
+        # Both terms, not the first alone. Gate 10 opened one suite on `load 12.98 16.23 19.83
+        # across 16 cores` — the last minute under one task per core, the machine's last five and
+        # fifteen over it — and the page it went on to lose died at load 21.74, three samples of the
+        # suite's own sampler later, having never been over 16.3 in between (job 80264, 5b0dc4c0).
+        # A dipped first term on a queued host is the host, not a free share.
+        if awk -v cores="$cores" '{ exit ($1 <= cores && $2 <= cores) ? 0 : 1 }' "$loadavg"; then
             if [ "$waited" = 0 ]; then
                 echo "browser suite: the host has a free share — load $reading across ${cores} cores"
             else

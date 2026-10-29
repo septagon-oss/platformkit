@@ -70,11 +70,13 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 // exported trio below deliberately renders no commands, so a design export or a golden
 // file cannot show doors nobody authorized.
 var callerScoped = map[string]string{
+	"Resolved": "TestMountedListUsesTheResolvedQueryAndCommands",
 	"Commands": "TestACommandIsADoorOnTheScreenThatShowsTheRow in kit/rest/screens_commands_test.go",
 	// A version series is read per request, behind the record's read guard, so it
 	// has the same shape as Commands: two registered resources cannot be compared
 	// without the caller whose series one of them holds.
-	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"History":  "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"Selected": "TestMountedListUsesTheResolvedQueryAndCommands",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice
@@ -91,6 +93,13 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "title": "Buy milk", "status": "open"}
 	rows := []map[string]any{row}
 	switch name {
+	case "Resolved":
+		a, b := base(), base()
+		a.Schema.Fields = []entity.Field{choiceCatalogField("chips")}
+		b.Schema.Fields = []entity.Field{choiceCatalogField("swatch")}
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.Form(r, opts, "/app/note/notes", "Edit", nil, nil, "", false))
+		}, true
 	case "Schema":
 		a, b := base(), base()
 		b.Schema.Fields = noteFields(entity.Field{Name: "urgent", Type: entity.TypeBool})
@@ -102,6 +111,12 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		b.Immutable = []string{"status"}
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Form(r, opts, "/app/note/notes", "Edit", row, nil, "", false))
+		}, true
+	case "ScreenOwner":
+		a, b := base(), base()
+		b.Module = "other"
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
 		}, true
 	case "Screen":
 		// Where the screens are is the kernel's answer, and every link on a
@@ -122,6 +137,12 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Form(r, opts, "/app/note/notes/11111111-1111-1111-1111-111111111111/edit", "Edit", row, nil, "", false))
 		}, true
+	case "CommandsOnly":
+		a, b := base(), base()
+		b.CommandsOnly = true
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.Form(r, opts, "/notes", "Edit", row, nil, "", false))
+		}, true
 	case "Singleton":
 		a, b := base(), base()
 		b.Singleton = true
@@ -138,11 +159,7 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
 		}, true
 	case "Operations":
-		// Which verbs the resource mounted decides which doors exist, and the
-		// adapter has to carry the answer: a shelf that offers no create renders
-		// with no New button, and the same shelf with the empty default — all five —
-		// renders with one. Both are rendered to a caller who may write, so what
-		// differs between the two pages is the mounted route and nothing else.
+		// Mounted verbs decide whether the list offers creation.
 		a, b := base(), base()
 		b.Operations = []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}
 		return a, b, func(r httpx.Resource) string {

@@ -1,30 +1,11 @@
 // The translation door of kit/rest: what a resource does with a field tagged
 // `i18n:"translatable"`.
 //
-// Two interfaces live here, and the direction each points in is the reason
-// neither lives in a module.
-//
-// Translations is the door a rest.Spec knocks on to read and write one
-// record's translations. It is declared in the kernel because the direction of
-// the dependency is module→kernel: a module may not be reached from the
-// kernel's HTTP layer, so the shape the kernel asks for has to be the kernel's
-// own, and modules/translation implements it. The Spec holds it as one field
-// wired by hand at composition, the same way RichTextFiles is wired; nothing
-// discovers it.
-//
-// TranslationSource points the other way, and exists because one question is
-// unanswerable from the translations table alone. "Missing" means *no row*,
-// and no row of which records exist is a fact about the entity's table, which
-// belongs to another module. So the row set of the entity arrives at the
-// translation module through a port the translation module does not own and
-// cannot fill — house rule 5, a higher-tier collaborator reached through a
-// port declared here and implemented at composition — and the only reflection
-// anywhere is the kernel's own, one line per mounting module:
-//
-//	Sources: []rest.TranslationSource{rest.TranslationSourceOf(contentSpec)}
-//
-// There is no registry and no discovery: the composition writes the list and
-// the compiler checks it.
+// Translations is the door a rest.Spec knocks on to read and write one record's
+// translations. TranslationSource points the other way and carries the entity's row
+// set in, because "missing" means *no row* and which records exist is a fact about
+// another module's table. Both are declared here and wired at composition; README.md,
+// "Translating a record" says why neither direction can be a module's own.
 package rest
 
 import (
@@ -538,32 +519,19 @@ func (s Spec[T]) oneRow(ctx context.Context, id uuid.UUID) (T, error) {
 	return e, nil
 }
 
-// overlay puts one page of rows into the language the caller asked for, and
-// says which fields it could not: the value in each field is replaced by this
-// locale's row, and every field left in the tenant's own language is named in
-// `_i18n` with the reason — missing, withheld or removed.
+// overlay puts one page of rows into the language the caller asked for and names
+// every field it could not in `_i18n`, with the reason — missing, withheld or removed.
 //
-// Two things it never does. It never reads the entity's table again: the source
-// text each translation was measured against is lifted out of the rows already
-// loaded, which is the same copy the staleness rule needs and the reason the port
-// takes the source as a parameter instead of reaching over. And it never serves an
-// unreviewed machine draft — that rule is one line inside the port's own
-// Translated, keyed on this being a guarded door rather than on who is asking, and
-// a door that decided it locally is a door that forgets it.
-//
-// Public is false here because every route in this file is guarded by the Spec's
-// Read: the door that shows a stranger the record is a module's own handler, and
-// it sets Public when it calls the port.
+// Two things it never does. It never reads the entity's table again: the source each
+// translation was measured against is lifted out of the rows already loaded, which is
+// why the port takes the source as a parameter. And it never serves an unreviewed
+// machine draft — that rule is one line inside the port's own Translated, keyed on
+// this being a guarded door, so no door can forget it. Public is false here because
+// every route in this file is guarded by the Spec's Read.
 //
 // It answers the language the response is written in, which is what decides the
-// response's Content-Language: a read in the tenant's own language says so, and
-// a read that named no language and expressed no preference is written in the
-// source and claims nothing.
-//
-// A read that named no language but *expressed* one — a `lang` cookie the
-// workspace left behind, an `Accept-Language` in the caller's own order — is
-// negotiated here, in the one place both read doors pass through, so no door can
-// forget the question the caller asked without spelling it in a query.
+// response's Content-Language; a read that named no language and expressed no
+// preference is written in the source and claims nothing.
 func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, rows []T) (string, error) {
 	languages := db.TenantOf(tx).Languages
 	if lang == "" && len(rows) > 0 {
@@ -639,29 +607,22 @@ func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, 
 // workspace shell sets it when a person switches language.
 const CookieNameLanguage = "lang"
 
-// negotiateLang is the language question of a read that did not name one, in the
-// order the contract fixes: what the caller said for this one request (`?lang=`,
-// handled by the caller of this function, which is why silence arrives here),
-// then the cookie the workspace set, then the browser's own list in the order the
-// caller ranked it, and then nothing.
+// negotiateLang is the language question of a read that did not name one, in the order
+// the contract fixes: what the caller said for this one request (`?lang=`, handled by
+// the caller of this function, which is why silence arrives here), then the cookie the
+// workspace set, then the browser's own list in the order the caller ranked it.
 //
-// Silence is not answered with the tenant's default: a caller who expressed no
-// preference is served the source and the response claims no language, which is
-// the same answer there was before negotiation existed. Defaulting a preference
-// nobody expressed would put a Content-Language on responses whose callers never
-// asked a question, and would make every cache in front of the installation hold
-// one response where the caller's own header asked for another.
-//
-// A preference the tenant is not served in is dropped, not honoured: serving
-// somebody's first choice under a header the tenant cannot keep would be a
-// response that lies about its own language.
+// Silence is not answered with the tenant's default: a caller that expressed no
+// preference is served the source and the response claims no language, and defaulting
+// one nobody expressed would put a Content-Language on responses whose callers asked
+// nothing. A preference the tenant is not served in is dropped rather than honoured.
 func negotiateLang(ctx context.Context, languages *tenancy.Languages) string {
 	req, ok := httpx.RequestFrom(ctx)
 	if !ok {
 		return ""
 	}
 	speaking := languages.Preferred()
-	for _, name := range []string{httpx.CookieName(CookieNameLanguage, true), CookieNameLanguage} {
+	for _, name := range []string{httpx.CookieNameFor("", CookieNameLanguage, true), CookieNameLanguage} {
 		if c, err := req.Cookie(name); err == nil {
 			if tag, ok := matchLanguage(c.Value, speaking); ok {
 				return tag

@@ -3,9 +3,10 @@ package forms
 import (
 	"strconv"
 
-	"github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
+
+	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 // The rich text field's chrome. Everything an author can click is drawn here, in
@@ -31,6 +32,12 @@ type richtextCommand struct {
 	HelpKey  string
 	Help     string
 	Shortcut string
+	// NameKey and Name are the command's whole accessible name — the phrase the
+	// button is announced by, in which the copy's own verb stands for Shortcut.
+	// A command with no keystroke has no name of its own and is announced by its
+	// title, so the two fields are filled exactly where Shortcut is and nowhere
+	// else; the table keeps them in step.
+	NameKey, Name string
 	// Toggle carries aria-pressed, Mark marks a bubble-only action, and Image
 	// needs the file upload route to have been offered at all.
 	Toggle, Bubble, Menu, Image bool
@@ -43,14 +50,14 @@ type richtextCommand struct {
 // list rather than twelve call sites, so the toolbar, the selection bubble and
 // the command menu cannot disagree about what an author may do.
 var richtextCommands = []richtextCommand{
-	{Command: "bold", TitleKey: "forms.richtext.bold", Title: "Bold", Shortcut: "Ctrl+B", Toggle: true, Toolbar: true, Bubble: true},
-	{Command: "italic", TitleKey: "forms.richtext.italic", Title: "Italic", Shortcut: "Ctrl+I", Toggle: true, Toolbar: true, Bubble: true},
-	{Command: "link", TitleKey: "forms.richtext.link", Title: "Link", Shortcut: "Ctrl+K", Toggle: true, Toolbar: true, Bubble: true},
+	{Command: "bold", TitleKey: "forms.richtext.bold", Title: "Bold", Shortcut: "Ctrl+B", NameKey: "forms.richtext.bold.name", Name: "Bold (%[1]s)", Toggle: true, Toolbar: true, Bubble: true},
+	{Command: "italic", TitleKey: "forms.richtext.italic", Title: "Italic", Shortcut: "Ctrl+I", NameKey: "forms.richtext.italic.name", Name: "Italic (%[1]s)", Toggle: true, Toolbar: true, Bubble: true},
+	{Command: "link", TitleKey: "forms.richtext.link", Title: "Link", Shortcut: "Ctrl+K", NameKey: "forms.richtext.link.name", Name: "Link (%[1]s)", Toggle: true, Toolbar: true, Bubble: true},
 	{Command: "bulletList", TitleKey: "forms.richtext.bulletList", Title: "Bulleted list", HelpKey: "forms.richtext.menu.bulletList", Help: "Unordered list of items", Toggle: true, Toolbar: true, Menu: true},
 	{Command: "orderedList", TitleKey: "forms.richtext.orderedList", Title: "Numbered list", HelpKey: "forms.richtext.menu.orderedList", Help: "List numbered from one", Toggle: true, Toolbar: true, Menu: true},
 	{Command: "taskList", TitleKey: "forms.richtext.taskList", Title: "Task list", HelpKey: "forms.richtext.menu.taskList", Help: "Checkboxes you can tick off", Toggle: true, Toolbar: true, Menu: true},
-	{Command: "quote", TitleKey: "forms.richtext.quote", Title: "Quote", HelpKey: "forms.richtext.menu.quote", Help: "A passage someone else wrote", Shortcut: "Ctrl+Shift+B", Toggle: true, Toolbar: true, Menu: true},
-	{Command: "code", TitleKey: "forms.richtext.code", Title: "Inline code", Shortcut: "Ctrl+E", Toggle: true, Bubble: true},
+	{Command: "quote", TitleKey: "forms.richtext.quote", Title: "Quote", HelpKey: "forms.richtext.menu.quote", Help: "A passage someone else wrote", Shortcut: "Ctrl+Shift+B", NameKey: "forms.richtext.quote.name", Name: "Quote (%[1]s)", Toggle: true, Toolbar: true, Menu: true},
+	{Command: "code", TitleKey: "forms.richtext.code", Title: "Inline code", Shortcut: "Ctrl+E", NameKey: "forms.richtext.code.name", Name: "Inline code (%[1]s)", Toggle: true, Bubble: true},
 	{Command: "strike", TitleKey: "forms.richtext.strike", Title: "Strikethrough", Toggle: true, Toolbar: true},
 	{Command: "codeBlock", TitleKey: "forms.richtext.codeBlock", Title: "Code block", HelpKey: "forms.richtext.menu.codeBlock", Help: "Monospaced text, unformatted", Menu: true},
 	{Command: "table", TitleKey: "forms.richtext.table", Title: "Table", HelpKey: "forms.richtext.menu.table", Help: "Rows and columns of short values", Menu: true},
@@ -59,8 +66,8 @@ var richtextCommands = []richtextCommand{
 	{Command: "paragraph", TitleKey: "forms.richtext.paragraph", Title: "Text", HelpKey: "forms.richtext.menu.paragraph", Help: "An ordinary paragraph", Bubble: true, Menu: true},
 	{Command: "image", TitleKey: "forms.richtext.image", Title: "Image", HelpKey: "forms.richtext.menu.image", Help: "Upload a picture from this device, or paste one", Menu: true, Image: true},
 	{Command: "rule", TitleKey: "forms.richtext.rule", Title: "Divider", HelpKey: "forms.richtext.menu.rule", Help: "A line across the page", Menu: true},
-	{Command: "undo", TitleKey: "forms.richtext.undo", Title: "Undo", Shortcut: "Ctrl+Z", Toolbar: true},
-	{Command: "redo", TitleKey: "forms.richtext.redo", Title: "Redo", Shortcut: "Ctrl+Shift+Z", Toolbar: true},
+	{Command: "undo", TitleKey: "forms.richtext.undo", Title: "Undo", Shortcut: "Ctrl+Z", NameKey: "forms.richtext.undo.name", Name: "Undo (%[1]s)", Toolbar: true},
+	{Command: "redo", TitleKey: "forms.richtext.redo", Title: "Redo", Shortcut: "Ctrl+Shift+Z", NameKey: "forms.richtext.redo.name", Name: "Redo (%[1]s)", Toolbar: true},
 	{Command: "preview", TitleKey: "forms.richtext.preview", Title: "Preview as published", HelpKey: "forms.richtext.menu.preview", Help: "The page as the server renders it", Toggle: true, Toolbar: true},
 }
 
@@ -80,24 +87,49 @@ func shownFirst(c richtextCommand) bool {
 // chrome starts hidden, so a page with no JavaScript shows the textarea with the
 // "Formatting help" disclosure below it and nothing that does nothing.
 func richtextChrome(p ControlProps, area, help g.Node) g.Node {
-	f := p.Field.Definition
-	word := p.Text
-	if word == nil {
-		word = func(_, fallback string) string { return fallback }
-	}
-	editor := p.Field.Editor
+	word := p.phrases()
 
-	// Every value the glue is allowed to know came from this transaction: the
-	// record's address, the revision this form quotes, the draft key, the upload
-	// route, where an uploaded file's bytes are read back from and the deployment's
-	// ceiling. An absent attribute means the browser does without the feature — never
-	// that it guesses one.
-	attrs := []g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}
-	// The editing surface is a control the server never drew: Tiptap builds the
-	// contenteditable inside it, and a textbox with no name is a control nobody
-	// can fill by screen reader. The words are the catalogue's for an editing
-	// surface; the field's own label stays on the textarea, which is the control
-	// that posts.
+	attrs := richtextAttributes(p, word)
+	// Read-only or disabled: the text, the counters and nothing focusable. The
+	// frame is drawn anyway so the field is laid out as it is when editable.
+	if p.Immutable {
+		return h.Div(append(attrs, area, help)...)
+	}
+
+	toolbar := richtextToolbar(p, word)
+	editor := p.Field.Editor
+	menu := selectedRichtextCommands(editor, func(c richtextCommand) bool { return c.Menu })
+
+	frame := append(attrs, area, h.Div(append(toolbar, h.Hidden(""))...))
+	frame = append(frame,
+		h.Div(
+			h.Role("toolbar"), g.Attr("data-richtext-bubble", ""),
+			h.Aria("label", word("forms.richtext.bubble", "Format selection")), h.Hidden(""),
+			g.Group(richtextToolbarRow(word, selectedRichtextCommands(editor, func(c richtextCommand) bool { return c.Bubble })...)),
+		),
+		richtextBlockMenu(menu, word),
+		richtextLinkControls(p.Field.Definition.Name, word),
+		h.Div(g.Attr("data-richtext-surface", ""), h.Hidden("")),
+		h.P(g.Attr("data-richtext-status", ""), h.Aria("live", "polite"), h.Hidden("")),
+		h.P(g.Attr("data-richtext-count", ""), h.Hidden("")),
+		h.Input(h.Type("file"), h.Accept("image/*"), h.Multiple(), g.Attr("data-richtext-file", ""), h.Hidden("")),
+		richtextDraftControls(word),
+		h.Div(g.Attr("data-richtext-preview", ""), h.Hidden("")),
+		// The one slot a refusal, a conflict or a returned draft occupies. It is
+		// drawn empty so the browser fills a slot the page laid out instead of
+		// inventing a widget of its own.
+		h.Div(g.Attr("data-richtext-offer", ""), h.Hidden("")),
+		help,
+	)
+	return h.Div(frame...)
+}
+
+func richtextAttributes(p ControlProps, word phraser) []g.Node {
+	f := p.Field.Definition
+	editor := p.Field.Editor
+	// Editor capabilities come from this request; absent attributes disable them.
+	attrs := append([]g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}, anchorNodes(p.Field.Anchor)...)
+	// Name the enhanced editing surface as well as the backing textarea.
 	attrs = append(attrs, g.Attr("data-richtext-name", word("forms.richtext.surface", "Content")))
 	for _, line := range richtextSentences {
 		attrs = append(attrs, g.Attr(line.Attr, word(line.Key, line.Fallback)))
@@ -129,52 +161,56 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 	if editor.Submitted {
 		attrs = append(attrs, g.Attr("data-richtext-submitted", "1"))
 	}
+	return attrs
+}
 
-	// Read-only or disabled: the text, the counters and nothing focusable. The
-	// frame is drawn anyway so the field is laid out as it is when editable.
-	if p.Immutable {
-		return h.Div(append(attrs, area, help)...)
+func richtextButton(c richtextCommand, word phraser) g.Node {
+	marks := map[string]string{"data-richtext-command": c.Command}
+	if c.Toggle {
+		marks["aria-pressed"] = "false"
 	}
+	label := word(c.TitleKey, c.Title)
+	// The keystroke belongs to the name, so the name is one message that takes it:
+	// which side of the word the keystroke sits on, and with what punctuation, is
+	// whatever the copy for that language says.
+	name := label
+	if c.NameKey != "" {
+		name = word(c.NameKey, c.Name, c.Shortcut)
+	}
+	return components.Button(components.ButtonProps{
+		ComponentProps: components.ComponentProps{Attrs: marks},
+		Type:           "button", Label: label, AriaLabel: name, Variant: "ghost", Size: "sm",
+	})
+}
 
-	button := func(c richtextCommand) g.Node {
-		marks := map[string]string{"data-richtext-command": c.Command}
-		if c.Toggle {
-			marks["aria-pressed"] = "false"
-		}
-		title := word(c.TitleKey, c.Title)
-		name := title
-		if c.Shortcut != "" {
-			name = title + " (" + c.Shortcut + ")"
-		}
-		return components.Button(components.ButtonProps{
-			ComponentProps: components.ComponentProps{Attrs: marks},
-			Type:           "button", Label: title, AriaLabel: name, Variant: "ghost", Size: "sm",
-		})
+func richtextToolbarRow(word phraser, visible ...richtextCommand) []g.Node {
+	nodes := make([]g.Node, 0, len(visible))
+	for _, c := range visible {
+		nodes = append(nodes, richtextButton(c, word))
 	}
-	toolbarRow := func(visible ...richtextCommand) []g.Node {
-		nodes := make([]g.Node, 0, len(visible))
-		for _, c := range visible {
-			nodes = append(nodes, button(c))
-		}
-		return nodes
-	}
-	selected := func(which func(richtextCommand) bool) []richtextCommand {
-		var out []richtextCommand
-		for _, c := range richtextCommands {
-			if which(c) && !(c.Image && editor.FileUpload == "") {
-				out = append(out, c)
-			}
-		}
-		return out
-	}
+	return nodes
+}
 
-	first := selected(func(c richtextCommand) bool { return c.Toolbar && shownFirst(c) })
-	more := selected(func(c richtextCommand) bool { return c.Toolbar && !shownFirst(c) })
+func selectedRichtextCommands(editor Editor, which func(richtextCommand) bool) []richtextCommand {
+	var out []richtextCommand
+	for _, c := range richtextCommands {
+		if which(c) && !(c.Image && editor.FileUpload == "") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func richtextToolbar(p ControlProps, word phraser) []g.Node {
+	f := p.Field.Definition
+	editor := p.Field.Editor
+	first := selectedRichtextCommands(editor, func(c richtextCommand) bool { return c.Toolbar && shownFirst(c) })
+	more := selectedRichtextCommands(editor, func(c richtextCommand) bool { return c.Toolbar && !shownFirst(c) })
 	panelID := f.Name + "-richtext-more"
 	toolbar := []g.Node{
 		h.Role("toolbar"), g.Attr("data-richtext-toolbar", ""),
 		h.Aria("label", word("forms.richtext.toolbar", "Formatting")),
-		g.Group(toolbarRow(first...)),
+		g.Group(richtextToolbarRow(word, first...)),
 	}
 	if len(more) > 0 {
 		toolbar = append(toolbar,
@@ -184,81 +220,67 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 				}},
 				Type: "button", Label: word("forms.richtext.more", "More formatting"), Variant: "ghost", Size: "sm",
 			}),
-			h.Div(h.ID(panelID), g.Attr("data-richtext-more-panel", ""), h.Hidden(""), g.Group(toolbarRow(more...))),
+			h.Div(h.ID(panelID), g.Attr("data-richtext-more-panel", ""), h.Hidden(""), g.Group(richtextToolbarRow(word, more...))),
 		)
 	}
+	return toolbar
+}
 
-	menu := selected(func(c richtextCommand) bool { return c.Menu })
-
-	frame := append(attrs, area, h.Div(append(toolbar, h.Hidden(""))...))
-	frame = append(frame,
-		h.Div(
-			h.Role("toolbar"), g.Attr("data-richtext-bubble", ""),
-			h.Aria("label", word("forms.richtext.bubble", "Format selection")), h.Hidden(""),
-			g.Group(toolbarRow(selected(func(c richtextCommand) bool { return c.Bubble })...)),
-		),
-		h.Div(
-			g.Attr("data-richtext-menu", ""), h.Role("listbox"), h.Hidden(""),
-			h.Aria("label", word("forms.richtext.menu", "Insert a block")),
-			// Two lines per row — the block's name and one line about it — because
-			// the menu's job is to teach an author what a block is, not only what
-			// it is called.
-			g.Group(func() []g.Node {
-				rows := make([]g.Node, 0, len(menu))
-				for _, c := range menu {
-					rows = append(rows, h.Button(
-						h.Type("button"), h.Role("option"), h.Aria("selected", "false"),
-						g.Attr("data-richtext-command", c.Command),
-						h.Span(g.Text(word(c.TitleKey, c.Title))),
-						h.Span(g.Text(word(helpKey(c), c.Help))),
-					))
-				}
-				return rows
-			}()),
-		),
-		h.Div(
-			g.Attr("data-richtext-link", ""), h.Hidden(""),
-			h.Label(h.For(f.Name+"-richtext-link"), g.Text(word("forms.richtext.linkAddress", "Address"))),
-			// type=text, not type=url: the address this dialog accepts is decision 0069
-			// §1's vocabulary, which holds a site-relative /path and a #fragment as well as
-			// the schemes a browser's own URL check reads — drawn as a URL field it would
-			// take the link the page offered out of the record on the person's own submit,
-			// with nothing said. The same list is checked on the way in (the glue's) and on
-			// the way through (kit/richtext's); this control only types the keyboard.
-			h.Input(h.Type("text"), h.ID(f.Name+"-richtext-link"), g.Attr("inputmode", "url"), g.Attr("data-richtext-link-input", "")),
-			components.Button(components.ButtonProps{
-				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-command": "link-save"}},
-				Type:           "button", Label: word("forms.richtext.linkSave", "Save link"), Size: "sm",
-			}),
-			components.Button(components.ButtonProps{
-				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-command": "link-remove"}},
-				Type:           "button", Label: word("forms.richtext.linkRemove", "Remove link"), Variant: "ghost", Size: "sm",
-			}),
-		),
-		h.Div(g.Attr("data-richtext-surface", ""), h.Hidden("")),
-		h.P(g.Attr("data-richtext-status", ""), h.Aria("live", "polite"), h.Hidden("")),
-		h.P(g.Attr("data-richtext-count", ""), h.Hidden("")),
-		h.Input(h.Type("file"), h.Accept("image/*"), h.Multiple(), g.Attr("data-richtext-file", ""), h.Hidden("")),
-		h.Div(
-			g.Attr("data-richtext-draft-bar", ""), h.Hidden(""),
-			h.P(g.Text(word("forms.richtext.draftFound", "A draft from this device was not saved."))),
-			components.Button(components.ButtonProps{
-				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-draft-restore": ""}},
-				Type:           "button", Label: word("forms.richtext.draftRestore", "Restore unsaved draft"), Size: "sm",
-			}),
-			components.Button(components.ButtonProps{
-				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-draft-discard": ""}},
-				Type:           "button", Label: word("forms.richtext.draftDiscard", "Discard"), Variant: "ghost", Size: "sm",
-			}),
-		),
-		h.Div(g.Attr("data-richtext-preview", ""), h.Hidden("")),
-		// The one slot a refusal, a conflict or a returned draft occupies. It is
-		// drawn empty so the browser fills a slot the page laid out instead of
-		// inventing a widget of its own.
-		h.Div(g.Attr("data-richtext-offer", ""), h.Hidden("")),
-		help,
+func richtextBlockMenu(menu []richtextCommand, word phraser) g.Node {
+	return h.Div(
+		g.Attr("data-richtext-menu", ""), h.Role("listbox"), h.Hidden(""),
+		h.Aria("label", word("forms.richtext.menu", "Insert a block")),
+		// Two lines per row — the block's name and one line about it — because
+		// the menu's job is to teach an author what a block is, not only what
+		// it is called.
+		g.Group(richtextMenuRows(menu, word)),
 	)
-	return h.Div(frame...)
+}
+
+func richtextLinkControls(name string, word phraser) g.Node {
+	return h.Div(
+		g.Attr("data-richtext-link", ""), h.Hidden(""),
+		h.Label(h.For(name+"-richtext-link"), g.Text(word("forms.richtext.linkAddress", "Address"))),
+		// Site-relative paths and fragments are valid links, so native URL
+		// validation must not reject them before the rich-text policy runs.
+		h.Input(h.Type("text"), h.ID(name+"-richtext-link"), g.Attr("inputmode", "url"), g.Attr("data-richtext-link-input", "")),
+		components.Button(components.ButtonProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-command": "link-save"}},
+			Type:           "button", Label: word("forms.richtext.linkSave", "Save link"), Size: "sm",
+		}),
+		components.Button(components.ButtonProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-command": "link-remove"}},
+			Type:           "button", Label: word("forms.richtext.linkRemove", "Remove link"), Variant: "ghost", Size: "sm",
+		}),
+	)
+}
+
+func richtextDraftControls(word phraser) g.Node {
+	return h.Div(
+		g.Attr("data-richtext-draft-bar", ""), h.Hidden(""),
+		h.P(g.Text(word("forms.richtext.draftFound", "A draft from this device was not saved."))),
+		components.Button(components.ButtonProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-draft-restore": ""}},
+			Type:           "button", Label: word("forms.richtext.draftRestore", "Restore unsaved draft"), Size: "sm",
+		}),
+		components.Button(components.ButtonProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-draft-discard": ""}},
+			Type:           "button", Label: word("forms.richtext.draftDiscard", "Discard"), Variant: "ghost", Size: "sm",
+		}),
+	)
+}
+
+func richtextMenuRows(menu []richtextCommand, word phraser) []g.Node {
+	rows := make([]g.Node, 0, len(menu))
+	for _, c := range menu {
+		rows = append(rows, h.Button(
+			h.Type("button"), h.Role("option"), h.Aria("selected", "false"),
+			g.Attr("data-richtext-command", c.Command),
+			h.Span(g.Text(word(c.TitleKey, c.Title))),
+			h.Span(g.Text(word(helpKey(c), c.Help))),
+		))
+	}
+	return rows
 }
 
 // richtextSentences are the lines the browser writes while the person is writing:

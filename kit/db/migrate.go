@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -145,6 +144,9 @@ var ErrContended = errors.New("db: migration is contended: it could not take a l
 // fails before that owner's pending files run. Worker-owned drains defer later
 // files and return nil. Earlier committed files and batches survive later errors.
 // See README.md for execution modes and backfill ownership.
+//
+// Deprecated: Use MigrateWithOptions with the zero MigrateOptions, which runs on
+// these same default budgets and declares nothing.
 func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource) error {
 	return MigrateWith(ctx, migrateURL, MigrationBudget{}, sources...)
 }
@@ -152,6 +154,9 @@ func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource)
 // MigrateWith is Migrate with the budgets a deployment named in its configuration.
 // Migrate is this function with the documented defaults, which is why every caller
 // that does not name a budget still gets the lock budget.
+//
+// Deprecated: Use MigrateWithOptions with MigrateOptions{Budget: budget}, which is
+// this call and nothing more.
 func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
 	return MigrateDeclaring(ctx, migrateURL, budget, Declaration{}, sources...)
 }
@@ -220,100 +225,21 @@ func (d Declaration) declare(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
+// MigrateDeclaring is MigrateWith plus what the boot declares about itself. An
+// empty Declaration declares nothing, which is what every caller that predates
+// the tenant app column already meant.
+//
+// Deprecated: Use MigrateWithOptions, which takes the budget and the declaration
+// as the one MigrateOptions it runs on.
+func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBudget, decl Declaration, sources ...MigrationSource) error {
+	return MigrateWithOptions(ctx, migrateURL, MigrateOptions{Budget: budget, Declaration: decl}, sources...)
+}
+
 // compositionLockKey is the first half of the advisory lock one migration run holds for
 // its whole composition, so that two replicas do not apply the same file at once. The
 // second half is the namespace the run resolves to: see holdCompositionLock, which says
 // why the key is one namespace's and not one database's.
 const compositionLockKey = 7240101
-
-// MigrateDeclaring is MigrateWith plus what the boot declares about itself. An
-// empty Declaration declares nothing, which is what every caller that predates
-// the tenant app column already meant.
-func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBudget, decl Declaration, sources ...MigrationSource) error {
-	if err := budget.validate(); err != nil {
-		return fmt.Errorf("db: migrate: %w", err)
-	}
-	migrations, adoptions, err := readMigrations(sources)
-	if err != nil {
-		return err
-	}
-	pool, err := sql.Open("pgx", migrateURL)
-	if err != nil {
-		return fmt.Errorf("db: migrate: open: %w", err)
-	}
-	defer pool.Close()
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("db: migrate: connect: %w", err)
-	}
-	defer conn.Close()
-
-	if err := decl.declare(ctx, conn); err != nil {
-		return fmt.Errorf("db: migrate: %w", err)
-	}
-
-	run := &runner{conn: conn, budget: budget}
-	// The composition lock is a session lock and this function owns the session: the two
-	// defers above hand it back and close the pool it came from, which ends the backend and
-	// drops the key with it. Those two defers are therefore the whole unlock, and they run on
-	// every return — the guarantee this point always made, "an unreleased one would go when
-	// the connection goes", minus the statement that could only ever be refused. A run that
-	// applied all its files hands the key back when its backend exits, after Migrate has
-	// returned, and the only returns that reach the defers early are the caller having
-	// cancelled or a file having failed. No probe takes the statement's place: every method on
-	// a *sql.Conn, PingContext included, reads the connection's `done` before it takes
-	// `closemu`, so a Close completing in between answers a nil driver connection and a nil
-	// error — and ending the session is what a session that may be gone answers. The window an
-	// `autocommit` file opens *inside* a run is the different case, and it still puts the key
-	// down with a statement: mid-run the session is the run's own, and the statement below it
-	// must wait for the transactions already in the database. See stepAwayFromTheCompositionLock.
-	if err := run.holdCompositionLock(ctx); err != nil {
-		return err
-	}
-	if err := createOwnTables(ctx, conn); err != nil {
-		return err
-	}
-	if err := revokeOwnTables(ctx, conn); err != nil {
-		return err
-	}
-	if err := adoptHistory(ctx, conn, adoptions); err != nil {
-		return err
-	}
-	pending, history, err := pendingMigrations(ctx, conn, migrations)
-	if err != nil {
-		return err
-	}
-	if err := checkPendingGuards(pending); err != nil {
-		return fmt.Errorf("db: migrate: %w", err)
-	}
-	for _, group := range groupedByOwner(pending) {
-		plan, err := planOwner(ctx, conn, group, history)
-		if err != nil {
-			return fmt.Errorf("db: migrate: %w", err)
-		}
-		for _, migration := range plan {
-			started := time.Now()
-			report, err := run.apply(ctx, migration)
-			if err != nil {
-				return fmt.Errorf("db: migrate: %s/%s: %w", migration.owner, migration.name, run.refused(err))
-			}
-			// Info, not Debug, and with the runner's own measurement on it. A release
-			// asks which files this run applied and how long each one took, and the
-			// rehearsal (scripts/rehearse_migrations.sh) reports the duration the runner
-			// measured rather than one a watcher estimated around the process. A data
-			// file carries its batch count beside that, because three transactions and
-			// fifty at the same duration are two different costs; a schema file has one
-			// transaction and no such number to report.
-			fields := []any{"owner", migration.owner, "version", migration.version,
-				"name", migration.name, "phase", migration.phase}
-			if migration.phase == phaseData {
-				fields = append(fields, "batches", report.batches)
-			}
-			slog.InfoContext(ctx, "db: applied migration", append(fields, "duration_ms", time.Since(started).Milliseconds())...)
-		}
-	}
-	return nil
-}
 
 // stepAwayFromTheCompositionLock releases the composition lock and its lock
 // timeout for an autocommit statement. The statement timeout remains in

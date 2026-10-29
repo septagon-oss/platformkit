@@ -50,6 +50,21 @@ shown, which the generated screens read without linking this package.
 
 ## Composition (typed PATCH)
 
+Resource and command `int64` fields use the [HTTP integer contract](../httpx/README.md#exact-signed-integers).
+Numeric output is deprecated; request the explicit decimal representation to
+preserve every digit in JavaScript clients. Domain fields and database columns
+remain signed integers. PATCH, command defaults and screen row/form handoffs
+bind through the same exact decoder; native `int`/`int32` values stay numeric.
+Resource row maps retain untyped numbers as `json.Number`, so a form does not
+lose digits before binding them to a declared field.
+
+**Reused** — `Spec`, `Command`, `merge`, `row` and `decode` keep their field,
+authorization, transaction and outbox decisions.
+**Added** — exact integer binding at their existing JSON seams, because an
+untyped float map loses digits before a writable field can validate them.
+**Made reusable** — the same full-range CRUD sequence runs against PostgreSQL
+and `porttest.Store`, including silent refusals and competing revision checks.
+
 **Reused** — `Spec.Schema`, `crud.FieldNamed`, `foldedName` and Huma's entity
 schemas provide the writable names, types, formats, enums and media annotations.
 **Added** — `httpx.SetPatchSchema` replaces the untyped map with `<Entity>Patch`:
@@ -148,6 +163,37 @@ because runtime merge refusal cannot prevent an unusable command from composing.
 **Made reusable** — declaration, JSON and application-build conformance cases
 exercise the same guard for every module's command inputs.
 
+## Composition (one guard, one command declaration)
+
+A guard has two spellings — `Read`/`Write` with `OperatorRead`/`OperatorWrite`, or
+`ReadAuth`/`WriteAuth` as an `httpx.Auth` — and they answer one declaration. Neither
+is merged with the other: stating a guard in both is refused, and stating it in
+either lands the route on the surface the answer names and reaches `kit/app`'s
+manifest cross-check with its operator fact intact. A command is now declared the
+same way once, as `CommandSpec{Verb, Summary, Doc, Emits, Auth, Collection,
+Options}` handed to `Mount` or `MountResult`; `Command` and `CommandResult` take the
+same command as positional parameters, delegate, and are deprecated. Migrating one
+is the spelling: a guard stated in `Options`, where `Command` kept it, still mounts,
+and one the two fields answer differently is refused, as is a collection route
+`Options` asks for and the `CommandSpec` does not — a bool has no spelling for
+"nothing said", so that pair is the one doubling a reader cannot resolve alone.
+
+**Reused** — `httpx.Resource.ReadAuth` and `WriteAuth`, which already owned the
+derivation, and `(*httpx.API).guard`, which already computed both sides once per
+registration; `registerCommand`, which stays the one body of both command forms;
+`ui/resource.Resource.offers`, already how the New button is gated. **Added** —
+`CommandSpec`, `Mount` and `MountResult`, because nine positional parameters, three
+of them adjacent strings, cannot be read at the call site, and nothing here or on
+the shelf declared a command as a value; and the write-back of the derived guard
+into `ReadBy`/`WriteBy`, which every reader of a registered resource consults.
+**Made reusable** — a list with no record route is now a legal resource, and
+`ui/resource` asks whether a record page exists before it links a row to one, the
+question the page side and the door side already asked. No module's own list page
+changes shape, because every module resource that offers `list` offers `read`; the
+reference application's picture fixture is the list whose rows do change. And the
+refusals left at mount are about a fact said twice, not about which field said it,
+so the next guard that is not a plain permission needs no new field.
+
 ## Composition (T-0360)
 
 **Reused** — the richtext pass that already parsed every field of a save before any of it
@@ -206,6 +252,79 @@ in-process `Spec.Update` beneath a worker and a lifecycle command, because they 
 diff can quote without writing a trigger, a column of its own or a second writer; and a
 command is asked about by verb, which is what leaves a command nobody annotated still
 answered by the module that owns the row.
+
+## Translating a record
+
+A field tagged `i18n:"translatable"` gives a resource the same text in another
+language. Two interfaces carry that, and the direction each points in is the reason
+neither lives in a module.
+
+`Translations` is the door a `rest.Spec` knocks on to read and write one record's
+translations. The dependency runs module→kernel, so the shape the kernel asks for has
+to be the kernel's own, and `modules/translation` implements it. The Spec holds it as
+one field wired by hand at composition, the same way `RichTextFiles` is wired; nothing
+discovers it.
+
+`TranslationSource` points the other way, because one question is unanswerable from
+the translations table alone: "missing" means *no row*, and which records exist is a
+fact about the entity's own table, which another module owns. So the row set arrives
+at the translation module through a port the translation module does not own and
+cannot fill — house rule 5, a higher-tier collaborator reached through a port declared
+here and implemented at composition — and the only reflection anywhere is the kernel's
+own, one line per mounting module:
+
+	Sources: []rest.TranslationSource{rest.TranslationSourceOf(contentSpec)}
+
+There is no registry and no discovery: the composition writes the list and the
+compiler checks it.
+
+### Reading a record in another language
+
+The source language is the tenant's default, because the record's own write door
+insists on it — a translation of the tenant's own language is refused as a mistake, so
+the row can only ever be in the default. No caller passes a source language and none
+can disagree.
+
+Completeness is per field and never per locale. One field is answered in the asked
+language when that field is reviewed against a source that still matches; a field whose
+only text is an unreviewed draft is not an answer, and neither is one whose source has
+moved since — that text says something its author no longer says, and it is the kind a
+search engine would index under a language flag and keep for a year. Both are shown to
+the workspace, which sees the label, and neither to a reader, who sees that field in
+the source and nothing else. A reader who asked for Portuguese of a page whose title is
+translated and whose paragraph is not is given the Portuguese title: withholding the
+part the installation has because one field is missing answers a reader with less than
+there is.
+
+A locale counts as one this record *may be read in* — its hreflang alternate — only
+when every translatable field is reviewed in it. That strict question is a different
+question from what to print. The other locales are asked about whatever the reader
+named, including nothing: the page at the bare address is read by a crawler that
+decides what to index from the alternates in its head, and a translation made after the
+page was written is discoverable only if the source page lists it.
+
+### Writing a translation
+
+Four doors, all of them commands of the record rather than routes of the translation
+module, and that placement is the design:
+
+- **The guard is the record's own write permission.** A stranger who cannot edit the
+  page cannot write its Portuguese either. There is no second permission to grant, to
+  drift out of step with the first, and to audit against separately.
+- **The source row is locked before its text is lifted**, by `crud.GetForUpdate`, the
+  same lock the record's own PATCH takes before it merges. A translation measured
+  against a source the caller never held is wrong the moment two people write at once.
+- **The value is validated by the field's own rules** — the same `richtext.Prepare`,
+  the same ceiling and the same `RichTextFiles` port the record's own write runs —
+  because the rules belong to the field and the translation module has no business
+  knowing what a page body is. A translated paragraph that would be refused in English
+  is refused in Portuguese; a door that skipped this would let through the back of the
+  feature what the front of it never allows.
+
+Two verbs name the noun they act on (`review-translation`, `suggest-translation`)
+rather than the bare `review` and `suggest`: the verb is the command's whole address
+and its operation id, and a resource that already reviews its own rows would otherwise
+find two doors mounted at one path.
 
 ## Composition of resource steps
 

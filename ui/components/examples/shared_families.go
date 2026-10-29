@@ -2,11 +2,11 @@ package examples
 
 import (
 	"fmt"
-	"math"
 	"time"
 
-	c "github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
+
+	c "github.com/septagon-oss/platformkit/ui/components"
 )
 
 type sharedCopy struct {
@@ -82,109 +82,9 @@ func sharedPhoto(id string, w sharedCopy) c.Photo {
 func workflowExamples() []Example {
 	var entries []Example
 	for _, w := range sharedLocales() {
-		for _, story := range []string{"default", "loading", "failed", "refused", "offline", "offline-failed", "first", "middle", "last", "step-error", "disabled-step", "save-pending", "save-failed", "save-succeeded", "resumed", "read-only"} {
-			p := c.StepperProps{ComponentProps: sharedProps("stepper", w), Label: w.label, State: sharedState(story, w), ProgressText: "1 / 3", CurrentKey: "review", Steps: []c.Step{{Key: "choose", Title: w.label, State: "complete", Href: "/flow/choose"}, {Key: "review", Title: w.details}, {Key: "finish", Title: w.save, State: "upcoming"}}, FormID: "flow-" + w.locale}
-			slots := c.StepperSlots{}
-			if absent(p.State) {
-				p.Steps = nil
-				p.CurrentKey = ""
-			} else {
-				if story == "first" {
-					p.CurrentKey = "choose"
-					p.Steps[0].State = "upcoming"
-					p.ProgressText = "0 / 3"
-				}
-				if story == "last" || story == "save-succeeded" {
-					p.CurrentKey = "finish"
-					p.Steps[1].State = "complete"
-					p.ProgressText = "2 / 3"
-				}
-				if story == "step-error" {
-					p.Steps[1].State = "error"
-					slots.ErrorSummary = []g.Node{c.Notice(c.NoticeProps{Text: w.failed})}
-				}
-				if story == "disabled-step" {
-					p.Steps[2].State = "disabled"
-				}
-				if story == "save-pending" {
-					p.Busy = true
-					p.SaveStatusText = w.loading
-				}
-				if story == "save-failed" {
-					p.SaveStatusText = w.failed
-				}
-				if story == "save-succeeded" {
-					p.SaveStatusText = w.save
-				}
-				p.Disabled = story == "read-only"
-				slots.Body = []g.Node{c.Form(c.FormProps{ComponentProps: c.ComponentProps{ID: p.FormID}, Action: "/flow"}, c.Input(c.InputProps{Name: "notes", Label: w.details, Value: w.details, ComponentProps: c.ComponentProps{Attrs: map[string]string{"form": p.FormID}}}))}
-				action := func(label, intent string) []g.Node {
-					variant := "outline"
-					if intent == "continue" {
-						variant = "primary"
-					}
-					return []g.Node{c.Button(c.ButtonProps{ComponentProps: c.ComponentProps{Attrs: map[string]string{"form": p.FormID, "name": "intent", "value": intent}, Disabled: p.Disabled || p.Busy}, Label: label, Variant: variant, Type: "submit", Size: "lg"})}
-				}
-				slots.Back = action(w.back, "back")
-				slots.Continue = action(w.continueText, "continue")
-				slots.SaveExit = action(w.saveExit, "save-exit")
-			}
-			entries = append(entries, ExampleWithSlots(sharedInfo("stepper", story, w), p, slots, c.StepperWithSlots))
-		}
-		for _, story := range []string{"default", "today", "selected", "disabled-date", "long-label", "month-boundary", "keyboard-scroll"} {
-			p := sharedDates(w)
-			p.ComponentProps = sharedProps("date-strip", w)
-			if story == "disabled-date" {
-				p.Days[0].Disabled = true
-				p.Days[0].Reason = w.unavailable
-			}
-			if story == "long-label" {
-				p.Days[1].Label = w.details
-			}
-			if story == "month-boundary" {
-				p.SelectedDate = "2026-11-01"
-				p.Days = []c.DateChoice{{Date: "2026-10-31", Label: "31", Href: "/items?date=2026-10-31"}, {Date: "2026-11-01", Label: "1", Href: "/items?date=2026-11-01"}}
-			}
-			entries = append(entries, ExampleOf(sharedInfo("date-strip", story, w), p, c.DateStrip))
-		}
-		for _, story := range []string{"default", "loading", "empty", "failed", "refused", "offline", "offline-failed", "selected", "booked", "full", "capacity-unknown", "unavailable", "past", "overnight", "dst-fold", "stale", "invalid-selection", "confirmation-pending"} {
-			p := c.SlotPickerProps{ComponentProps: sharedProps("slots", w), Label: w.label, State: sharedState(story, w), DateStrip: sharedDates(w), TimeZone: "Europe/Lisbon", TimeZoneLabel: w.timeZone, NowUTC: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC), Name: "slot", Quantity: 1, SnapshotText: w.details, StatusLabels: c.SlotStatusLabels{Available: w.available, Booked: w.booked, Past: w.past, Unavailable: w.unavailable, Full: w.full, Stale: w.stale, CapacityUnknown: w.unknown}}
-			p.Slots = []c.Slot{{ID: "early", StartUTC: time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC), EndUTC: time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC), TimeText: "01:30 UTC+01:00", Availability: "available", Capacity: new(int64(3)), Remaining: new(int64(1)), CapacityText: "1 / 3"}, {ID: "late", StartUTC: time.Date(2026, 10, 25, 1, 30, 0, 0, time.UTC), EndUTC: time.Date(2026, 10, 25, 2, 0, 0, 0, time.UTC), TimeText: "01:30 UTC+00:00", Availability: "available"}}
-			if absent(p.State) {
-				p.Slots = nil
-				if p.State.Status == c.MediaFailed || p.State.Status == c.MediaRefused {
-					p.DateStrip = c.DateStripProps{}
-				}
-			} else {
-				switch story {
-				case "selected":
-					p.SelectedID = "early"
-				case "booked":
-					p.Slots[0].Availability = "booked"
-				case "full":
-					p.Quantity = 2
-				case "capacity-unknown":
-					p.Slots[0].Capacity = nil
-					p.Slots[0].Remaining = nil
-				case "unavailable":
-					p.Slots[0].Availability = "unavailable"
-				case "past":
-					p.NowUTC = p.Slots[0].StartUTC
-				case "overnight":
-					p.Slots[0].StartUTC = time.Date(2026, 10, 25, 23, 30, 0, 0, time.UTC)
-					p.Slots[0].EndUTC = time.Date(2026, 10, 26, 0, 30, 0, 0, time.UTC)
-					p.Slots[0].TimeText = "23:30–00:30 UTC+00:00"
-				case "stale":
-					p.Stale = true
-				case "invalid-selection":
-					p.SelectedID = "removed"
-					p.ErrorText = w.stale
-				case "confirmation-pending":
-					p.Disabled = true
-				}
-			}
-			entries = append(entries, ExampleOf(sharedInfo("slot-picker", story, w), p, c.SlotPicker))
-		}
+		entries = append(entries, stepperExamplesForLocale(w)...)
+		entries = append(entries, dateStripExamplesForLocale(w)...)
+		entries = append(entries, slotPickerExamplesForLocale(w)...)
 	}
 	return entries
 }
@@ -192,155 +92,12 @@ func workflowExamples() []Example {
 func commerceExamples() []Example {
 	var entries []Example
 	for _, w := range sharedLocales() {
-		for _, story := range []string{"default", "loading", "empty", "failed", "refused", "offline", "offline-failed", "no-image", "unknown-price", "sold-out", "unavailable", "promotion"} {
-			p := c.ProductCardProps{ComponentProps: sharedProps("product", w), Label: w.label, State: sharedState(story, w)}
-			if !absent(p.State) {
-				p.ProductID = "sample"
-				p.Title = w.caption
-				p.Description = w.details
-				p.Href = "/products/sample"
-				p.Media = sharedPhoto("sample", w).Media
-				p.Price = new(sharedMoney(125, w))
-				p.Availability = "available"
-				p.AvailabilityText = w.available
-				switch story {
-				case "no-image":
-					p.Media = c.MediaProps{Status: c.MediaEmpty, Reason: w.empty}
-				case "unknown-price":
-					p.Price = nil
-					p.PriceText = w.unknown
-				case "sold-out", "unavailable":
-					p.Availability = story
-					p.AvailabilityText = w.unavailable
-				case "promotion":
-					p.Badges = []c.BadgeProps{{Label: w.recommended, Tone: "info"}}
-				}
-			}
-			entries = append(entries, ExampleOf(sharedInfo("product-card", story, w), p, c.ProductCard))
-		}
-		for _, story := range []string{"default", "selected", "disabled-option", "sold-out", "required-error", "stale-choice", "long-label"} {
-			p := c.OptionChipsProps{ComponentProps: sharedProps("options", w), Label: w.label, Name: "variant", Options: []c.Option{{Key: "one", Label: "A"}, {Key: "two", Label: "B"}}, Required: true}
-			switch story {
-			case "selected":
-				p.Value = "one"
-			case "disabled-option", "sold-out":
-				p.Options[1].Disabled = true
-				p.Options[1].Reason = w.unavailable
-			case "required-error":
-				p.ErrorText = w.failed
-			case "stale-choice":
-				p.Value = "removed"
-				p.ErrorText = w.stale
-			case "long-label":
-				p.Options[0].Label = w.details
-			}
-			entries = append(entries, ExampleOf(sharedInfo("option-chips", story, w), p, c.OptionChips))
-		}
-		for _, story := range []string{"default", "minimum", "maximum", "invalid", "overflow-boundary", "disabled", "pending"} {
-			p := sharedQuantity(w)
-			switch story {
-			case "maximum":
-				p.Value = 8
-			case "invalid":
-				p.Value = 3
-				p.ErrorText = w.failed
-			case "overflow-boundary":
-				p.Min = 0
-				p.Max = math.MaxInt64
-				p.Value = 9007199254740993
-				p.Step = 1
-			case "disabled":
-				p.Disabled = true
-			case "pending":
-				p.Pending = true
-			}
-			entries = append(entries, ExampleOf(sharedInfo("quantity-input", story, w), p, c.QuantityInput))
-		}
-		for _, story := range []string{"default", "loading", "empty", "failed", "refused", "offline", "offline-failed", "sticky", "wrapped", "pending", "unavailable", "stale", "keyboard-open"} {
-			p := c.BuyBarProps{ComponentProps: sharedProps("buy", w), Label: w.summary, State: sharedState(story, w)}
-			slots := c.BuyBarSlots{}
-			if !absent(p.State) {
-				p.Total = new(sharedMoney(425, w))
-				p.SummaryText = w.details
-				p.Pending = story == "pending"
-				if story == "unavailable" || story == "stale" {
-					p.UnavailableText = w.stale
-				}
-				slots.PrimaryAction = []g.Node{c.Button(c.ButtonProps{Label: w.continueText, Href: "/checkout", Size: "lg"})}
-			}
-			entries = append(entries, ExampleWithSlots(sharedInfo("buy-bar", story, w), p, slots, c.BuyBarWithSlots))
-		}
-		for _, story := range []string{"default", "loading", "empty", "failed", "refused", "offline", "offline-failed", "zero", "included-tax", "discount", "fee", "incomplete", "stale"} {
-			p := sharedSummary(w)
-			p.ComponentProps = sharedProps("summary", w)
-			p.State = sharedState(story, w)
-			if absent(p.State) {
-				p.Lines = nil
-				p.Subtotal = nil
-				p.Total = nil
-				p.Complete = false
-			} else if story == "incomplete" || story == "stale" {
-				p.Complete = false
-				p.Total = nil
-				p.IncompleteText = w.stale
-			} else if story == "zero" {
-				p.Lines = nil
-				p.Subtotal = new(sharedMoney(0, w))
-				p.Total = new(sharedMoney(0, w))
-			}
-			entries = append(entries, ExampleOf(sharedInfo("order-summary", story, w), p, c.OrderSummary))
-		}
-		for _, story := range []string{"default", "loading", "empty", "failed", "refused", "offline", "offline-failed", "updating", "removed-last-line", "sold-out-line", "stale-quote", "incomplete-quote", "uncertain-write"} {
-			p := c.CartProps{ComponentProps: sharedProps("cart", w), Label: w.summary, State: sharedState(story, w)}
-			slots := c.CartSlots{}
-			if story == "removed-last-line" {
-				p.State = sharedState("empty", w)
-			}
-			if !absent(p.State) {
-				p.ResultKey = "quote-one"
-				p.QuoteState = "current"
-				p.QuoteText = w.details
-				p.Summary = sharedSummary(w)
-				for i, unit := range []int64{125, 200} {
-					quantity := int64(1)
-					if i == 0 {
-						quantity = 2
-					}
-					q := sharedQuantity(w)
-					q.ID = fmt.Sprintf("line-%d-%s", i, w.locale)
-					q.Attrs = nil
-					q.Min = 1
-					q.Step = 1
-					q.Value = quantity
-					q.FormID = q.ID + "-form"
-					p.Lines = append(p.Lines, c.CartLine{ID: fmt.Sprint(i), ProductID: fmt.Sprint(i), Title: w.caption + " " + fmt.Sprint(i+1), UnitPrice: sharedMoney(unit, w), Quantity: quantity, QuantityInput: q, Availability: "available", AvailabilityText: w.available, LineTotal: sharedMoney(unit*quantity, w), Revision: "1"})
-				}
-				if story == "updating" {
-					p.Pending = true
-					p.QuoteText = w.loading
-				}
-				if story == "sold-out-line" {
-					p.Lines[0].Availability = "sold-out"
-					p.Lines[0].AvailabilityText = w.unavailable
-				}
-				if story == "stale-quote" || story == "uncertain-write" {
-					p.QuoteState = "stale"
-					p.QuoteText = w.stale
-				}
-				if story == "incomplete-quote" {
-					p.QuoteState = "incomplete"
-					p.Summary.Complete = false
-					p.Summary.Total = nil
-					p.Summary.IncompleteText = w.unknown
-					p.QuoteText = w.unknown
-				}
-				slots.LineActions = func(line c.CartLine) g.Node {
-					return c.Form(c.FormProps{ComponentProps: c.ComponentProps{ID: line.QuantityInput.FormID}, Action: "/cart/" + line.ID}, c.Button(c.ButtonProps{Label: w.save, Variant: "outline", Type: "submit", Size: "lg"}))
-				}
-				slots.Checkout = []g.Node{c.Button(c.ButtonProps{Label: w.continueText, Href: "/checkout", Size: "lg"})}
-			}
-			entries = append(entries, ExampleWithSlots(sharedInfo("cart", story, w), p, slots, c.CartWithSlots))
-		}
+		entries = append(entries, productCardExamplesForLocale(w)...)
+		entries = append(entries, optionChipsExamplesForLocale(w)...)
+		entries = append(entries, quantityExamplesForLocale(w)...)
+		entries = append(entries, buyBarExamplesForLocale(w)...)
+		entries = append(entries, orderSummaryExamplesForLocale(w)...)
+		entries = append(entries, cartExamplesForLocale(w)...)
 	}
 	return entries
 }

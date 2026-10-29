@@ -1,317 +1,741 @@
 {
   "screens.empty_collection": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Ainda sem %s.",
-    "plural": { "": "Ainda sem %s." }
+    "plural": {
+      "": "Ainda sem %s."
+    }
   },
   "screens.count": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "%d %s registados",
-    "plural": { "": "%d %s registados" }
+    "plural": {
+      "": "%d %s registados"
+    }
   },
   "screens.new": {
-    "references": ["ui/resource/resource.go", "ui/screens/screens.go"],
+    "references": [
+      "ui/resource/resource.go",
+      "ui/screens/screens.go"
+    ],
     "translation": "Nova %s",
-    "plural": { "": "Nova %s" }
+    "plural": {
+      "": "Nova %s"
+    }
   },
   "screens.edit_item": {
-    "references": ["ui/screens/screens.go"],
+    "references": [
+      "ui/screens/screens.go"
+    ],
     "translation": "Editar %s",
-    "plural": { "": "Editar %s" }
+    "plural": {
+      "": "Editar %s"
+    }
   },
   "screens.edit": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Editar",
-    "plural": { "": "Editar" }
+    "plural": {
+      "": "Editar"
+    }
   },
   "screens.delete": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Eliminar",
-    "plural": { "": "Eliminar" }
+    "plural": {
+      "": "Eliminar"
+    }
   },
   "screens.delete_this": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Eliminar esta %s",
-    "plural": { "": "Eliminar esta %s" }
+    "plural": {
+      "": "Eliminar esta %s"
+    }
   },
   "screens.delete_confirm": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Isto elimina %s. Não é possível anular.",
-    "plural": { "": "Isto elimina %s. Não é possível anular." }
+    "plural": {
+      "": "Isto elimina %s. Não é possível anular."
+    }
   },
   "screens.empty": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Ainda sem %s.",
-    "plural": { "": "Ainda sem %s." }
+    "plural": {
+      "": "Ainda sem %s."
+    }
   },
   "screens.pagination": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Paginação",
-    "plural": { "": "Paginação" }
+    "plural": {
+      "": "Paginação"
+    }
   },
   "screens.previous": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Página anterior",
-    "plural": { "": "Página anterior" }
+    "plural": {
+      "": "Página anterior"
+    }
   },
   "screens.next": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Próxima página",
-    "plural": { "": "Próxima página" }
+    "plural": {
+      "": "Próxima página"
+    }
   },
   "screens.page": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Ir para a página %s",
-    "plural": { "": "Ir para a página %s" }
+    "plural": {
+      "": "Ir para a página %s"
+    }
   },
   "screens.current_page": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Página %s, atual",
-    "plural": { "": "Página %s, atual" }
+    "plural": {
+      "": "Página %s, atual"
+    }
   },
   "screens.breadcrumb": {
-    "references": ["ui/resource/resource.go"],
+    "references": [
+      "ui/resource/resource.go"
+    ],
     "translation": "Caminho",
-    "plural": { "": "Caminho" }
+    "plural": {
+      "": "Caminho"
+    }
   },
   "screens.history": {
-    "references": ["ui/resource/history.go"],
+    "references": [
+      "ui/resource/history.go"
+    ],
     "translation": "Histórico",
-    "plural": { "": "Histórico" }
+    "plural": {
+      "": "Histórico"
+    }
   },
   "screens.history.first": {
-    "references": ["ui/resource/history.go"],
+    "references": [
+      "ui/resource/history.go"
+    ],
     "translation": "O registo tal como foi escrito pela primeira vez.",
-    "plural": { "": "O registo tal como foi escrito pela primeira vez." }
+    "plural": {
+      "": "O registo tal como foi escrito pela primeira vez."
+    }
   },
   "screens.history.restore": {
-    "references": ["ui/resource/history.go"],
+    "references": [
+      "ui/resource/history.go"
+    ],
     "translation": "Restaurar esta versão",
-    "plural": { "": "Restaurar esta versão" }
+    "plural": {
+      "": "Restaurar esta versão"
+    }
   },
   "screens.history.restored": {
-    "references": ["ui/resource/history.go"],
-    "translation": "Restaurado de",
-    "plural": { "": "Restaurado de" }
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Restaurada desde a versão %[1]d",
+    "plural": {
+      "": "Restaurada desde a versão %[1]d"
+    }
   },
   "screens.history.unchanged": {
-    "references": ["ui/resource/history.go"],
+    "references": [
+      "ui/resource/history.go"
+    ],
     "translation": "Nenhum campo alterado.",
-    "plural": { "": "Nenhum campo alterado." }
+    "plural": {
+      "": "Nenhum campo alterado."
+    }
+  },
+  "screens.command_in_locale": {
+    "references": [
+      "ui/resource/commands.go"
+    ],
+    "translation": "%[1]s (%[2]s)",
+    "plural": {
+      "": "%[1]s (%[2]s)"
+    }
   },
   "screens.command_saved": {
-    "references": ["ui/screens/command_output.go"],
+    "references": [
+      "ui/screens/command_output.go"
+    ],
     "translation": "A alteração foi guardada.",
-    "plural": { "": "A alteração foi guardada." }
+    "plural": {
+      "": "A alteração foi guardada."
+    }
   },
   "screens.continue": {
-    "references": ["ui/screens/command_output.go"],
+    "references": [
+      "ui/screens/command_output.go"
+    ],
     "translation": "Continuar",
-    "plural": { "": "Continuar" }
+    "plural": {
+      "": "Continuar"
+    }
   },
   "screens.missing": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "—",
-    "plural": { "": "—" }
+    "plural": {
+      "": "—"
+    }
   },
   "screens.true": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Sim",
-    "plural": { "": "Sim" }
+    "plural": {
+      "": "Sim"
+    }
   },
   "screens.false": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Não",
-    "plural": { "": "Não" }
+    "plural": {
+      "": "Não"
+    }
   },
   "screens.empty_title": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "—",
-    "plural": { "": "—" }
+    "plural": {
+      "": "—"
+    }
+  },
+  "screens.now": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "agora",
+    "plural": {
+      "": "agora"
+    }
+  },
+  "screens.remove_filter": {
+    "references": [
+      "ui/resource/list.go"
+    ],
+    "translation": "Remover filtro %s",
+    "plural": {
+      "": "Remover filtro %s"
+    }
+  },
+  "screens.relative.second_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundo",
+    "plural": {
+      "": "há %d segundo"
+    }
+  },
+  "screens.relative.second_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundo",
+    "plural": {
+      "": "dentro de %d segundo"
+    }
+  },
+  "screens.relative.seconds_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundos",
+    "plural": {
+      "": "há %d segundos"
+    }
+  },
+  "screens.relative.seconds_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundos",
+    "plural": {
+      "": "dentro de %d segundos"
+    }
+  },
+  "screens.relative.minute_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minuto",
+    "plural": {
+      "": "há %d minuto"
+    }
+  },
+  "screens.relative.minute_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minuto",
+    "plural": {
+      "": "dentro de %d minuto"
+    }
+  },
+  "screens.relative.minutes_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minutos",
+    "plural": {
+      "": "há %d minutos"
+    }
+  },
+  "screens.relative.minutes_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minutos",
+    "plural": {
+      "": "dentro de %d minutos"
+    }
+  },
+  "screens.relative.hour_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d hora",
+    "plural": {
+      "": "há %d hora"
+    }
+  },
+  "screens.relative.hour_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d hora",
+    "plural": {
+      "": "dentro de %d hora"
+    }
+  },
+  "screens.relative.hours_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d horas",
+    "plural": {
+      "": "há %d horas"
+    }
+  },
+  "screens.relative.hours_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d horas",
+    "plural": {
+      "": "dentro de %d horas"
+    }
+  },
+  "screens.relative.day_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dia",
+    "plural": {
+      "": "há %d dia"
+    }
+  },
+  "screens.relative.day_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dia",
+    "plural": {
+      "": "dentro de %d dia"
+    }
+  },
+  "screens.relative.days_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dias",
+    "plural": {
+      "": "há %d dias"
+    }
+  },
+  "screens.relative.days_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dias",
+    "plural": {
+      "": "dentro de %d dias"
+    }
   },
   "screens.session.step": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Passo {current} de {total}",
-    "plural": { "": "Passo {current} de {total}" }
+    "plural": {
+      "": "Passo {current} de {total}"
+    }
   },
   "screens.session.set": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Série {current} de {total}",
-    "plural": { "": "Série {current} de {total}" }
+    "plural": {
+      "": "Série {current} de {total}"
+    }
   },
   "screens.session.completed_step": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Passo {current} de {total}, concluído",
-    "plural": { "": "Passo {current} de {total}, concluído" }
+    "plural": {
+      "": "Passo {current} de {total}, concluído"
+    }
   },
   "screens.session.start_timer": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Iniciar “{name}” {duration}",
-    "plural": { "": "Iniciar “{name}” {duration}" }
+    "plural": {
+      "": "Iniciar “{name}” {duration}"
+    }
   },
   "screens.session.running_timer": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "{name}: {duration} restantes",
-    "plural": { "": "{name}: {duration} restantes" }
+    "plural": {
+      "": "{name}: {duration} restantes"
+    }
   },
   "screens.session.timer_ended": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Temporizador {name} terminado",
-    "plural": { "": "Temporizador {name} terminado" }
+    "plural": {
+      "": "Temporizador {name} terminado"
+    }
   },
   "screens.session.timers": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Temporizadores",
-    "plural": { "": "Temporizadores" }
+    "plural": {
+      "": "Temporizadores"
+    }
   },
   "screens.session.cancel_timer": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Cancelar o temporizador {name}",
-    "plural": { "": "Cancelar o temporizador {name}" }
+    "plural": {
+      "": "Cancelar o temporizador {name}"
+    }
   },
   "screens.session.restart_timer": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Iniciar {name} novamente",
-    "plural": { "": "Iniciar {name} novamente" }
+    "plural": {
+      "": "Iniciar {name} novamente"
+    }
   },
   "screens.session.done_set": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Série concluída",
-    "plural": { "": "Série concluída" }
+    "plural": {
+      "": "Série concluída"
+    }
   },
   "screens.session.next_set": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Série seguinte",
-    "plural": { "": "Série seguinte" }
+    "plural": {
+      "": "Série seguinte"
+    }
   },
   "screens.session.next_step": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Passo seguinte",
-    "plural": { "": "Passo seguinte" }
+    "plural": {
+      "": "Passo seguinte"
+    }
   },
   "screens.session.target_repetitions": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Repetições",
-    "plural": { "": "Repetições" }
+    "plural": {
+      "": "Repetições"
+    }
   },
   "screens.session.target_duration": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Duração",
-    "plural": { "": "Duração" }
+    "plural": {
+      "": "Duração"
+    }
   },
   "screens.session.previous_step": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Passo anterior",
-    "plural": { "": "Passo anterior" }
+    "plural": {
+      "": "Passo anterior"
+    }
   },
   "screens.session.rest": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Descanso",
-    "plural": { "": "Descanso" }
+    "plural": {
+      "": "Descanso"
+    }
   },
   "screens.session.rest_ended": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Descanso terminado",
-    "plural": { "": "Descanso terminado" }
+    "plural": {
+      "": "Descanso terminado"
+    }
   },
   "screens.session.rest_added": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Mais 15 segundos",
-    "plural": { "": "Mais 15 segundos" }
+    "plural": {
+      "": "Mais 15 segundos"
+    }
   },
   "screens.session.up_next": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "A seguir",
-    "plural": { "": "A seguir" }
+    "plural": {
+      "": "A seguir"
+    }
   },
   "screens.session.add_15": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "+15 s",
-    "plural": { "": "+15 s" }
+    "plural": {
+      "": "+15 s"
+    }
   },
   "screens.session.skip": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Saltar descanso",
-    "plural": { "": "Saltar descanso" }
+    "plural": {
+      "": "Saltar descanso"
+    }
   },
   "screens.session.continue": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Continuar",
-    "plural": { "": "Continuar" }
+    "plural": {
+      "": "Continuar"
+    }
   },
   "screens.session.finish": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Terminar sessão",
-    "plural": { "": "Terminar sessão" }
+    "plural": {
+      "": "Terminar sessão"
+    }
   },
   "screens.session.finish_partial": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Terminar com {completed} de {total} séries",
-    "plural": { "": "Terminar com {completed} de {total} séries" }
+    "plural": {
+      "": "Terminar com {completed} de {total} séries"
+    }
   },
   "screens.session.completed": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "{completed} de {total} séries concluídas",
-    "plural": { "": "{completed} de {total} séries concluídas" }
+    "plural": {
+      "": "{completed} de {total} séries concluídas"
+    }
   },
   "screens.session.end": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Fim da sessão",
-    "plural": { "": "Fim da sessão" }
+    "plural": {
+      "": "Fim da sessão"
+    }
   },
   "screens.session.nothing_recorded": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Nada registado",
-    "plural": { "": "Nada registado" }
+    "plural": {
+      "": "Nada registado"
+    }
   },
   "screens.session.navigation_only": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Avançar não regista progresso.",
-    "plural": { "": "Avançar não regista progresso." }
+    "plural": {
+      "": "Avançar não regista progresso."
+    }
   },
   "screens.session.completion_unavailable": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "A conclusão de séries está indisponível.",
-    "plural": { "": "A conclusão de séries está indisponível." }
+    "plural": {
+      "": "A conclusão de séries está indisponível."
+    }
   },
   "screens.session.finish_unavailable": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Terminar está indisponível.",
-    "plural": { "": "Terminar está indisponível." }
+    "plural": {
+      "": "Terminar está indisponível."
+    }
   },
   "screens.session.reload": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Recarregar",
-    "plural": { "": "Recarregar" }
+    "plural": {
+      "": "Recarregar"
+    }
   },
   "screens.session.no_script": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "A contagem decrescente e o som precisam de JavaScript.",
-    "plural": { "": "A contagem decrescente e o som precisam de JavaScript." }
+    "plural": {
+      "": "A contagem decrescente e o som precisam de JavaScript."
+    }
   },
   "screens.session.storage_unavailable": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Os temporizadores são repostos se recarregar a página.",
-    "plural": { "": "Os temporizadores são repostos se recarregar a página." }
+    "plural": {
+      "": "Os temporizadores são repostos se recarregar a página."
+    }
   },
   "screens.session.wake_unavailable": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "O ecrã pode adormecer.",
-    "plural": { "": "O ecrã pode adormecer." }
+    "plural": {
+      "": "O ecrã pode adormecer."
+    }
   },
   "screens.session.enable_sound": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Ativar som",
-    "plural": { "": "Ativar som" }
+    "plural": {
+      "": "Ativar som"
+    }
   },
   "screens.session.exit": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "Sair da sessão",
-    "plural": { "": "Sair da sessão" }
+    "plural": {
+      "": "Sair da sessão"
+    }
   },
   "screens.session.keyboard": {
-    "references": ["ui/screens/catalog.go"],
+    "references": [
+      "ui/screens/catalog.go"
+    ],
     "translation": "As setas mudam de passo. Espaço inicia um temporizador ou salta o descanso.",
-    "plural": { "": "As setas mudam de passo. Espaço inicia um temporizador ou salta o descanso." }
+    "plural": {
+      "": "As setas mudam de passo. Espaço inicia um temporizador ou salta o descanso."
+    }
   }
 }

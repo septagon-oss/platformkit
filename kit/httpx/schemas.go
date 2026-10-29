@@ -83,11 +83,12 @@ type Resource struct {
 	// cannot bypass the operator boundary. See docs/adr/0008.
 	OperatorWrite bool
 	// ReadBy and WriteBy are the declarations this resource's reads and writes
-	// answer to. The zero value means "derive them from Read and Write and the
-	// two operator flags", which is every resource written so far; a resource
-	// whose guard is not a plain permission — httpx.SignedIn(), a permission that
-	// also needs a plan feature — states it here, and kit/rest refuses a Spec
-	// that spells the same guard both ways.
+	// answer to, and they are the only place that answer is kept. A value built
+	// by hand may leave them zero and say its guard with Read, Write and the two
+	// operator flags instead — ReadAuth and WriteAuth answer for both spellings —
+	// and RegisterResource writes the derived answer back here, so the resource
+	// a module reads out of the API carries one guard per side and never derives
+	// it again. kit/rest refuses a Spec that states one guard in two ways.
 	ReadBy, WriteBy Auth
 	// Operations is which of the five routes kit/rest actually mounted. Empty
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
@@ -135,6 +136,14 @@ type Resource struct {
 	// See rest.Singleton.
 	Singleton bool
 
+	// InputRun answers a typed query whose inputs are the generated form and
+	// whose result has no CRUD routes: the three fields below are what its pages
+	// are built from, and Registration guards the closure with Read, as it guards
+	// every other read. A resource that names none of them is an ordinary CRUD
+	// resource, which is nearly every one.
+	InputRun    func(ctx context.Context, values map[string]any) (any, error) `json:"-"`
+	InputOutput []entity.Field
+	InputList   bool
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
 	Count func(ctx context.Context) (int64, error)
@@ -290,12 +299,14 @@ func (r Resource) Writable(ctx context.Context) bool { return r.mayUse(ctx, r.Wr
 
 // ReadAuth carries the same read declaration as the guarded resource closures.
 //
-// A declared ReadBy is the whole answer; otherwise the permission and the two
-// operator flags say it, which is what every resource written so far meant. A
+// It is this package's one derivation of a guard: a declared ReadBy is the whole
+// answer, otherwise the permission and the two operator flags say it, and a
 // resource with neither — a value written by hand, no guard at all — answers the
 // zero Auth rather than panicking on an empty permission, because the zero Auth
 // means "undeclared", which is what ValidateDeclarations refuses and what
-// mayUse, and so every door in front of it, answers "nobody" to.
+// mayUse, and so every door in front of it, answers "nobody" to. Registration
+// asks it once per side and stores the answer in ReadBy, so what a caller reads
+// back out of the API is the guard the routes were mounted under.
 func (r Resource) ReadAuth() Auth {
 	if r.ReadBy.Declared() {
 		return r.ReadBy
@@ -344,13 +355,22 @@ func (a *API) RegisterResource(r Resource) {
 }
 
 // guard returns r with its closures behind the two declarations it
-// carries: the read guard for count/list/get, the write guard for the three
-// writes. The same pairing the routes declare, read through the same methods a
-// page and the catalogue ask, so a resource cannot guard its routes one way and
-// its closures another.
+// carries: the read guard for the typed query and for count/list/get, the write
+// guard for the three writes. The same pairing the routes declare, read through
+// the same methods a page and the catalogue ask, so a resource cannot guard its
+// routes one way and its closures another. The two narrowed counts ask what the
+// total asks, wrapped here for Count's own reason: a Resource built anywhere else
+// is unguarded until it is registered.
+//
+// The pair is computed here and stored in the value's own ReadBy and WriteBy,
+// rather than recomputed by every later reader of Read and Write and the two
+// flags: guard runs on the caller's value copy before the API's lock, so nothing
+// else can observe the write, and after it the canonical field is the only
+// spelling a reader of a registered resource has to know.
 func (a *API) guard(r Resource) Resource {
 	list, get, create, update, remove := r.List, r.Get, r.Create, r.Update, r.Delete
 	read, write := r.ReadAuth(), r.WriteAuth()
+	r.ReadBy, r.WriteBy = read, write
 	r.mayDeclare = a.mayDeclare
 	count := r.Count
 	if count == nil && list != nil {
@@ -375,9 +395,6 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
-	// The two narrowed counts ask the same question the total asks, and are
-	// wrapped here rather than at their caller for the same reason Count is: a
-	// Resource built anywhere else is unguarded until it is registered.
 	if narrowed := r.CountFiltered; narrowed != nil {
 		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
@@ -400,6 +417,14 @@ func (a *API) guard(r Resource) Resource {
 				return nil, err
 			}
 			return get(ctx, id)
+		}
+	}
+	if input := r.InputRun; input != nil {
+		r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return input(ctx, values)
 		}
 	}
 	if create != nil {
@@ -612,34 +637,19 @@ func (a *API) Resources() []Resource {
 	return out
 }
 
-// writeElsewhere answers the address that performs this request's write, and the
-// entity it is about, for the one case where the answer is not the address the
-// caller wrote to: a resource whose reads answer here and whose writes answer on
-// the surface its write permission belongs on — a price list, read by the tenant
-// that pays for it and written by the installation — asked with a verb that
-// changes something.
+// writeElsewhere answers the address that performs this request's write, and the entity it is
+// about, for the one case where the answer is not the address the caller wrote to: a resource
+// whose reads answer here and whose writes answer on the surface its write permission belongs
+// on — a price list, read by the tenant that pays for it and written by the installation —
+// asked with a verb that changes something.
 //
-// It answers "" in every other case, and two cases are refused on purpose. A
-// pointer is only a direction when the caller can walk it, and this one points at
-// a door on the control plane — which reads a session and asks for an operator
-// grant — so it is named to neither half of a caller who holds neither:
-//
-//   - a host the control plane is not served at, because an address nobody can
-//     reach from where they are standing is not a direction worth giving, and a
-//     refusal that named one would say more about the control plane than this
-//     host says about it anywhere else;
-//   - a caller the chain has nothing to recognise, because the door would refuse
-//     them the moment they arrived, and a refusal that hands out a detour to
-//     another refusal is not guidance but noise about somebody else's permissions.
-//
-// The caller half asks what the request *presents* and not who it is. This answer
-// is composed by chi's router, ahead of the tenant lookup, the transaction and
-// the session read, because the address asked for a verb it does not take and so
-// matched no operation to run those guards for — and an answer worth giving is
-// not worth a transaction. `credentialed` is as much as is knowable from here, and
-// it is the same question the App surface asks an anonymous visitor who brings
-// nothing: the pointer goes to the caller holding the credential that door reads,
-// which is the caller this refusal exists for.
+// It answers "" in every other case, and two cases are refused on purpose. The pointer names a
+// door on the control plane, which reads a session and asks for an operator grant, so it is
+// named to neither half of a caller who holds neither: a host the control plane is not served
+// at, because an address nobody can reach from where they are standing is not a direction
+// worth giving; and a caller the chain has nothing to recognise, because the door would refuse
+// them anyway, and a detour to another refusal is noise. The caller half asks what the request
+// *presents* and not who it is: `credentialed` is as much as is knowable from chi's router.
 func (a *API) writeElsewhere(r *http.Request) (at, entity string) {
 	if !unsafeMethod(r.Method) {
 		return "", ""

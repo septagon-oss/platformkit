@@ -24,6 +24,9 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+		if op.Path == "/openapi.json" {
+			handler = r.api.integerDocumentation(handler)
+		}
 	}
 	// The document says what the middleware does, on the same operation both of them
 	// read: a POST or PATCH that can be replayed declares the header that makes it
@@ -63,6 +66,7 @@ func (a *API) Recorded() []*huma.Operation {
 // middleware denies the same operations, so this turns a 403 nobody notices
 // into a startup failure someone has to fix.
 func (a *API) ValidateDeclarations() error {
+	a.integerDocuments()
 	// Huma mounts a route of its own — /schemas/{schema}, which a problem
 	// document's $schema points at — and it was not mounted through a router, so
 	// nothing stamped its surface. The address is the answer, and it is the same
@@ -104,7 +108,8 @@ func (a *API) ValidateDeclarations() error {
 		// The surface gate runs last and only when nothing else failed, because
 		// a route that was never declared has no surface either and the two
 		// messages together would read as two faults where one was made.
-		if refusals := a.validateSurfaces(); len(refusals) > 0 {
+		refusals := append(a.untakenDeclarations(), a.validateSurfaces()...)
+		if len(refusals) > 0 {
 			return fmt.Errorf("httpx: %d route(s) contradict the router they are mounted on:\n  %s",
 				len(refusals), strings.Join(refusals, "\n  "))
 		}

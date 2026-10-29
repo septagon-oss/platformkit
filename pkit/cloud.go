@@ -7,19 +7,12 @@ package pkit
 // they move an installation somewhere — where do the bytes go, who holds the
 // shared values, how does an event travel — and the answer is always one of a
 // closed set of names this file owns. Nothing here decides which answer is right:
-// kit/config holds the profile table that writes the settings and demands the
-// missing ones, and this package reads the resolved settings back and says what
-// runs. That is why the answer cannot disagree with the wiring: it is a reading of
-// the same values the composition builds itself from.
+// kit/config holds the profile table, and this file reads the resolved settings
+// back, which is why the answer cannot disagree with the wiring.
 //
-// Two rules hold throughout, and both are the reason this file stays small.
-//
-//   - Nothing is dialed. Construction is not readiness, already the rule for the
-//     flags adapters and the object store, and Explain promises it opens nothing.
-//     Every answer below is arithmetic on a struct.
-//   - No value of the deployment's is ever printed. Sentences and the document
-//     name seams, providers and key *names*; the address behind a key belongs to
-//     the deployment that wrote it.
+// Two rules hold throughout: nothing is dialed, because construction is not
+// readiness, and no value of the deployment's is ever printed — sentences and the
+// document name seams, providers and key names, never the address behind a key.
 
 import (
 	"errors"

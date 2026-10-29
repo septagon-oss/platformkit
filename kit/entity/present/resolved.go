@@ -11,8 +11,10 @@ const PolicyVersion = 1
 // holds no record values and no viewer clock: those stay rendering.
 type Resolved struct {
 	// Session is present only for the typed guided-session contract.
-	Session       *ResolvedSession `json:"session,omitempty"`
-	PolicyVersion int              `json:"policyVersion"`
+	Session *ResolvedSession `json:"session,omitempty"`
+	// Views holds the visible control decision for each offered screen.
+	Views         []ResolvedView `json:"views"`
+	PolicyVersion int            `json:"policyVersion"`
 	// Language is the tag the strings were resolved for after English fallback.
 	Language string           `json:"language"`
 	Identity ResolvedIdentity `json:"identity"`
@@ -22,8 +24,8 @@ type Resolved struct {
 	Fields   []ResolvedField   `json:"fields"`
 	List     ResolvedList      `json:"list"`
 	Commands []ResolvedCommand `json:"commands"`
-	// Deck is null unless the entry declares a swipe deck.
-	Deck    *ResolvedDeck   `json:"deck"`
+	// Deck is absent unless the entry declares a swipe deck.
+	Deck    *ResolvedDeck   `json:"deck,omitempty"`
 	Summary ResolvedSummary `json:"summary"`
 }
 
@@ -42,8 +44,8 @@ type ResolvedIdentity struct {
 	EmptyDescription string `json:"emptyDescription"`
 	// Icon is a name entity.Icons admits, or "".
 	Icon string `json:"icon"`
-	// Group is null when the entry names none.
-	Group *ResolvedGroup `json:"group"`
+	// Group is absent when the entry names none.
+	Group *ResolvedGroup `json:"group,omitempty"`
 	// Order is the declared position within the group; 0 is "no opinion".
 	Order int `json:"order"`
 }
@@ -76,6 +78,7 @@ type ResolvedSection struct {
 
 // ResolvedLayout is membership of each surface, by field name, in reading order.
 type ResolvedLayout struct {
+	Forms       *ResolvedForms    `json:"forms,omitempty"`
 	Columns     []string          `json:"columns"`
 	Overview    []string          `json:"overview"`
 	Information []string          `json:"information"`
@@ -87,9 +90,13 @@ type ResolvedLayout struct {
 // ResolvedOption is one value of an enum with its words and tone. Tone is always a name
 // entity.Tones admits; "neutral" when the author named none.
 type ResolvedOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-	Tone  string `json:"tone"`
+	// Picture is absent for an option the author drew with no artwork.
+	Picture      *entity.ChoicePicture `json:"picture,omitempty"`
+	Group        string                `json:"group"`
+	NoPreference bool                  `json:"noPreference"`
+	Value        string                `json:"value"`
+	Label        string                `json:"label"`
+	Tone         string                `json:"tone"`
 	// Done marks a value the author declared finished; only a status field has any.
 	Done bool `json:"done"`
 }
@@ -127,8 +134,8 @@ type ResolvedReading struct {
 	// Precision is the decimal places of the type: 0 for an int, null (as
 	// stored) for everything else.
 	Precision *int           `json:"precision"`
-	Time      *ResolvedTime  `json:"time"`
-	Money     *ResolvedMoney `json:"money"`
+	Time      *ResolvedTime  `json:"time,omitempty"`
+	Money     *ResolvedMoney `json:"money,omitempty"`
 }
 
 // ResolvedEditable says whether a create or an update form takes the field. It is a
@@ -140,9 +147,12 @@ type ResolvedEditable struct {
 
 // ResolvedField is one schema field's policy.
 type ResolvedField struct {
-	Name  string `json:"name"`
-	Label string `json:"label"`
-	Help  string `json:"help"`
+	// Choice is absent for a field that offers no answers to choose.
+	Choice *ResolvedChoice     `json:"choice,omitempty"`
+	Figure entity.ChoiceFigure `json:"figure"`
+	Name   string              `json:"name"`
+	Label  string              `json:"label"`
+	Help   string              `json:"help"`
 	// Section is a declared section key, or "".
 	Section string `json:"section"`
 	// OnList and OnRecord are the effective surface membership, after
@@ -156,8 +166,8 @@ type ResolvedField struct {
 	Reading ResolvedReading `json:"reading"`
 	// Options is [] for a field that is not an enum.
 	Options []ResolvedOption `json:"options"`
-	// Reference is null when the author guessed no relationship.
-	Reference *ResolvedReference `json:"reference"`
+	// Reference is absent when the author guessed no relationship.
+	Reference *ResolvedReference `json:"reference,omitempty"`
 }
 
 // ResolvedSortOption is one order a list offers: Query is the exact `sort` parameter.
@@ -196,14 +206,15 @@ type ResolvedConfirmation struct {
 // ResolvedCommand is one command the caller may call, as a button reads. A command
 // the caller may not call is not listed.
 type ResolvedCommand struct {
-	Verb        string `json:"verb"`
-	Label       string `json:"label"`
-	Visible     bool   `json:"visible"`
-	System      bool   `json:"system"`
-	Primary     bool   `json:"primary"`
-	Destructive bool   `json:"destructive"`
-	// Confirmation is null when the command asks nothing first.
-	Confirmation   *ResolvedConfirmation `json:"confirmation"`
+	Fields      []ResolvedField `json:"fields"`
+	Verb        string          `json:"verb"`
+	Label       string          `json:"label"`
+	Visible     bool            `json:"visible"`
+	System      bool            `json:"system"`
+	Primary     bool            `json:"primary"`
+	Destructive bool            `json:"destructive"`
+	// Confirmation is absent when the command asks nothing first.
+	Confirmation   *ResolvedConfirmation `json:"confirmation,omitempty"`
 	SuccessMessage string                `json:"successMessage"`
 }
 
@@ -228,7 +239,7 @@ type ResolvedDeck struct {
 
 // ResolvedSummary carries the declared sub-count and trend of the entry's cards.
 type ResolvedSummary struct {
-	// Highlight is null when none is declared; its label is resolved.
-	Highlight  *entity.EntryHighlight `json:"highlight"`
+	// Highlight is absent when none is declared; its label is resolved.
+	Highlight  *entity.EntryHighlight `json:"highlight,omitempty"`
 	TrendField string                 `json:"trendField"`
 }

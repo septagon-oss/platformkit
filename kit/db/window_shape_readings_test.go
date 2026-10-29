@@ -417,13 +417,13 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // It used to be a deadline, and a deadline measures the machine, not the drain. The drain the
 // bound stops is 10 000 committed transactions: 117 s with a Postgres to itself — the measurement
 // that moved the number from 120 s to five minutes — and past 300 s during the whole-suite run of
-// 2026-10-08, when every other package in the repository was writing into the same server. Both
+// a whole-suite run, when every other package wrote into the same server. Both
 // times the case reported "this drain has no bound" about a drain that was merely slow, which is
 // what any bound on a wait the machine answers eventually reports. A count cannot: it stops the
 // run at twice the rows the tick's own bound allows it to write, a state a drain that stops at its
 // bound is nowhere near at any speed and one that stops nowhere walks into at any speed.
 //
-// The run of 2026-10-06 measured the same drain from the other side and reached the same reading
+// A later run measured the same drain from the other side and reached the same reading
 // from the other direction: 48.6 s against a Postgres nobody else was migrating into, 304.34 s at
 // load average 38-43 with six other rounds' whole-suite runs asking that server, and 301.35 s again
 // with its commits not waiting for a WAL flush. What one window costs there is the server being
@@ -545,87 +545,4 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'ticks' AND version = 2"); n != 0 {
 		t.Errorf("%d history rows for a version whose drain stopped short", n)
 	}
-}
-
-// What one tick drains — the count is `workerBackfillBatches` in migration_header.go, which the
-// report the case asserts names — and how long this machine's version of that drain takes is
-// priced from its first `tickRateBatches` committed windows.
-const (
-	tickDrainBatches = 10_000
-	// The drain's own first slice, asked for as work rather than as time. A slice ended by the
-	// clock reports whatever its driver was left holding when it was cut off — measured, 6 of 120
-	// cuts named `sql: transaction has already been committed or rolled back`, `driver: bad
-	// connection` or a socket write timeout and none named the cut, and two such cuts red this
-	// case in the gate of 2026-10-05 — while a slice ended by the count it was asked for measures
-	// the same rate wherever it runs. kit/db/backfill.go's drainCutOff is what makes the cut-off
-	// slice report the cut again; the count is what stops this case needing that race to go one
-	// way or the other to know what it measured.
-	tickRateBatches = 300
-	// What the file this case drains asks a window to hold (windowShapesData's `batch=5`, which
-	// the report below names), so the rows the window adds count its batches.
-	tickRowsPerBatch = 5
-	// A measurement rather than a defect's deadline, so its bound is patience: this machine drained
-	// 1809 batches in 5 s with four packages and another task's gate sharing it, which is twice
-	// what this slice asks for in well under a fifth of the time below.
-	tickRatePatience = 2 * time.Minute
-	// What the harness leaves. `go test` stops a package at ten minutes, and `make check`, which
-	// runs every package at once, measured this whole one at 5m41.7s with the case inside it: call
-	// the rest five minutes. Four is what that leaves the drain, because a run that used the whole
-	// four would be reported as the harness's own stop, which is a failure nobody in this file can
-	// read. The ceiling is the harness's arithmetic, not a fitted margin: ten times the measurement
-	// reaches it at a 24 s drain, so a slower machine is given a bound below ten times — three times
-	// the 120.5 s the last gate actually observed.
-	tickWatchdogCeiling = 4 * time.Minute
-)
-
-// drainWatchdog prices the deadline that turns "this drain has no bound" into a failure from the
-// machine running it, because the work it waits for is 10000 committed transactions and the wall
-// time that takes is the host's transaction rate: 21.2 s and 24.9 s here at load 33, 19–34 s
-// unloaded, and 120.5–121.0 s — past the 120 s this case used to hard-code, twice, in one gate run
-// — while four packages and another task's gate shared the host. Ten times the measurement is the
-// rule for a bound that must exist, so the measurement is taken in the run: the drain's first
-// `tickRateBatches` windows are timed here, and the drain gets ten times the length that rate
-// extrapolates to under the ceiling above.
-//
-// The window is the same call over the same files, so it measures what the run below does, and what it
-// commits stands: the run resumes from the cursor the window leaves, which is the drain's own
-// promise. The case ends it with its own cancel and reads that cancel back out of the answer, which
-// is what lets a window of work be timed at all: a run that ended for any other reason has stopped
-// for a reason this measurement cannot see.
-func drainWatchdog(t *testing.T, migrateURL string, files fstest.MapFS) time.Duration {
-	t.Helper()
-	admin := dbtest.Open(t, migrateURL)
-	counted := func() int { return countRows(t, admin, "SELECT count(*) FROM probe") }
-	before := counted()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan error, 1)
-	started := time.Now()
-	go func() { done <- db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files}) }()
-	for counted()-before < tickRateBatches*tickRowsPerBatch {
-		select {
-		case err := <-done:
-			t.Fatalf("the window that measures the drain's rate ended after %d batches with %v: this table has no end for a drain to reach, so it is cut off and nothing else",
-				(counted()-before)/tickRowsPerBatch, err)
-		case <-time.After(10 * time.Millisecond):
-		}
-		if time.Since(started) > tickRatePatience {
-			t.Fatalf("the window that measures the drain's rate drained %d batches in %s, too few to price a drain on",
-				(counted()-before)/tickRowsPerBatch, tickRatePatience)
-		}
-	}
-	elapsed := time.Since(started)
-	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("the window this case cut off reported %v; the run ended because its context ended, and a bound priced on any other answer is a guess", err)
-	}
-	batches := (counted() - before) / tickRowsPerBatch
-	full := time.Duration(float64(elapsed) * tickDrainBatches / float64(batches))
-	watchdog := 10 * full
-	if watchdog > tickWatchdogCeiling {
-		watchdog = tickWatchdogCeiling
-	}
-	t.Logf("the drain of %d batches gets %s: the window drained %d batches in %s, so this machine's whole drain is %s, and the deadline is ten times that under a ceiling of %s",
-		tickDrainBatches, watchdog, batches, elapsed.Round(time.Millisecond), full, tickWatchdogCeiling)
-	return watchdog
 }

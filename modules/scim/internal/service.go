@@ -33,14 +33,14 @@ import (
 // of a write holds a permission is decided by both of those rows at once. All three
 // arrive at composition.
 type Service struct {
-	users     usercontracts.Service
+	users     usercontracts.Provisioning
 	roles     contracts.RoleDirectory
 	authority contracts.Authority
 }
 
 // NewService returns the service. module.go builds it and refuses a composition
 // that named neither collaborator.
-func NewService(users usercontracts.Service, roles contracts.RoleDirectory, authority contracts.Authority) *Service {
+func NewService(users usercontracts.Provisioning, roles contracts.RoleDirectory, authority contracts.Authority) *Service {
 	return &Service{users: users, roles: roles, authority: authority}
 }
 

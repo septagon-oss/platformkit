@@ -12,6 +12,41 @@ request on the context (`RequestFrom`), the security headers, the per-request
 nonce (`Nonce`) and what a page may declare about its own response
 (`AllowWASM`).
 
+## Exact signed integers
+
+Typed JSON bodies accept an `int64` as either a decimal string or an exact
+integer number, including integral decimal/exponent spellings. Fractions,
+overflow and padded strings are refused with 422. Ordinary `int` and `int32`
+fields remain numbers. Custom JSON/text codecs and protocol media retain their
+own representation; opaque JSON is not interpreted as a declared integer.
+
+Numeric `int64` **output representation is deprecated**. During this release
+line ordinary `application/json` still returns numbers. Send
+`Accept: application/vnd.platformkit.int64+json` to receive decimal strings,
+including counts and revisions. A wildcard does not select it; equal explicit
+preferences keep legacy output. Both request content types accept both input
+forms. Responses vary on Accept. Keep strings or use exact integer arithmetic
+in clients; converting a large value to a floating-point number loses digits.
+
+With documentation enabled, `/openapi.json?int64=string` describes the complete
+input union and string/int64 responses. Generate adopting clients from that
+view and configure the explicit Accept header. The default document preserves
+the numeric contract and adds the selectable success media. A keyed retry must
+select the original response representation: changing it returns 409 without
+executing the command again. Recover the original answer or read the resource.
+The [next-major record](../../docs/compatibility/v3.0.0.md) owns the default cutover.
+
+### Composition
+
+**Reused** — `Register`, the Huma registry and JSON engine, REST field binding,
+request transactions and idempotency replay retain their existing ownership.
+**Added** — exact lexical int64 binding, API-local schema projections and explicit
+representation negotiation, because float-based map decoding cannot preserve
+the full signed range and the legacy output contract must remain available.
+**Made reusable** — the private [JSON body codec](../internal/jsonbody/codec.go)
+binds typed bodies and REST map/form values with the same integer decision,
+with shared real/fake precision cases. No public codec API is added.
+
 A module's `Routes` receives `httpx.Surfaces` — three routers, one per surface —
 and mounts on the one that fits the door. It never writes a prefix: `Prefix`,
 `Path` and `PagePath` compose an address from the surface and the module, and
@@ -40,7 +75,7 @@ to. Three consequences are the design:
   outside this package, and worth nothing after the status is written — a page
   that streamed past the response buffer keeps the policy it was given.
 
-[ui/page](../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
+[ui/page](../../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
 writes against, and `Serve` calls this for the view it actually rendered: a refusal
 page and a redirect instantiate nothing, so neither carries the token.
 
@@ -198,6 +233,16 @@ operation carries; `LegacySessionCookies`, which the auth module needs to clear
 what the kernel still reads. A test says what it protects in its own name and in the
 comment above it, never in the name of the round that asked for it.
 
+A module may also declare an absolute address of its own — `At`, for a protocol
+that names its own address, SCIM's `/scim/v2` — and that moves where the router
+stands, never what it carries. The router keeps its surface, so a workspace router
+keeps the session, the cookie, `no-store`, the tenant transaction and the
+deny-by-default authorization; a control-plane router keeps its installation-host
+gate; a public router keeps a chain that resolves no session and sets no cookie. The
+credential rules are the same table they were before the method existed, so the
+routes a module may mount at a declared address are exactly the routes it may mount
+inside the table. Only the address is the protocol's.
+
 ### One release of the old addresses
 
 [aliases.go](aliases.go) is the whole migration: `/admin` → `/app` and the
@@ -227,6 +272,47 @@ refused at mount on `Ops`, which has no document address (the tree would compose
 a public-looking prefix and answer at every customer's host), and refused at a
 namespace's root, where the routes of that namespace answer: `Static("/assets",
 tree)`, never `Static("/", tree)`.
+
+An alias is spent ahead of the router, so no route exists at the old address to
+serve a body from: a screen served at two addresses gives one form two namespaces
+(`ui/forms.Namespace` is derived from the path), which is how a controller starts
+writing to the wrong page. It is never a 301, because a permanent redirect a browser
+caches outlives the release that removes the row — the person then gets a 404 from a
+cached answer with nothing left in the application to fix. 302 for a safe method and
+307 for the rest, so the method and the body survive and nothing is remembered past
+this visit.
+
+Each row states the composition it is written for, because the doors an alias aims at
+are mounted by modules this package may not import: a row about an optional door
+nobody composed is a redirect into a 404, and only the reference application's running
+server can answer, row by row, whether the address each row points at answers.
+
+### Mounting beside another module, and crossing tenants
+
+A page one module mounts beside another module's screens asks for that
+namespace by name: `Router.ForModule` returns this surface's router bound to it,
+and `Router.Known` says whether this composition registered that module at all —
+an absent namespace has no root to mount into, and a shell that has to answer for
+the page itself keeps its own router rather than panicking. The name arrives as
+the owner's `tenancy.Namespace` (`tenantcontracts.Namespace`,
+`authcontracts.Namespace`), which each owning module exports from its own
+`contracts` package, so a mount names an owner rather than a string somebody
+remembered: renaming that module breaks the caller's build instead of inventing a
+namespace that answers 404. The value is `kit/tenancy`'s and not this package's
+because an owning module's `contracts/` stay free of the HTTP kernel, which links
+huma and chi into whatever imports it. The generated register asks by the plain
+name, because the module whose resource it renders is read off the catalog rather
+than named in source.
+
+A module that has work no tenant transaction can do says so in its manifest
+(`module.Module.SystemAccess`, and ADR 0006), and `Surfaces.SystemToken` then
+hands it the credential minted for that module, carrying that module's own
+reason: the audit trail of every `db.RunSystem` says who opened it and for what.
+A token taken without the declaration is refused at composition naming the module
+and the field to add, and the returned credential is `nil` as well — the
+capability is not handed out on the strength of a call nobody declared. A router
+borrowed into another module's namespace is refused too, naming both modules:
+the credential belongs to the module being wired, so take it on your own router.
 
 ## A write that is sent twice
 
@@ -376,6 +462,30 @@ not used: it names the shape of a limit the auth module wanted, not the policy t
 guards the anonymous write, and keying this counter by it would change what every
 existing counter means.
 
+A replayed answer restates the ceilings it was decided under. The policy line is
+not rebuilt — the kept answer carries it verbatim, which is the only complete account
+of it, and a door names every ceiling it consulted rather than only the one that
+refused. The readings are the harder half, and are stored rather than rendered,
+because what is left of a quota and of a window both shrink while a record sits in
+one: `t` and `Retry-After` come from the window's own ending, and the quota is
+restated as the counter reported it.
+
+The line is written whole, over whatever a guard above left under that name: the
+anonymous-write guard is spent before the memory is consulted, so a retry arrives with
+a reading of its own already on the way down, from a counter this answer never
+consulted. Kept beside the restated ones that is one policy with two quotas and two
+resets — a client that reads `t=60` and then `t=0` has been told both that the window
+is open and that it closed.
+
+A refusal names the longest of the waits still running over the counters that were
+shut when it was decided: an answer under two spent counters is not free to retry
+until the later of them opens. A counter with quota remaining never shut this answer,
+so its window does not belong in the wait — a refusal by a two-second cap inside an
+open sixty-second one is a two-second refusal, and a caller told sixty sits out
+fifty-eight seconds of a window that was never the reason they were refused. The open
+counter's reading still goes on the `RateLimit` line, because the caller is under it;
+only the wait counts the spent ones.
+
 ### Built on what came before
 
 Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
@@ -411,6 +521,42 @@ row is written outside the command's transaction and so cannot say whether that
 transaction committed. **Made reusable** — `Pending.Opened`, for any step that must write
 a row inside the request transaction only when one was opened.
 
+
+## The address a call was answered at
+
+`ServedAuthority` is the address a call was answered at — the name its own `Host`
+header named, on the port this process accepted the connection on — and the value a
+mailed link is built from. It exists because a link has to be reachable by its reader:
+a development installation serves every tenant at its name *and a port*, and a link
+that keeps the name and drops the port opens a different server, or none. Only a call
+knows the port it arrived on, and the worker that renders the mail runs long after the
+call is gone, which is why the value travels in the event that call published.
+
+The name is not for taking. A mailed link's name is its tenant's host of record, and a
+call only reaches a tenant whose record already matches the name it asked at
+(`tenant.go` resolves on `HostOnly`), so what this can contribute to a link is a port
+on a name tenancy already vouched for.
+
+The port is not for taking either, which is why it is read off the socket and not off
+the header: `Host` is text the caller wrote. One request that reached a listener, aimed
+at `acme.localhost:7`, used to be enough to make a victim's reset mail lead to port 7 —
+a link carrying a live credential, addressed by the person best placed to phish for it.
+The port a connection arrived on is the peer of that listener and cannot be chosen from
+inside a request, so where the two disagree the socket is the truth.
+
+A request that named no port contributes nothing even though its socket has one: naming
+no port is how a browser says it reached the scheme's default, which is the case for
+every installation fronted by a proxy that terminates on 443 and forwards to a port of
+its own whose internal number must not become a public address. An installation whose
+*public* port is neither the scheme's default nor the one its socket listens on — a
+container published with `-p 38591:8080`, a compose `ports:` entry, a NodePort — is
+answered by neither half: the header's port is a claim and the socket's is the private
+one. Such an installation declares the public port in `server.public_host`, and the
+application writes that port onto the host of record it hands its link builders, which
+is then the one spelling a mailed link is built from without consulting any request
+(see `servedPort` in modules/auth: a host that already spells a port is never rewritten
+by the socket). What `ServedAuthority` contributes is the port of an installation that
+declares no public one.
 
 ## The database boundary
 

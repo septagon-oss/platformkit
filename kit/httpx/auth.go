@@ -133,24 +133,17 @@ func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 // AnyCredential admits any caller the installation recognised, whether that caller
 // arrived with a session cookie or with a credential carrying its own ceiling.
 //
-// It exists for the one operation that names no permission because there is no
-// permission to name, and spends no authority on the caller's account because it
-// only describes what the caller may already reach: the resource catalogue at
-// GET /api/v1/app/resources, whose body is built by asking the authorizer, for
-// this caller, which resources are readable and writable — so the document a
-// narrowed credential receives is already narrowed by that same credential. It is
-// the kernel's own mount, in kit/app, and it is the first request a client that is
-// not a browser makes; the credential such a client holds is a bearer key, so a
-// key that may call every permission-named route and no route that names them is
-// a credential that cannot find its own work.
+// It exists for the one operation that names no permission because there is no permission
+// to name, and spends no authority on the caller's account because it only describes what
+// the caller may already reach: the resource catalogue at GET /api/v1/app/resources, whose
+// body is built by asking the authorizer, for this caller, which resources are readable
+// and writable. It is the kernel's own mount, in kit/app, and the first request a client
+// that is not a browser makes — and such a client's credential is a bearer key.
 //
-// This is a kind of its own rather than a flag on SignedIn for the reason the
-// operator permission is one too: the declaration has to say, where a reviewer
-// reads it, which of the two doors a route is. The mistake this enables is the
-// wide one — a self-service door about the caller's own credentials mounted here
-// is the escalation SignedIn exists to refuse — so the test at a mount is that the
-// operation reads grants and never spends them. Every door about a caller's own
-// credentials is SignedIn work, except the one BearerKey names.
+// A kind of its own rather than a flag on SignedIn, for the reason the operator permission
+// is one too: the declaration has to say, where a reviewer reads it, which of the two doors
+// a route is. The mistake this enables is the wide one, so the test at a mount is that the
+// operation reads grants and never spends them.
 func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
 
 // BearerKey admits only a caller recognised by a bearer key — a principal with a

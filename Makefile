@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations check-support-record check-rehearse-supported fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -148,7 +148,8 @@ vet: ## Run go vet
 	go vet ./...
 
 run: config.yaml ## Run the reference app; a missing config.yaml is created from the example
-	cd apps/platformkit && go run . --config ../../config.yaml
+	cd apps/platformkit && PLATFORMKIT_MAIL_HOST=127.0.0.1 PLATFORMKIT_MAIL_PORT=$(PLATFORMKIT_MAILPIT_SMTP_PORT) \
+	  PLATFORMKIT_MAIL_FROM=platformkit@localhost go run . --config ../../config.yaml
 
 # A first run has no config.yaml, and the example is the development
 # configuration `make up` matches, so the first run gets a copy of it. The rule
@@ -169,6 +170,10 @@ SEED_AS ?=
 seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]
 	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
 	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
+
+.PHONY: check-screen-render
+check-screen-render: ## Validate screen anchor geometry and permission projection
+	./scripts/e2e.sh screen-anchors.spec.ts
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
@@ -236,9 +241,18 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
 # never written here (CONTRIBUTING.md, "Generated and golden files").
+# The baseline the published screen artifact is held to, so a view or anchor the
+# line already published cannot be retargeted by the next `make generate`. A
+# repository that carries no origin/main — a copy of this tree committed into a
+# throwaway repository, which is where `make check`'s own generated-file cases run —
+# is read against this commit's artifact: that file is what a product already
+# reaches, and a write that retargets a name held in it is refused there too.
+SCREENS_BASE ?= $(shell git rev-parse --verify --quiet origin/main >/dev/null && echo origin/main || echo HEAD)
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml -base $(SCREENS_BASE)
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
+	bash scripts/module_graph.sh
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
 # holds generated sections. The diff is against the index, so a regenerated file the author has
@@ -319,8 +333,22 @@ check-applied-migrations: ## Fail when a migration file the base carries was edi
 # Python file, which would leave the one gate that reads those citations to be run by
 # whoever remembered it. python3 is already a `check` prerequisite through
 # check-apidiff, so this costs a second and no new dependency.
-check-pillars: ## Fail when the pillar section drifts or one of its citations lands outside its file
+# The implementation map's own goal. The pillar test reads the pillar section's citations and
+# asks only that a cited number sit inside the file it names; the composition sentences are held
+# to the call they name by a case in kit/fault, which meets each of its claims at the first place
+# the map says it. So a claim said twice — a sentence copied into a summary while the section that
+# wrote it keeps its own — aims that case at the summary and leaves the citation behind it
+# unread, and the pin below refuses the document in that shape.
+# That pin lifts its claims out of the case's own row table with a pattern anchored on how a row
+# is typeset today, so it carries a second copy of that table's shape: reflow one row onto two
+# lines, or lift a claim into a named constant, and the case still asserts thirteen claims while
+# the guard reads twelve and still answers that each of them is said once. The pin after it counts
+# the rows a second way, by tokenising the table's strings and braces, and refuses the two readings
+# disagreeing. Neither opens anything; together they cost a fifth of a second.
+check-pillars: ## Fail when the implementation map drifts: a pillar citation outside its file, a composition claim said twice, or a claim the guard no longer reads
 	python3 -B scripts/architecture_pillars_test.py
+	bash scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh
+	bash scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh
 
 # The rehearsal and the public-API comparison, both of which existed as steps
 # nobody was forced to run: `make rehearse` needed an operator who remembered it,
@@ -349,6 +377,33 @@ APIDIFF_RECORD ?= scripts/baselines/public-api-v2.0.0-candidate.json
 
 check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
 	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The release form of the same step: one case per installation this release promises to
+# upgrade from, which is the support record's list and not this file's, plus the record's
+# refusals asked for their reason and the exported-surface comparison beside the data.
+# `check-rehearse` stays the single-source diagnostic a contributor runs in a minute;
+# nothing is published from one case, and scripts/check_pin_rehearsal.sh --strict refuses a
+# receipt that measured one. It costs a second base build and a second copied database, so
+# it is the merge tier's and not every pull request's.
+check-rehearse-supported: ## Certify this tree against every installation the release promises to upgrade from
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh --supported
+
+# The support record decides which installations a release undertakes to upgrade from, and
+# the release is certified from that same file, so the cases that read it are the promise's
+# own coverage check rather than extra tests of a helper: which revisions the record may
+# name, which it may not narrow away, which applied bytes it owes, and what a failed
+# migration leaves behind. `go tool gotestsum --packages='./...'` sees no shell script, so a
+# case nobody names in a recipe line is a case nothing runs, and a gate nobody runs is prose.
+#
+# Two of the five want the stack, and refuse without it rather than skipping: a gate that
+# passes because the machine had no database would certify the retry and the byte refusal
+# on a checkout where neither ran.
+check-support-record: ## Fail when the support record, its promise anchor, the applied bytes or the migration retry stop holding
+	bash scripts/supported_sources_test.sh
+	bash scripts/a_narrowed_support_record_is_not_a_new_baseline_test.sh
+	bash scripts/migration_retry_test.sh
+	bash scripts/applied_bytes_refusal_test.sh
+	bash scripts/a_case_whose_evidence_denies_its_own_receipt_is_refused_test.sh
 
 # The line record names the revision the exported surface is frozen at: the published
 # tag once the owner cuts it, the frozen commit until then. No list of accepted breaks
@@ -399,7 +454,7 @@ inference-conformance: ## Run the inference port's suite against operator-named 
 check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
-check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+check-merge: check-rehearse check-rehearse-supported check ## The merge tier: the whole suite, the rehearsal against a populated database, the whole supported matrix, the journeys in the suite
 
 check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
 	$(MAKE) e2e
@@ -567,7 +622,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated check-screen-render vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-support-record check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -762,6 +817,14 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# answered the ceiling question only when it had no numbers to give would leave this red and that
 	# host's log silent. Two fixture trees, one copied recipe, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_browser_recent_load_test.py holds the admission boundary of that same `wait` at its
+	# load file: five shapes read in turn — a quiet host, a host at exactly one task per core, and the
+	# three where the one-minute term, the five-minute term, or both sit above the core count — with a
+	# free share required exactly where both recent windows fit and `starting anyway` everywhere else,
+	# printing the bytes it read. A host whose recent windows fit is admitted whatever its fifteen-
+	# minute term says, which is the difference between asking what a host is doing and asking what it
+	# did. Five reads of a fixture load file, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_recent_load_test.py
 	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
 	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
 	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output
@@ -906,11 +969,12 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
 	# and the guard does the parsing, so this line needs no parser of its own.
 	bash scripts/ci_container_sweep_age_guard_test.sh
-	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
-	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
-	# locked above the ranges that report names, and that the gate that named them is still a step in
-	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
-	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.
+	# The one `make check` line that reads an npm lock. It asks that the four packages the design job's
+	# `npm audit --omit=dev --audit-level=high` refused — source-map-js and dompurify at `0bfae63`, zod at
+	# `badcf51f`, and undici at the range npm reports for three ids — are locked above the ranges those
+	# reports name, and that the gate that named them is still a step in the job that reads this lock, at
+	# that level and in that directory. It reads no feed and installs nothing: the feed moved under the
+	# runner every time, so the lock is the only half of this a tree can answer.
 	bash scripts/openpencil_lock_above_advisory_test.sh
 	# The Go half of that line. `govulncheck` is this repository's only Go security gate, it runs in the
 	# check job *after* `make check` and it needs the network, so nothing in the local aggregate can see the
@@ -924,12 +988,12 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# That guard's own inputs, asked of a tree it did not write. Every mutation the shell makes starts
 	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
 	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
-	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
-	# and a release *superseding* every fix — the committed pins sit exactly at v0.60.0 and at go1.27.3,
-	# the newest toolchain floor, so "above all of them" is never asked. This case writes six go.mod files
-	# into a temporary directory and asks the guard about each through its subprocess, and asserts exit
-	# codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent pin
-	# read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	# (`\t// golang.org/x/net v0.62.0` answers `is absent, so nothing here resolves above the range`),
+	# and a release *superseding* every fix — the committed pins sit exactly at v0.62.0 and at go1.27.3,
+	# the newest floor of each kind, so "above all of them" is never asked. This case writes seven go.mod
+	# files into a temporary directory and asks the guard about each through its subprocess, and asserts
+	# exit codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent
+	# pin read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
 	# The x509 floor alone: go.mod at go1.27.2, go1.27.3 and go1.27.4 with x/net already fixed, so the
 	# first is refused by GO-2026-6809's line and no other, and the two later releases pass.
@@ -1022,6 +1086,11 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
 	# check-generated; this case proves it in a copy of the tree, never in this checkout.
 	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
+	# Whether the module document is a measurement of this tree or a coin toss: the aggregate report its
+	# writer reads is collected out of maps, so one run that happens to agree proves nothing. This asks one
+	# tree twice, in a copy so nothing tracked is rewritten, and refuses a row whose source kinds come out
+	# unsorted, repeated or empty.
+	bash scripts/the_generated_module_document_answers_one_tree_the_same_way_twice_test.sh
 	# Whether either goal still asks at all. `check` and `check-push` name `check-generated`,
 	# which runs both writers and then diffs with --exit-code, and both CI workflows run `make
 	# check`; the case above calls the goal itself, so it cannot notice a goal that lost the
@@ -1064,6 +1133,50 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
 	bash scripts/journey_check_recipe_test.sh
 	bash scripts/journey_check_recipe_wiring_test.sh
+	# scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh asks the one
+	# question two packages answer from the same pair of facts: a resource that declared no operation
+	# set mounts all five verbs, because nothing was said, and one whose list named nothing mounts
+	# none. kit/entity/present turns that pair into views and ui/resource into controls, and no Go case
+	# reaches both roads, so this pin runs each and refuses the length reading on both — on a copy, by
+	# Go's build overlay, never this checkout. Four `go test` invocations of two small packages, 2 s.
+	bash scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh
+	# scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# asks the manifest the same question from the other side: module.Validate accepts a module's own
+	# custom-screen descriptor, refuses one whose owner is another module, refuses one named twice.
+	# screen.Publish refuses a foreign mount too, but at the routing door, with the manifest's own
+	# diagnostics gone and the sentence naming an operation rather than the module that wrote the
+	# declaration — and the composition gate that catches a missing route-level screen answer stays
+	# green with the manifest's check deleted, so nothing else in the tree asks it. The pin proves it
+	# answers to that call site by deleting the three lines from a copy of validate.go over Go's build
+	# overlay and refusing when the copy passes the case. Two `go test` runs of one small package, 1 s,
+	# no stack and no browser.
+	bash scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh asks the
+	# two questions the pin above cannot ask about itself: that this recipe still runs it, and that the
+	# mutated copy of validate.go is refused by the injected case's own assertion rather than by a
+	# build that stopped compiling — a mutation branch that reads any non-zero `go test` as that
+	# refusal prints its second ok over a copy that no longer builds. It reads the dry-run recipe of
+	# this goal and extracts the Go case from the pin it judges, so the two cannot drift apart. One
+	# dry run and two `go test` runs of one small package, 2 s, no stack and no browser.
+	bash scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh
+	# scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh asks the
+	# question those two leave: ui/screens decides which write routes a mounted resource answers,
+	# ui/resource draws the doors, and the two read different files — so a served page that named a
+	# New button, an Edit link or a Delete form behind a route nobody mounted would publish an anchor
+	# to a view the composition published nowhere. The pin injects one Go case into ui/screens over
+	# Go's build overlay, asks it of this tree, and refuses a copy of the renderer that answers from
+	# what the resource declares instead of what the adapter mounts. Two `go test` runs of one small
+	# package, 2 s, and the one test schema the package's own server helper opens; no browser.
+	bash scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh
+	# scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh
+	# asks the two questions the pin above cannot ask about itself: that this recipe still runs it,
+	# and that both of its runs report a verdict for the case they inject. The pin reads the exit
+	# status of each `go test` as its answer, so an overlay that stopped applying, or a mutated
+	# renderer that simply stopped compiling, would print its second `ok` anyway; this guard
+	# requires the injected case's own PASS and FAIL lines. It reads the dry-run recipe of this goal
+	# and extracts that case from the pin it judges, so the two cannot drift apart. One dry run and
+	# two `go test` runs of one small package, 2 s measured here, beside its subject; no browser.
+	bash scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

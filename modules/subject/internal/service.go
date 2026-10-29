@@ -42,7 +42,7 @@ import (
 // this module has no opinion about yet.
 type service struct {
 	parts  []personaldata.Part
-	people usercontracts.Service
+	people usercontracts.RetainedLookup
 	now    func() time.Time
 
 	// bundles and notifier are the two ports the door needs and the two commands do not:
@@ -58,7 +58,7 @@ type Deps struct {
 	// Parts are the contributions every owner of a person's rows handed over.
 	Parts []personaldata.Part
 	// People is the one read across the boundary: the address and the name.
-	People usercontracts.Service
+	People usercontracts.RetainedLookup
 	// Now is the clock the bundle's manifest, the receipt and the link's expiry are
 	// stamped with; nil means db.Now. A command that reads its own watch is a command a
 	// test cannot stop at one instant.

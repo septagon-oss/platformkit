@@ -83,6 +83,54 @@ else
 	echo "ok   the Makefile names the catcher by its two ports and derives nothing"
 fi
 
+# 5. The inbox the journeys read is the catcher the run probed, host spelled the same way in both.
+#    The probe above asks PLATFORMKIT_E2E_MAILPIT_URL and the journeys ask PLATFORMKIT_E2E_MAIL_URL; a
+#    derivation that spells the second one from a port alone reaches a loopback the job never named, and
+#    then the specs that read a mailbox fail beside the ones that do not: the application mailed through
+#    the named catcher, and the journeys asked a server nobody dialled. The derivation is taken from the
+#    script's own text and executed here, in an environment with no PLATFORMKIT_ name set, so this asks
+#    the code rather than a copy of it.
+derivation="$(awk '/^mail_host=/,/^mail_url=/' "$root/scripts/e2e.sh")"
+if [ -z "$derivation" ]; then
+	echo "FAIL: scripts/e2e.sh no longer derives the catcher's two addresses in the block this case reads"
+	failures=$((failures + 1))
+else
+	# resolves <name=value>... — prints the catcher's API address and the inbox address this run would
+	# hand to the browser, with every mail name the caller did not pass cleared so none leaks from here.
+	resolves() {
+		local script="$derivation
+printf '%s %s' \"\$mailpit_url\" \"\$mail_url\""
+		env -u PLATFORMKIT_E2E_MAIL_HOST -u PLATFORMKIT_E2E_MAIL_PORT \
+			-u PLATFORMKIT_E2E_MAILPIT_URL -u PLATFORMKIT_E2E_MAIL_URL \
+			-u PLATFORMKIT_MAILPIT_PORT -u PLATFORMKIT_MAILPIT_SMTP_PORT -u PLATFORMKIT_MAIL_UI_PORT \
+			"$@" bash -c "$script"
+	}
+
+	# expect_addresses <case> <wanted API> <wanted inbox> [<name=value> …]
+	expect_addresses() {
+		local name="$1" want_api="$2" want_inbox="$3"; shift 3
+		local got api inbox
+		got="$(resolves "$@")" || return
+		read -r api inbox <<<"$got"
+		if [ "$api" != "$want_api" ] || [ "$inbox" != "$want_inbox" ]; then
+			echo "FAIL: $name: got API $api and inbox $inbox, wanted $want_api and $want_inbox"
+			failures=$((failures + 1))
+			return
+		fi
+		echo "ok   $name"
+	}
+
+	expect_addresses "a run that names nothing reaches the catcher on localhost in both spellings" \
+		"http://localhost:8025" "http://localhost:8025"
+	expect_addresses "a catcher named by host is read at that host by the journeys too" \
+		"http://mailpit:8025" "http://mailpit:8025" PLATFORMKIT_E2E_MAIL_HOST=mailpit
+	expect_addresses "the stack's API port reaches both halves" \
+		"http://localhost:43105" "http://localhost:43105" PLATFORMKIT_MAILPIT_PORT=43105
+	expect_addresses "an explicit inbox address wins over the derived one" \
+		"http://mailpit:8025" "http://inbox.invalid:9025" \
+		PLATFORMKIT_E2E_MAILPIT_URL=http://mailpit:8025 PLATFORMKIT_E2E_MAIL_URL=http://inbox.invalid:9025
+fi
+
 if [ "$failures" -ne 0 ]; then
 	echo "e2e mail address: $failures case(s) failed" >&2
 	exit 1

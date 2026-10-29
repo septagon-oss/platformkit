@@ -201,7 +201,8 @@ func pictureMount[T crud.Entity](t *testing.T, table, columns string, spec rest.
 	svc, mod := file.New(file.Deps{Storage: file.Local(t.TempDir())})
 	who := caller{hosts: map[string]tenancy.Tenant{host: acme, otherHost: globex}}
 	api, router := httpx.New(httpx.Options{
-		Cache: cache.Memory("pkit"), PublicHost: host, Tenants: who, Conn: conn, Authorize: who,
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"), PublicHost: host, Tenants: who, Conn: conn, Authorize: who,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},

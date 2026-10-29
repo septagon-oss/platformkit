@@ -3,18 +3,15 @@
 // Every sentence it returns is the delegate's own copy, marked so a reader of a
 // rendered document can see at a glance which words went through a catalogue and
 // which somebody wrote in Go: the text is wrapped in ⟦…⟧ and its vowels accented.
-// The transformation is reversible and adds exactly the two delimiter runes — every
-// vowel is one rune for one — so a page can be checked by machine and un-read by a
-// person. How far the accented glyphs then widen a line is the font's answer and not
-// this function's: the mark is a measurement, not a layout guarantee.
+// The transformation is reversible and adds exactly the two delimiter runes —
+// every vowel is one rune for one — so a page can be checked by machine and
+// un-read by a person. How far the glyphs widen a line is the font's answer.
 //
-// This is the standard technique — Android's `en-XA`, Chromium's pseudolocales — and
-// the reason it exists: the number that matters is the share of the words a person
-// reads that a translator can reach, and no source scan can answer that when most
-// call sites build their key at run time. Only the shape of the copy is pseudo; the
-// language a person is served in never is, because Wrap returns
-// [locale.Messages], not a catalogue, and so reaches no `Languages()` set, no
-// tenant's supported list and no `?lang=` choice. Compose it in a test.
+// Android's en-XA and Chromium's pseudolocales do it this way, and the number
+// here answers is the share of the words a person reads that a translator can
+// reach — unanswerable from a source scan once call sites build keys at run time.
+// Only the copy's shape is pseudo: Wrap returns [locale.Messages], so it reaches
+// no Languages() set, no tenant's supported list and no ?lang= choice.
 package pseudo
 
 import (

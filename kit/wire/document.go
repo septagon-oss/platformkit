@@ -1,8 +1,11 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strconv"
@@ -10,10 +13,24 @@ import (
 	"unicode"
 )
 
+// wireDocument decodes one JSON document, keeping every number as the literal the
+// document wrote (json.Number) rather than as a float64: a bound the gate compares is a
+// contract's exact figure, and 9007199254740993 and 9007199254740992 are the same
+// float64. A decoder is more accepting than json.Unmarshal at the edges — it takes a
+// second value after the first — so the bytes after the document are read and refused.
 func wireDocument(body []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("not a JSON object: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("trailing content after the document")
+		}
+		return nil, fmt.Errorf("trailing content after the document: %w", err)
 	}
 	if doc == nil {
 		return nil, fmt.Errorf("empty document")
@@ -100,10 +117,25 @@ func wireResolve(doc map[string]any, ref string) map[string]any {
 // validateSchema checks only the nodes the walker understands, not arbitrary
 // examples/extensions or every JSON Schema keyword. References are checked once
 // per target; a recursive schema does not cause recursive validation forever.
-func validateSchema(doc map[string]any, raw any, seen map[string]bool) error {
+//
+// schemaNode says whether this node's `required` names properties. An OpenAPI parameter
+// object carries a `required` of its own — whether the caller must send the parameter at all
+// — and the schemas it holds name properties instead, so one keyword means two things at that
+// one place and each is read as what it says there.
+func validateSchema(doc map[string]any, raw any, seen map[string]bool, schemaNode bool) error {
 	node, ok := raw.(map[string]any)
 	if !ok {
 		return fmt.Errorf("schema must be an object")
+	}
+	if raw, present := node["type"]; present && raw != nil {
+		if err := validateTypeNames(raw); err != nil {
+			return err
+		}
+	}
+	if schemaNode {
+		if raw, present := node["required"]; present && !wireNames(raw) {
+			return fmt.Errorf("required must be a list of property names")
+		}
 	}
 	if rawRef, present := node["$ref"]; present {
 		ref, _ := rawRef.(string)
@@ -113,7 +145,7 @@ func validateSchema(doc map[string]any, raw any, seen map[string]bool) error {
 		}
 		if !seen[ref] {
 			seen[ref] = true
-			if err := validateSchema(doc, target, seen); err != nil {
+			if err := validateSchema(doc, target, seen, true); err != nil {
 				return err
 			}
 		}
@@ -124,19 +156,19 @@ func validateSchema(doc map[string]any, raw any, seen map[string]bool) error {
 			return fmt.Errorf("properties must be an object")
 		}
 		for _, name := range slices.Sorted(maps.Keys(props)) {
-			if err := validateSchema(doc, props[name], seen); err != nil {
+			if err := validateSchema(doc, props[name], seen, true); err != nil {
 				return err
 			}
 		}
 	}
-	for _, name := range []string{"items", "additionalProperties"} {
-		if raw, present := node[name]; present {
-			if _, boolean := raw.(bool); boolean && name == "additionalProperties" {
-				continue
-			}
-			if err := validateSchema(doc, raw, seen); err != nil {
-				return err
-			}
+	if raw, present := node["items"]; present {
+		if err := validateSchema(doc, raw, seen, true); err != nil {
+			return err
+		}
+	}
+	if raw, present := node["additionalProperties"]; present {
+		if err := validateOpenProperties(doc, raw, seen); err != nil {
+			return err
 		}
 	}
 	if raw, present := node["anyOf"]; present {
@@ -145,12 +177,66 @@ func validateSchema(doc map[string]any, raw any, seen map[string]bool) error {
 			return fmt.Errorf("anyOf must be an array")
 		}
 		for _, branch := range branches {
-			if err := validateSchema(doc, branch, seen); err != nil {
+			if err := validateSchema(doc, branch, seen, true); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// validateOpenProperties checks the one keyword that may say either what may follow or that
+// nothing may: a boolean closes or opens the slot, a schema says what may, and anything else
+// is not a declaration the comparison can read as either.
+func validateOpenProperties(doc map[string]any, raw any, seen map[string]bool) error {
+	if _, boolean := raw.(bool); boolean {
+		return nil
+	}
+	if _, object := raw.(map[string]any); !object {
+		return fmt.Errorf("additionalProperties must be a boolean or a schema")
+	}
+	return validateSchema(doc, raw, seen, true)
+}
+
+// validateTypeNames refuses a `type` that names nothing: an empty set, an empty name, or a
+// value that is neither a name nor a set of names. A type naming no type is not an open type,
+// and a comparison that read it as one would accept a document no instance can satisfy.
+func validateTypeNames(raw any) error {
+	switch typed := raw.(type) {
+	case string:
+		if typed == "" {
+			return fmt.Errorf("type must name a type")
+		}
+	case []any:
+		if len(typed) == 0 {
+			return fmt.Errorf("type must name at least one type")
+		}
+		for _, item := range typed {
+			if name, _ := item.(string); name == "" {
+				return fmt.Errorf("type must name only types")
+			}
+		}
+	default:
+		return fmt.Errorf("type must be a name or a set of names, not %s", wireJSONToken(raw))
+	}
+	return nil
+}
+
+// wireNames is a schema-level `required` as the list of property names it states: a list in
+// which every element is a name. A list holding something else states a requirement no reader
+// can resolve, which is why it refuses rather than comparing as the shorter list it would
+// silently become.
+func wireNames(node any) bool {
+	list, ok := node.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		if name, _ := item.(string); name == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func validateOpenAPI(doc map[string]any) error {
@@ -179,18 +265,18 @@ func validateOpenAPI(doc map[string]any) error {
 					if !ok {
 						return fmt.Errorf("parameter must be an object")
 					}
-					if err := validateSchema(doc, param, map[string]bool{}); err != nil {
+					if err := validateParameter(doc, param); err != nil {
 						return err
 					}
 					if schema, present := param["schema"]; present {
-						if err := validateSchema(doc, schema, map[string]bool{}); err != nil {
+						if err := validateSchema(doc, schema, map[string]bool{}, true); err != nil {
 							return err
 						}
 					}
 				}
 			}
 			if raw, present := route["requestBody"]; present {
-				if err := validateContent(doc, raw); err != nil {
+				if err := validateRequestBody(doc, raw); err != nil {
 					return err
 				}
 			}
@@ -205,6 +291,37 @@ func validateOpenAPI(doc map[string]any) error {
 					}
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// validateRequestBody reads the body object before its content: whether the operation demands
+// a body at all is a declaration about the request, and a `required` that is not a boolean
+// states one this gate cannot read.
+func validateRequestBody(doc map[string]any, raw any) error {
+	if node, ok := raw.(map[string]any); ok {
+		if err := validateDemand(node, "request body required"); err != nil {
+			return err
+		}
+	}
+	return validateContent(doc, raw)
+}
+
+// validateParameter is one parameter object: the whole schema it may hold, plus its own
+// `required`, which says whether the caller must send the parameter.
+func validateParameter(doc map[string]any, param map[string]any) error {
+	if err := validateDemand(param, "parameter required"); err != nil {
+		return err
+	}
+	return validateSchema(doc, param, map[string]bool{}, false)
+}
+
+// validateDemand refuses a demand written in another kind, naming it where it stands.
+func validateDemand(node map[string]any, where string) error {
+	if raw, present := node["required"]; present && raw != nil {
+		if _, boolean := raw.(bool); !boolean {
+			return fmt.Errorf("%s must be a boolean", where)
 		}
 	}
 	return nil
@@ -226,7 +343,7 @@ func validateContent(doc map[string]any, raw any) error {
 				return fmt.Errorf("media type must be an object")
 			}
 			if schema, present := shape["schema"]; present {
-				if err := validateSchema(doc, schema, map[string]bool{}); err != nil {
+				if err := validateSchema(doc, schema, map[string]bool{}, true); err != nil {
 					return err
 				}
 			}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Conformance cases for the shared source gates. All fixture repositories are
-# temporary and contain source text only; no dependencies are fetched or built.
+# temporary; the import command builds locally and fixture dependencies stay offline.
 set -euo pipefail
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 temporary="$(mktemp -d)"
@@ -9,6 +9,20 @@ repo="$temporary/repository with spaces"
 mkdir -p "$repo/modules/a/internal" "$repo/apps/example" "$repo/kit/db/dbtest"
 git -C "$repo" init --quiet
 printf 'module example.test/product\n' > "$repo/go.mod"
+
+refuses_with() {
+	local description="$1" status_want="$2" expected="$3" output status
+	shift 3
+	if output=$("$@" 2>&1); then status=0; else status=$?; fi
+	if [ "$status" != "$status_want" ]; then
+		printf 'FAIL: %s returned %s, want %s:\n%s\n' "$description" "$status" "$status_want" "$output" >&2
+		exit 1
+	fi
+	if [[ "$output" != *"$expected"* ]]; then
+		printf 'FAIL: %s returned an unrelated error:\n%s\n' "$description" "$output" >&2
+		exit 1
+	fi
+}
 
 rejects() {
 	local description="$1" expected="$2" output
@@ -23,35 +37,118 @@ rejects() {
 	fi
 }
 
-imports=(bash "$scripts/check_imports.sh" "$repo" example.test/foundation example.test/catalog)
+# Resolve before forcing local execution: PATH may otherwise hold another Go
+# release. The selected toolchain is go.mod's `toolchain` line, which is what the
+# Makefile exports, so this fixture counts packages with the gate's own compiler.
+selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
+export PATH="$selected_root/bin:$PATH"
+
+import_module() {
+    cat > "$repo/go.mod" <<'MOD'
+module example.test/product
+
+go 1.26.6
+
+require (
+    example.test/foundation v0.0.0
+    example.test/catalog v0.0.0
+)
+replace example.test/foundation => ../foundation
+replace example.test/catalog => ../catalog
+MOD
+}
+import_module
+for dependency in foundation catalog; do
+    mkdir -p "$temporary/$dependency"
+    printf 'module example.test/%s\n\ngo 1.26.6\n' "$dependency" > "$temporary/$dependency/go.mod"
+    for package in modules/a modules/a/contracts modules/a/internal modules/b modules/b/contracts modules/b/internal; do
+        mkdir -p "$temporary/$dependency/$package"
+        printf 'package fixture\n' > "$temporary/$dependency/$package/fixture.go"
+    done
+done
+mkdir -p "$repo/modules/a/internal/store" "$repo/modules/b/contracts"
+printf 'package store\n' > "$repo/modules/a/internal/store/store.go"
+printf 'package b\n' > "$repo/modules/b/b.go"
+printf 'package contracts\n' > "$repo/modules/b/contracts/value.go"
+imports=(env GOTOOLCHAIN=local GOWORK=off GOFLAGS= GOPROXY=off GOSUMDB=off bash "$scripts/check_imports.sh" "$repo" example.test/foundation example.test/catalog)
+layer_rows() {
+    printf 'example.test/%s/modules/a platform\nexample.test/%s/modules/b platform\n' "$1" "$1" > "$2/scripts/imports-layers.txt"
+}
+mkdir -p "$repo/scripts" "$temporary/foundation/scripts" "$temporary/catalog/scripts"
+layer_rows product "$repo"
+layer_rows foundation "$temporary/foundation"
+layer_rows catalog "$temporary/catalog"
 cat > "$repo/modules/a/internal/good.go" <<'GO'
 package internal
 import (
-    "example.test/product/modules/a/internal"
-    "example.test/product/modules/b/contracts"
-    "example.test/foundation/modules/a/contracts"
-    "example.test/catalog/modules/b/contracts"
+    _ "example.test/product/modules/a/internal/store"
+    _ "example.test/product/modules/b/contracts"
+    _ "example.test/foundation/modules/a/contracts"
+    _ "example.test/catalog/modules/b/contracts"
 )
 GO
 cat > "$repo/apps/example/main.go" <<'GO'
 package main
-import "example.test/catalog/modules/b"
+import _ "example.test/catalog/modules/b"
 GO
 "${imports[@]}" >/dev/null
 
-for target in example.test/product/modules/b example.test/foundation/modules/a example.test/catalog/modules/a/internal; do
-	printf 'package internal\nimport "%s"\n' "$target" > "$repo/modules/a/internal/bad.go"
+for target in example.test/product/modules/b example.test/foundation/modules/a; do
+	printf 'package internal\nimport _ "%s"\n' "$target" > "$repo/modules/a/internal/bad.go"
 	rejects "cross-module import $target" 'OUT OF BOUNDS' "${imports[@]}"
 done
-printf 'package internal\nimport `example.test/catalog/modules/b`\n' > "$repo/modules/a/internal/bad.go"
+printf 'package internal\nimport _ `example.test/catalog/modules/b`\n' > "$repo/modules/a/internal/bad.go"
 rejects 'raw-string constructor import' 'OUT OF BOUNDS' "${imports[@]}"
 rm "$repo/modules/a/internal/bad.go"
 
 printf 'package main\nimport "example.test/catalog/modules/b/internal"\n' > "$repo/apps/example/main.go"
-rejects 'application imports implementation' 'apps/ reaches into' "${imports[@]}"
+rejects 'application imports implementation' 'use of internal package example.test/catalog/modules/b/internal not allowed' "${imports[@]}"
+printf 'package internal\nimport _ "example.test/catalog/modules/a/internal"\n' > "$repo/modules/a/internal/bad.go"
+rejects 'module imports foreign internal implementation' 'use of internal package example.test/catalog/modules/a/internal not allowed' "${imports[@]}"
+rm "$repo/modules/a/internal/bad.go"
 printf 'package main\n' > "$repo/apps/example/main.go"
-printf 'package internal\nimport "example.test/catalog/modules/b"\n' > "$repo/modules/a/internal/exempt_test.go"
+printf 'package internal\nimport _ "example.test/catalog/modules/b"\n' > "$repo/modules/a/internal/exempt_test.go"
+rejects 'undeclared integration constructor' 'undeclared-integration' "${imports[@]}"
+mkdir -p "$repo/scripts"
+printf 'modules/a/internal@internal example.test/catalog/modules/b Composes the catalog constructor in the integration fixture.\n' > "$repo/scripts/imports-integration.txt"
 "${imports[@]}" >/dev/null
+
+# Module layers. The order lives in the gate; these fixture files only assign
+# modules, so an assignment can never disagree with the order it is measured by.
+printf 'package internal\nimport _ "example.test/foundation/modules/a/contracts"\n' > "$repo/modules/a/internal/layer.go"
+printf 'example.test/foundation/modules/a product\nexample.test/foundation/modules/b platform\n' > "$temporary/foundation/scripts/imports-layers.txt"
+refuses_with 'consumer climbs a dependency module' 1 'OUT OF BOUNDS [module-layer-upward] example.test/product/modules/a/internal -> example.test/foundation/modules/a/contracts (production)' "${imports[@]}"
+printf 'example.test/product/modules/a identity\nexample.test/product/modules/b platform\n' > "$repo/scripts/imports-layers.txt"
+printf 'example.test/foundation/modules/a platform\nexample.test/foundation/modules/b platform\n' > "$temporary/foundation/scripts/imports-layers.txt"
+"${imports[@]}" >/dev/null
+rm "$repo/modules/a/internal/layer.go"
+# A dependency whose own map was removed: every module of it the build reaches is
+# unassigned, and the only cure lives in that repository or in a new pin.
+rm "$temporary/foundation/scripts/imports-layers.txt"
+refuses_with 'dependency holds no layer map' 1 'OUT OF BOUNDS [module-layer-missing] example.test/foundation/modules/a -> example.test/foundation/scripts/imports-layers.txt' "${imports[@]}"
+layer_rows foundation "$temporary/foundation"
+# A consumer module nobody placed.
+grep -v 'modules/b' "$repo/scripts/imports-layers.txt" > "$temporary/partial.txt" && cp "$temporary/partial.txt" "$repo/scripts/imports-layers.txt"
+refuses_with 'consumer module holds no row' 1 'OUT OF BOUNDS [module-layer-missing] example.test/product/modules/b -> example.test/product/scripts/imports-layers.txt' "${imports[@]}"
+layer_rows product "$repo"
+# A file may assign only the modules of the repository that owns it, and a map a
+# reader cannot parse is an unreadable declaration, never a verdict.
+layer_rows catalog "$temporary/catalog"
+printf 'example.test/product/modules/a platform\n' >> "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency assigns a consumer module' 2 'assigns a module of example.test/product' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+printf 'example.test/catalog/modules/a sideways\n' > "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency invents a layer name' 2 'is not one the gate knows' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+# A pair is justifiable only in the repository holding both of its modules: Go
+# reports packages for the main module alone, so no build measures a pair spanning two
+# repositories and no file may claim one.
+printf 'example.test/catalog/modules/a <-> example.test/product/modules/a Both repositories claim this pair.\n' >> "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency justifies a pair spanning two repositories' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+printf '%s\n' 'example.test/product/modules/a <-> example.test/foundation/modules/a The kernel and the product import each other.' >> "$repo/scripts/imports-layers.txt"
+refuses_with 'consumer justifies a pair with a dependency module' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows product "$repo"
 
 # Only the actual foundation module grants the direct kit/db exemption. A
 # consumer cannot gain it by creating a same-named directory or a subpackage.
@@ -111,11 +208,13 @@ printf 'migrations/reads_test.go\n' > "$repo/scripts/gucs-exempt.txt"
 rejects 'an exemption with no reason' 'no reason' bash "$scripts/check_gucs.sh" "$repo"
 printf 'modules/a/internal/good.go it is fine\n' > "$repo/scripts/gucs-exempt.txt"
 rejects 'an exemption for a file that ships' 'only a _test.go file' bash "$scripts/check_gucs.sh" "$repo"
-rm -r "$repo/scripts" "$repo/migrations"
+rm "$repo/scripts/gucs-exempt.txt"
+rm -r "$repo/migrations"
 
 # Tracked files deleted from the working tree do not become scanner failures.
 git -C "$repo" add .
 rm "$repo/modules/a/internal/good.go"
+import_module
 bash "$scripts/check_gucs.sh" "$repo" >/dev/null
 "${imports[@]}" >/dev/null
 echo 'architecture gates: dependency boundaries, raw imports, file paths and tenancy ownership passed'
@@ -128,12 +227,7 @@ cp "$scripts/check_packages.sh" "$packages_repo/scripts/"
 printf 'module github.com/septagon-oss/platformkit\n\n' > "$packages_repo/go.mod"
 sed -n '/^go[[:space:]]/p' "$scripts/../go.mod" >> "$packages_repo/go.mod"
 printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
-# Resolve before forcing local execution: PATH may otherwise hold another Go
-# release. The selected toolchain is go.mod's `toolchain` line, which is what the
-# Makefile exports, so this fixture counts packages with the gate's own compiler.
-selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
-export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
+for path in apps/platformkit kit/screen kit/tour kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
@@ -186,6 +280,21 @@ boundary_rejects kit/cache/providers/valkey "$foundation/kit/db"
 boundary_rejects kit/fault "$foundation/kit/db"
 # The wire gate reads JSON only; a renderer or transaction is not its dependency.
 boundary_rejects kit/wire "$foundation/kit/db"
+# A screen descriptor names a view and its controls without rendering either, so
+# check("kit/screen", "") states its closure as the standard library. The edges
+# that would make it something else are the ones worth rehearsing: the page layer
+# it could start rendering into, and the transaction that would put a record
+# behind a name. The edge the rule does admit runs the other way — presentation
+# carries descriptors, so a form reaching kit/screen is what the allowance says.
+boundary_rejects kit/screen "$foundation/kit/db"
+boundary_rejects kit/screen "$foundation/ui/css"
+fixture_import ui/forms "$foundation/kit/screen"
+"${packages[@]}" >/dev/null
+printf 'package fixture\n' > "$packages_repo/ui/forms/fixture.go"
+# The private JSON codec transforms values without a request or transaction.
+boundary_rejects kit/internal/jsonbody "$foundation/kit/db"
+boundary_rejects kit/internal/jsonbody database/sql
+boundary_rejects kit/internal/jsonbody net/http
 # kit/trace carries a W3C trace context and nothing else: the two values, their
 # parsing and the standard library. It is in the outbox and kernel allowances
 # because the relay stores the context with the event and hands it to the

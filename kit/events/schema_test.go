@@ -152,7 +152,7 @@ func TestTheRefusalRollsBackTheTransactionThatAskedForIt(t *testing.T) {
 // halves of the door beside the schema check. A name the composition declared with no
 // payload type is published and unchecked: some payloads the kernel cannot describe,
 // and a manifest's choice not to describe one is not a bug. A name nobody declared is
-// refused outright, which is what the core review of 2026-09-29 (P2) found missing:
+// refused outright, which is the half this case exists for:
 // such a publication used to be accepted, stamped published and received by nobody,
 // because SubscribeAll expands over declared names only. The manifest gate in kit/app
 // covers routes; this one covers every publisher, and it says so before the INSERT.

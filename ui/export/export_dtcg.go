@@ -46,33 +46,52 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 	} else if mode != "" {
 		return nil, nil, fmt.Errorf("DTCG: mode %q is not selected", mode)
 	}
-	document := map[string]any{}
-	diagnostics := []DTCGDiagnostic{}
-	unsupported := false
-	report := func(path []string, code, message string, blocked bool) {
-		diagnostics = append(diagnostics, DTCGDiagnostic{slices.Clone(path), code, message, blocked})
-		unsupported = unsupported || blocked
-	}
-	emit := func(path, sourcePath []string, kind string, value, source any) {
-		group := document
-		for _, segment := range path[:len(path)-1] {
-			name := dtcgName(segment)
-			if group[name] == nil {
-				group[name] = map[string]any{}
-			}
-			group = group[name].(map[string]any)
-		}
-		group[dtcgName(path[len(path)-1])] = map[string]any{
-			"$type": kind, "$value": value,
-			"$extensions": map[string]any{dtcgExtension: map[string]any{"sourcePath": sourcePath, "source": source}},
-		}
-	}
-	resolved, err := design.ResolveColors(selected.Colors, s.Colors)
-	if err != nil {
+	p := dtcgProjection{document: map[string]any{}, diagnostics: []DTCGDiagnostic{}}
+	if err := p.colors(s, selected, mode); err != nil {
 		return nil, nil, err
 	}
+	p.fonts(selected, mode)
+	p.dimensions(selected, mode)
+	p.scales(s)
+	p.easings(s)
+	p.shadows(s)
+	p.evidence(s)
+	return p.finish(s, mode)
+}
+
+type dtcgProjection struct {
+	document    map[string]any
+	diagnostics []DTCGDiagnostic
+	unsupported bool
+}
+
+func (p *dtcgProjection) report(path []string, code, message string, blocked bool) {
+	p.diagnostics = append(p.diagnostics, DTCGDiagnostic{slices.Clone(path), code, message, blocked})
+	p.unsupported = p.unsupported || blocked
+}
+
+func (p *dtcgProjection) emit(path, sourcePath []string, kind string, value, source any) {
+	group := p.document
+	for _, segment := range path[:len(path)-1] {
+		name := dtcgName(segment)
+		if group[name] == nil {
+			group[name] = map[string]any{}
+		}
+		group = group[name].(map[string]any)
+	}
+	group[dtcgName(path[len(path)-1])] = map[string]any{
+		"$type": kind, "$value": value,
+		"$extensions": map[string]any{dtcgExtension: map[string]any{"sourcePath": sourcePath, "source": source}},
+	}
+}
+
+func (p *dtcgProjection) colors(s TokenExport, selected TokenMode, mode string) error {
+	resolved, err := design.ResolveColors(selected.Colors, s.Colors)
+	if err != nil {
+		return err
+	}
 	for _, color := range selected.Colors {
-		emit([]string{"colors", color.Name}, []string{"modes", mode, "colors", color.Name}, "color", dtcgColor(resolved[color.Name]), color)
+		p.emit([]string{"colors", color.Name}, []string{"modes", mode, "colors", color.Name}, "color", dtcgColor(resolved[color.Name]), color)
 	}
 	for _, color := range s.Colors {
 		path := []string{"colors", color.Name}
@@ -81,10 +100,14 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 			value = "{colors." + dtcgName(color.Value.Reference) + "}"
 		}
 		if color.Value.Mix != nil {
-			report(path, "resolved-color-mix", "DTCG receives the resolved mode colour; editable mix operands remain source metadata", false)
+			p.report(path, "resolved-color-mix", "DTCG receives the resolved mode colour; editable mix operands remain source metadata", false)
 		}
-		emit(path, path, "color", value, color)
+		p.emit(path, path, "color", value, color)
 	}
+	return nil
+}
+
+func (p *dtcgProjection) fonts(selected TokenMode, mode string) {
 	for _, font := range selected.Fonts {
 		path := []string{"modes", mode, "fonts", font.Name}
 		names := make([]string, 0, len(font.Families))
@@ -94,27 +117,33 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 			ambiguous = ambiguous || (strings.HasPrefix(family.Name, "{") && strings.HasSuffix(family.Name, "}"))
 		}
 		if ambiguous {
-			report(path, "font-family-reference", "literal family resembles a DTCG reference and cannot be escaped without changing its name", true)
+			p.report(path, "font-family-reference", "literal family resembles a DTCG reference and cannot be escaped without changing its name", true)
 			continue
 		}
-		report(path, "font-family-kinds", "DTCG retains ordered names but has no literal-versus-generic discriminator; typed kinds remain source metadata", false)
-		emit([]string{"fonts", font.Name}, path, "fontFamily", names, font)
+		p.report(path, "font-family-kinds", "DTCG retains ordered names but has no literal-versus-generic discriminator; typed kinds remain source metadata", false)
+		p.emit([]string{"fonts", font.Name}, path, "fontFamily", names, font)
 	}
+}
+
+func (p *dtcgProjection) dimensions(selected TokenMode, mode string) {
 	for _, dimension := range selected.Dimensions {
 		path := []string{"modes", mode, "shape", dimension.Name}
 		// Validate already refuses a unit this format cannot carry; the emitter
 		// still says so rather than writing a document with half a shape in it.
 		number, unit, err := design.ParseRadius(dimension.Value)
 		if err != nil {
-			report(path, "unsupported-shape-unit", "a DTCG dimension requires px or rem; no conversion was attempted", true)
+			p.report(path, "unsupported-shape-unit", "a DTCG dimension requires px or rem; no conversion was attempted", true)
 			continue
 		}
-		emit([]string{"shape", dimension.Name}, path, "dimension", style.Scalar{Value: json.Number(number), Unit: unit}, dimension)
+		p.emit([]string{"shape", dimension.Name}, path, "dimension", style.Scalar{Value: json.Number(number), Unit: unit}, dimension)
 	}
+}
+
+func (p *dtcgProjection) scales(s TokenExport) {
 	for _, scale := range s.Scales {
 		path := []string{"scales", scale.Scale, scale.Key}
 		if scale.Number == nil || !slices.Contains([]string{"", "px", "rem", "ms", "s"}, scale.Number.Unit) {
-			report(path, "unsupported-scale", "keyword or contextual unit has no corresponding DTCG value; no pixel conversion was attempted", true)
+			p.report(path, "unsupported-scale", "keyword or contextual unit has no corresponding DTCG value; no pixel conversion was attempted", true)
 			continue
 		}
 		kind, value := "dimension", any(*scale.Number)
@@ -126,18 +155,24 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 		case scale.Scale == "duration":
 			kind = "duration"
 		}
-		emit(path, path, kind, value, scale)
+		p.emit(path, path, kind, value, scale)
 	}
+}
+
+func (p *dtcgProjection) easings(s TokenExport) {
 	for _, easing := range s.Easings {
 		path := []string{"easings", easing.Key}
 		points := [4]float64{0, 0, 1, 1}
 		if easing.CubicBezier != nil {
 			points = *easing.CubicBezier
 		} else {
-			report(path, "linear-keyword", "linear becomes its equivalent cubic curve; the keyword declaration remains source metadata", false)
+			p.report(path, "linear-keyword", "linear becomes its equivalent cubic curve; the keyword declaration remains source metadata", false)
 		}
-		emit(path, path, "cubicBezier", points, easing)
+		p.emit(path, path, "cubicBezier", points, easing)
 	}
+}
+
+func (p *dtcgProjection) shadows(s TokenExport) {
 	for _, shadow := range s.Shadows {
 		path := []string{"shadows", shadow.Key}
 		layers := make([]map[string]any, 0, len(shadow.Layers))
@@ -156,44 +191,50 @@ func (s TokenExport) DTCG(mode string) ([]byte, []DTCGDiagnostic, error) {
 				"blur": layer.Blur, "spread": layer.Spread, "color": dtcgColor(layer.Color), "inset": layer.Inset})
 		}
 		if omitted {
-			report(path, "shadow-default-length", "omitted shadow blur/spread become explicit zero px; omitted declarations remain source metadata", false)
+			p.report(path, "shadow-default-length", "omitted shadow blur/spread become explicit zero px; omitted declarations remain source metadata", false)
 		}
 		if contextual {
-			report(path, "unsupported-shadow-unit", "DTCG shadow lengths require px/rem; contextual units were not converted", true)
+			p.report(path, "unsupported-shadow-unit", "DTCG shadow lengths require px/rem; contextual units were not converted", true)
 			continue
 		}
-		emit(path, path, "shadow", layers, shadow)
+		p.emit(path, path, "shadow", layers, shadow)
 	}
+}
+
+func (p *dtcgProjection) evidence(s TokenExport) {
 	for _, transition := range s.Transitions {
-		report([]string{"transitions", transition.Key}, "transition-declarations", "source property groups and absent delay declarations have no complete DTCG transition representation", true)
+		p.report([]string{"transitions", transition.Key}, "transition-declarations", "source property groups and absent delay declarations have no complete DTCG transition representation", true)
 	}
 	for _, asset := range s.Assets {
-		report([]string{"assets", asset.ID}, "asset-metadata", "asset evidence is preserved as metadata, not a DTCG file token or bundled bytes", false)
+		p.report([]string{"assets", asset.ID}, "asset-metadata", "asset evidence is preserved as metadata, not a DTCG file token or bundled bytes", false)
 	}
 	for _, face := range s.Faces {
-		report([]string{"faces", face.ID}, "face-metadata", "face evidence is preserved as metadata, not an installed or interchangeable font face", false)
+		p.report([]string{"faces", face.ID}, "face-metadata", "face evidence is preserved as metadata, not an installed or interchangeable font face", false)
 	}
-	slices.SortFunc(diagnostics, func(a, b DTCGDiagnostic) int {
+}
+
+func (p *dtcgProjection) finish(s TokenExport, mode string) ([]byte, []DTCGDiagnostic, error) {
+	slices.SortFunc(p.diagnostics, func(a, b DTCGDiagnostic) int {
 		return cmp.Or(slices.Compare(a.Path, b.Path), strings.Compare(a.Code, b.Code))
 	})
-	if unsupported {
-		return nil, diagnostics, ErrDTCGUnsupported
+	if p.unsupported {
+		return nil, p.diagnostics, ErrDTCGUnsupported
 	}
 	// Evidence arrays have no semantic ordering. Sort copies for repeatable bytes;
 	// fallback families, shadow layers and cubic coordinates retain their order.
 	assets, faces := slices.Clone(s.Assets), slices.Clone(s.Faces)
 	slices.SortFunc(assets, func(a, b design.Asset) int { return strings.Compare(a.ID, b.ID) })
 	slices.SortFunc(faces, func(a, b design.FontFace) int { return strings.Compare(a.ID, b.ID) })
-	metadata := map[string]any{"profile": "dtcg-2025.10.v1", "mode": mode, "diagnostics": diagnostics}
+	metadata := map[string]any{"profile": "dtcg-2025.10.v1", "mode": mode, "diagnostics": p.diagnostics}
 	if len(assets) != 0 {
 		metadata["assets"] = assets
 	}
 	if len(faces) != 0 {
 		metadata["faces"] = faces
 	}
-	document["$extensions"] = map[string]any{dtcgExtension: metadata}
-	data, err := json.MarshalIndent(document, "", "  ")
-	return data, diagnostics, err
+	p.document["$extensions"] = map[string]any{dtcgExtension: metadata}
+	data, err := json.MarshalIndent(p.document, "", "  ")
+	return data, p.diagnostics, err
 }
 
 // Escape the escape marker first so 0.5 and 0%2E5 cannot alias. All segments use

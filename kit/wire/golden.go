@@ -17,9 +17,28 @@ func Golden(t *testing.T, path string, serve func() []byte) {
 // Callers must serialize writers to a path. OS write errors are not atomic.
 func GoldenWithAllowances(t *testing.T, path string, serve func() []byte, allowances []AuthorizationAllowance) {
 	t.Helper()
+	goldenDocument(t, path, serve, func(golden, current []byte) []Break {
+		return CompareWithAllowances(golden, current, allowances)
+	})
+}
+
+// GoldenWithRequiredness is GoldenWithAllowances with a caller-owned reviewed
+// requiredness list beside the authorization list. The gate, the ordering and the
+// flag's meaning are unchanged: every refusal runs before UPDATE_GOLDEN writes, and
+// the flag still reconciles a document that is merely stale. Callers must serialize
+// writers to a path. OS write errors are not atomic.
+func GoldenWithRequiredness(t *testing.T, path string, serve func() []byte, allowances []AuthorizationAllowance, required []RequirednessAllowance) {
+	t.Helper()
+	goldenDocument(t, path, serve, func(golden, current []byte) []Break {
+		return CompareWithRequiredness(golden, current, allowances, required)
+	})
+}
+
+func goldenDocument(t *testing.T, path string, serve func() []byte, compare func(golden, current []byte) []Break) {
+	t.Helper()
 	current := serve()
 	golden := readGolden(t, path)
-	refuseWireBreak(t, path, golden, current, allowances)
+	refuseWireBreak(t, path, golden, current, compare)
 	if os.Getenv("UPDATE_GOLDEN") != "" {
 		if err := os.WriteFile(path, current, 0o644); err != nil {
 			t.Fatalf("write %s: %v", path, err)
@@ -32,9 +51,9 @@ func GoldenWithAllowances(t *testing.T, path string, serve func() []byte, allowa
 	}
 }
 
-func refuseWireBreak(t *testing.T, path string, golden, current []byte, allowances []AuthorizationAllowance) {
+func refuseWireBreak(t *testing.T, path string, golden, current []byte, compare func(golden, current []byte) []Break) {
 	t.Helper()
-	problems := CompareWithAllowances(golden, current, allowances)
+	problems := compare(golden, current)
 	for _, problem := range problems {
 		t.Error(problem)
 	}

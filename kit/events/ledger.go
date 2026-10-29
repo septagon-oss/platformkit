@@ -93,9 +93,10 @@ func durableSet(n int) string {
 //
 // One transaction, in this order, each step a statement a reviewer can read: name
 // the durables of this app's tenants that will move; take one lock per named
-// durable, refusing rather than waiting; copy each ledger's scoped twin; delete the
-// unscoped rows, whose twin the copy just provably made; and publish one record per
-// tenant. A refusal writes nothing and emits nothing.
+// durable, refusing rather than waiting; refuse again if any claim still owes an
+// effect; copy each ledger's scoped twin; delete the unscoped rows, whose twin the
+// copy just provably made; and publish one record per tenant. A refusal writes
+// nothing and emits nothing.
 func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedBy string) (MoveReport, error) {
 	// An app-less deployment has no scoped name to move to, so this is an answer
 	// rather than a refusal: nothing moves, nothing is emitted, and the ledgers
@@ -127,6 +128,19 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 			return err
 		}
 		report.Subscriptions = len(from)
+		// A claim that still owes an effect does not change hands. The rename writes the
+		// scoped twin and deletes what it copied, and the copy carries the columns a
+		// finished delivery leaves behind; an outstanding effect would be left naming a
+		// durable this move just deleted, so the debt would be paid by moving it and the
+		// scoped consumer would read a claim that owes nothing — the acknowledgement this
+		// ledger exists to make impossible. Refusing is the whole remedy and it drains:
+		// the effect that is owed reaches this row by the name it was written under, and
+		// the run after it comes back finds the count at zero and moves it.
+		if owed, err := claimsOwing(tx, app); err != nil {
+			return err
+		} else if owed > 0 {
+			return fmt.Errorf("events: move the delivery ledger: %d of app %s's claims still owe an effect that has not run, so no ledger row moved; %w", owed, app, ErrLedgerMoveContended)
+		}
 		durables := make([]string, len(from))
 		for i, d := range from {
 			durables[i] = prefix + d
@@ -259,15 +273,68 @@ func unscopedRemains(tx db.Tx[db.System], app appname.Name) (bool, error) {
 	return remains, nil
 }
 
+// claimsOwing counts app's unscoped claims still counting an effect their delivery
+// deferred past its own commit — the rows the rename below is about to make a new
+// primary key of, and the reason that rename refuses while any of them stands.
+//
+// It is asked after the durable locks are held and of the same set of rows the rename
+// names (unscoped, in a tenant this app holds), so the answer is the one the rename
+// would act on. What it cannot be overtaken by is worth naming: a claim that grows its
+// count has inserted its row in the same transaction, and that INSERT takes this move's
+// durable key and its tenant key (migrations/000058) for as long as the delivery runs;
+// an effect coming back only ever lowers a count, and lowering one after this reading
+// costs a move a run it repeats, never a row it lost. A ledger that does not count owed
+// effects owes none: see ledgerCountsEffects.
+func claimsOwing(tx db.Tx[db.System], app appname.Name) (int64, error) {
+	counting, err := ledgerCountsEffects(tx)
+	if err != nil {
+		return 0, err
+	}
+	if !counting {
+		return 0, nil
+	}
+	var owing int64
+	if err := tx.DB().Raw(`SELECT count(*) FROM `+handled+` WHERE `+unscoped+` AND `+ownTenant+` AND effects_owed > 0`,
+		string(app)).Scan(&owing).Error; err != nil {
+		return 0, fmt.Errorf("events: move the delivery ledger: ask what app %s's claims still owe: %w", app, err)
+	}
+	return owing, nil
+}
+
+// ledgerCountsEffects reports whether this installation's delivery ledger carries the
+// owed-effect count column.
+//
+// The column is this release's own (migrations/000075), and the runner applies nothing of
+// an owner behind a phase=data file until that file's drain finishes, so an installation
+// upgrading through a release that ships both runs this code over the ledger as it was
+// before the column — and this move is the step that meets that state, because kit/app
+// holds every subscription and every job, that drain among them, until the move returns.
+// Absent, nothing has ever raised a count, so the answer is zero by the shape of the
+// write and the rename goes ahead; present, the count is asked and a claim that owes does
+// not change hands. kit/events/README.md states the window beside the move itself.
+func ledgerCountsEffects(tx db.Tx[db.System]) (bool, error) {
+	var columns int64
+	// to_regclass resolves the bare name through this session's search_path, which is the
+	// relation the count above would have read; a catalog row for a different table named
+	// the same in some other schema is not this answer.
+	if err := tx.DB().Raw(`SELECT count(*) FROM pg_attribute
+			WHERE attrelid = to_regclass(?) AND attname = 'effects_owed' AND attnum > 0 AND NOT attisdropped`,
+		handled).Scan(&columns).Error; err != nil {
+		return false, fmt.Errorf("events: move the delivery ledger: ask whether the ledger counts owed effects: %w", err)
+	}
+	return columns > 0, nil
+}
+
 // holdDurable takes the move's lock over one durable's rows, refusing rather than
 // queueing. The sentence names what is in the way and that nothing moved, because
 // the retry is correctable and the operator has to be able to tell this from a
 // failure that lost rows.
 // ErrLedgerMoveContended is the move's answer to a delivery in flight: one claim is
-// open under a durable this move is about to rename, so the whole move refuses and
-// writes nothing. It is a sentinel because the operator's door has to be able to tell
-// "ask again" from "something is broken" without matching a sentence — the refusal
-// reads as a conflict there, and as the same refusal in a log here.
+// open under a durable this move is about to rename, or one still counts an effect its
+// delivery has not carried out, so the whole move refuses and writes nothing. It is a
+// sentinel because the operator's door has to be able to tell "ask again" from
+// "something is broken" without matching a sentence — the refusal reads as a conflict
+// there, and as the same refusal in a log here.
 var ErrLedgerMoveContended = errors.New("no ledger row moved, run it again")
 
 func holdDurable(tx db.Tx[db.System], durable string) error {

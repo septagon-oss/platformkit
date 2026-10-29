@@ -21,14 +21,14 @@ func TestDemoTenantWithoutConfiguredPasswordGetsUsableSignIn(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "demo-no-password", Name: "Demo", Host: "demo-no-password.localhost", Demo: true,
 		})
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, created.Tenancy(), func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			person, err := c.users.ByEmail(ctx, tx, "marta@example.test")
+			person, err := c.testUsers().ByEmail(ctx, tx, "marta@example.test")
 			if err != nil {
 				return err
 			}

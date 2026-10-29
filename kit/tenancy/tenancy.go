@@ -3,11 +3,15 @@
 // A tenant reaches the rest of the program through the context: HTTP middleware
 // resolves the host to a Tenant and calls WithTenant, and kit/db reads it back
 // to scope the transaction. Nothing else may derive a tenant from anywhere.
+//
+// The [Policy] example evaluates a tenant-qualified request through [RequirePolicy].
+// It shows an allowed decision and a denial from an explicit provider.
 package tenancy
 
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"github.com/google/uuid"
 
@@ -122,6 +126,43 @@ func FromContext(ctx context.Context) (Tenant, bool) {
 // interface for it is httpx.TenantLoader, declared where both kit/db and this
 // package are already imported.
 type SystemToken = syscap.SystemToken
+
+// Namespace is one module's namespace: the name the composition registered, and
+// the name a workspace puts in front of that module's screens and its API. It is
+// a type and not a string because the thing it carries is ownership — a module
+// that mounts a page beside another module's screens should be holding a
+// reference to the owner, not a name somebody remembered, and a rename of the
+// owning module should break the caller's build rather than invent a namespace
+// that answers 404.
+//
+// The value has to be nameable by an owning module's contracts package, which is
+// why it lives here and not in kit/httpx: httpx links huma and chi into
+// everything that imports it, and a module's contracts stay free of both. The
+// kernel's own doors take the name rather than the value: a caller spends the
+// reference as ns.Module() on httpx.Router.Known and httpx.Router.ForModule.
+type Namespace struct{ module string }
+
+// NewNamespace names one module's own namespace. The owning module's contracts
+// package calls it, from its own package, which is what makes the value a
+// reference to an owner. A name that is not a module name panics at the
+// definition: the value is written once, in source, and no request can bring it.
+func NewNamespace(module string) Namespace {
+	if !namespaceName.MatchString(module) {
+		panic("tenancy.NewNamespace: a namespace is a module name — a lower-case identifier, the name the composition registered")
+	}
+	return Namespace{module: module}
+}
+
+// Module is the namespace's name, as the composition registered it. It is how
+// the reference is spent: the doors that rebind a router or ask whether a module
+// was composed answer to that name.
+func (n Namespace) Module() string { return n.module }
+
+// namespaceName is a module name's grammar — the same grammar kit/module
+// refuses a manifest's Name against, restated here because kit/module imports
+// this package. The two are kept in step by the case in this package's tests
+// that asks module.Validate about the same names.
+var namespaceName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // Principal is who is making a request, established once per request by the
 // HTTP layer's identity hook and never derived again.

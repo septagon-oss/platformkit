@@ -226,16 +226,24 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// workspace and whose generated forms carry their own measure. A merge claims no
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
 	// digest below is this merged tree's own measurement, printed by the refusal and
-	// copied from it.
+	// copied from it. Beside main's leaves, the stepped form's answer sheet gains one
+	// optional property and the stylesheet one rule.
 	//
-	// The guided session moves the export in three named ways. Exporting this tree
-	// and its merge base and walking both documents leaf by leaf: 99,996 leaves
-	// become 100,028, the 32 added ones one `segmented` schema property beside each
-	// Stepper capture that now declares it. The rules a session page carries then
-	// space its timer list, and cap the prose inside its wide block at 65ch, so /css
-	// and /sha256 move again over 100,028 leaves on both sides, none added, none
-	// removed. No example, schema, notice, theme, icon or font policy moves.
-	if legacy.SHA256 != "efec82a2e336ce5ba75240b5ef3a5eb67ddbc56e92bb3ee92c45229c9a14a663" {
+	// A field's help paragraph now holds one sentence per author: the four components
+	// that draw one gained an optional list of notes about the control the form chose.
+	// That list reaches every form schema the export carries, and no gallery example
+	// sets it, so the property moves the schemas and the digest and nothing else.
+	// OptionChips grew the properties a finite choice needs — one name carried many
+	// times, an explicit described-by, a clear affordance and the stable option key
+	// on the input — so every one of its fourteen Gallery examples now renders a
+	// `for` on each label and a wider input, and each example's source schema gains
+	// the four optional properties clearLabel, describedBy, multiple and values.
+	// Exported this tree against the tree before the change and walked both
+	// documents leaf by leaf: 70 leaves move, 56 of them those added properties,
+	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
+	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
+	// other component moves.
+	if legacy.SHA256 != "ecc74b888cf6bd429283b5b6004da6dc7235f4116ff495bfeaeb75679ca9c240" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

@@ -44,23 +44,18 @@ func RequestFrom(ctx context.Context) (*http.Request, bool) {
 	return r, ok
 }
 
-// RetryAfter answers "when, then" on the response this request is being given,
-// for a refusal whose remedy is to ask again rather than to ask differently.
+// RetryAfter answers "when, then" on the response this request is being given, for a refusal
+// whose remedy is to ask again rather than to ask differently.
 //
-// The header is the answer's and not the error's: kit/problem carries the body
-// and nothing else, and a caller that retries blind either hammers a saturated
-// machine or waits a minute for a slot that frees in five seconds. So the hint is
-// written here, on the response kit/httpx is already holding — the one object
-// both a handler and the guards in this chain can reach, and the writer that
-// decides when the headers go out.
+// The header is the answer's and not the error's: kit/problem carries the body and nothing
+// else, and a caller that retries blind either hammers a saturated machine or waits a minute
+// for a slot that frees in five seconds. So the hint is written here, on the response
+// kit/httpx is already holding — the one object both a handler and the guards in this chain
+// can reach, and the writer that decides when the headers go out.
 //
-// It returns whether there was still a response to write to: a route that has
-// begun its stream has sent its headers, and a call outside a request has no
-// response at all. False costs the caller the hint and never the refusal, which
-// is why an exhausted wait is answered with the status alone rather than with a
-// second failure. The seconds are rounded the way every other Retry-After in this
-// package rounds them, and never to zero: "Retry-After: 0" invites the retry this
-// header exists to space out.
+// It returns whether there was still a response to write to: a route that has begun its
+// stream has sent its headers, and a call outside a request has no response at all. False
+// costs the caller the hint and never the refusal, and the seconds never round to zero.
 func RetryAfter(ctx context.Context, wait time.Duration) bool {
 	b, ok := bufferFrom(ctx)
 	if !ok || b.begun() {

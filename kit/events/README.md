@@ -223,6 +223,16 @@ for the reasoning and the cases beside it. `kit/db`'s `phase=data` window refuse
 same act against a table keyed by anything other than the tenant, which is why this is a
 drain its owner owns in a job rather than a migration.
 
+The count the move refuses over is a column, and a column can still be on its way in: the
+runner applies nothing of an owner behind a `phase=data` file until that file's drain
+finishes, so an installation upgrading through a release that ships a backfill and an
+expansion together runs this release's code over the ledger as it was before the
+expansion. This step is the one that meets that state, because kit/app holds every
+subscription and every job — that drain tick among them — until the move returns. So the
+ledger is read for the column before it is read for the count: absent, nothing has ever
+raised a count, the answer is zero by the shape of the write and the rename goes ahead;
+present, the refusal above stands.
+
 ## Limits
 
 Delivery is at least once. Independent sinks must provide their own durable
@@ -314,6 +324,36 @@ callbacks share the existing delivery transaction. Audit copies the six facts
 and exposes an exact operation-reference filter. [The receipt contract](../idempotency/README.md)
 is the canonical explanation of transitions, admission and retention.
 
+## The ack rule: a delivery owes its effects
+
+Decision 0022, for this delivery. **Reused:** the claim in `platformkit_handled`
+(`claim`, `000003`), the delivery context `Consume` already builds, the system-token
+precedent of `deadLetter`, and the transport ladder in
+`internal/delivery/policy.go` — no provider line changed, because `Sink.Handle`
+already acks on nil and nothing else. **Added:** `Defer`, the `effects_owed` count
+(`000075`) and `ErrDeliveryOwesEffect`: a claim used to know only *claimed*, and a
+redelivery that arrived while the first attempt was still handing an effect over had
+nothing to read, so it acknowledged work nobody finished. The debt is counted rather
+than flagged because a handler may defer more than one effect and `kit/db` runs them as
+one queue registered by different work: the count reaches zero only when the last of
+them comes back, so a delivery that owes two is not acknowledged by the one that
+finished first. **Made reusable:** a delivery that can say what it still owes, read
+under its row lock, and the release that makes a failed effect come back rather than
+vanish.
+
+Two endings read that count rather than ignore it. The transport's ladder running out
+over an owed effect writes its dead letter — `deadLetter` records the exhaustion beside
+a claim already standing when the count above zero is what stopped every attempt — and
+writes none of the count away, because a terminal record says work an operator has to
+look at and not that the work finished. It is what keeps the outbox row, and so the
+payload, past the purge, which exempts a row a dead letter describes, and
+`events.Replay` stays the verb that recovers it. And `MoveLedger` refuses a rename over
+a claim that still owes one: the rename makes a new primary key, so an outstanding
+effect would be left naming a row the move deleted, the scoped twin would read as owed
+nothing, and the debt would have been paid by moving it. The run after the effect comes
+back moves the row, and the refusal is `ErrLedgerMoveContended`, which is the sentence
+for "ask again".
+
 ## Composition of delivery steps
 
 **Reused** — `Consume`, `MoveLedger`, `relayBatch`, `Schema.check` and the existing
@@ -328,3 +368,66 @@ locks tenants and durables before renaming both ledgers and publishing records.
 [Relay](relay.go) reads locked rows, settles lag, publishes envelopes and stamps
 only after publication. [Schema validation](schema.go) preserves null handling
 and open projections. These steps add no transaction or transport boundary.
+
+## Replaying one event
+
+`Replay` is the operator's verb, and the reason it needs an actor is the reason it
+needs a capability of its own (ADR 0006). A terminal failure writes a claim and a
+dead letter in one statement, and every later delivery finds the claim taken and
+skips the handler — that is the guarantee that makes at-least-once delivery safe to
+run at all. Removing a claim is therefore removing the record that a consequential
+action already happened.
+
+The actor is required of the request's context rather than read from it, and before
+the transaction opens, so a call with nobody behind it writes nothing, emits nothing
+and leaves every claim and dead letter where they were. A system token says this
+process may cross tenants; only an actor says a person asked (`kit/tenancy` names it,
+`kit/httpx` puts it there).
+
+The requirement is unconditional. A dead letter is reviewed late, so the row a replay
+relays is usually old, and age invites the thought that an old enough one needs no
+name. Whether a person has to be named for deleting the record of a finished delivery
+cannot turn on how many days ago it finished — that would waive the audit exactly
+where it is worth most. Who asked, and why, are the only questions the verb asks.
+
+Asked, not granted. Permission lives behind `kit/httpx`'s per-route authorizer and
+this verb has no route, so what it can require is that a person be named, not that
+they hold a grant; reaching for an authorizer through a package-level variable would
+be discovering a dependency rather than naming one. The product mounts the surface,
+declares the permission, and asks the question there.
+
+## Why a delivery checks the address it arrived on
+
+A delivery arrives with three copies of one fact: the address the broker routed by,
+the `app` the publisher stamped into the envelope, and the slug of the process reading
+it. Two were never enough — a message written at this app's scoped address by a
+publisher that believed it was publishing for another app is a message this app would
+otherwise run a handler over, because an address says only where a message was written
+down. So the document's own app is checked rather than trusted, and it is checked
+first, because an operator reading the log has to learn which boundary disagreed.
+
+Why this is needed at all: a consumer's filter fixes the module and event halves of
+the subject, because it spells them out and a NATS `*` matches exactly one token, but
+its tenant half is a wildcard by design. The tenant is therefore the one fact about a
+delivered message the routing does not pin, and the envelope's own check that
+`subject` is `Subject` of `tenantid` and `type` proves only that the document agrees
+with itself — which is exactly what a self-consistent forgery satisfies. Without the
+comparison, a message stored on tenant A's address and stamped as tenant B's would
+open its transaction inside B's rows because its body said so: a tenant boundary held
+up by convention, with a broker credential as its key.
+
+Which of `Filters`' addresses pass depends on whether the reading app names itself,
+and the two cases are one rule read twice. An app that names itself passes only its
+own scoped address; the older two name no app, and an address that names no app
+cannot be shown to be this app's, because it is the address every other app's
+previous build published at too. That is decision 0074 rule 7's "delivery's app check
+applied to both": the filter stays wide for the length of a rollout precisely so that
+the boundary, and not the filter, is what decides. An app that names nothing — the
+deployment of one app, which is every composition that sets no slug — passes both
+pre-decision-0074 addresses, as it always has, and refuses any address carrying an
+app token, because it has no app to agree with and scoped traffic is somebody else's.
+
+The wide filter costs a real deployment something, and the cost belongs to the
+operator: a process must not start naming an app until no process still publishing at
+the older addresses is alive, because from that moment its own older traffic is
+unreadable to it. `kit/appname`'s Limits carry the same rule.

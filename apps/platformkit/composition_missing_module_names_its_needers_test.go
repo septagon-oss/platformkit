@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -32,9 +35,8 @@ func TestRemovingTheUserModuleNamesItAndWhoNeedsIt(t *testing.T) {
 	}
 }
 
-// The user module's promotion check is a holder product puts empty and auth
-// fills while it builds. In the resolved reference composition it is filled:
-// a caller with no principal is answered no, not the unfilled holder's error.
+// The independent promotion policy is ready at construction and refuses an
+// anonymous caller in the explicit tenant transaction.
 func TestTheReferenceCompositionFillsTheGrantCheckUserReads(t *testing.T) {
 	cfg := referenceCompositionConfig(t)
 	p, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
@@ -45,11 +47,15 @@ func TestTheReferenceCompositionFillsTheGrantCheckUserReads(t *testing.T) {
 	if !ok || g == nil {
 		t.Fatal("the reference composition resolves no usercontracts.Granting")
 	}
-	may, err := g.May(context.Background(), db.Tx[db.Tenant]{})
+	_, conn := dbtest.Schema(t)
+	err = db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()}), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		may, err := g.May(ctx, tx)
+		if may {
+			t.Fatal("a caller with no principal may hand out an administering role")
+		}
+		return err
+	})
 	if err != nil {
-		t.Fatalf("the grant check answers its unfilled holder's error, so auth never filled it: %v", err)
-	}
-	if may {
-		t.Fatal("a caller with no principal may hand out an administering role")
+		t.Fatalf("the initialized grant check failed: %v", err)
 	}
 }

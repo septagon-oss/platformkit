@@ -45,18 +45,8 @@ func (p DataListProps) Validate() error {
 			return err
 		}
 	}
-	if pager := p.Pagination; pager != nil && pager.TotalPages > 1 {
-		if pager.CurrentPage < 1 || (pager.CurrentPage > pager.TotalPages && p.State.Status != MediaEmpty) || strings.TrimSpace(pager.BaseURL) == "" {
-			return fmt.Errorf("DataList: invalid pagination range or URL")
-		}
-		for _, label := range []string{pager.NavigationLabel, pager.PreviousLabel, pager.NextLabel, pager.PageLabel, pager.CurrentPageLabel} {
-			if strings.TrimSpace(label) == "" {
-				return fmt.Errorf("DataList: pagination labels must be localized by the caller")
-			}
-		}
-	}
-	if p.LoadingLayout != nil && p.LoadingLayout.Rows < 1 {
-		return fmt.Errorf("DataList: loading rows must be positive")
+	if err := validateDataListPager(p); err != nil {
+		return err
 	}
 	if !p.State.ready() {
 		return nil
@@ -64,59 +54,14 @@ func (p DataListProps) Validate() error {
 	if len(p.Groups) == 0 || len(p.Columns) == 0 {
 		return fmt.Errorf("DataList: ready requires groups and columns; use empty for no results")
 	}
-	columns, groups, rows := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	for _, col := range p.Columns {
-		if strings.TrimSpace(col.Key) == "" || columns[col.Key] || strings.TrimSpace(col.Label) == "" {
-			return fmt.Errorf("DataList: columns require unique keys and labels")
-		}
-		columns[col.Key] = true
+	if err := validateDataListColumns(p.Columns); err != nil {
+		return err
 	}
-	eligible := 0
-	for _, group := range p.Groups {
-		if strings.TrimSpace(group.Key) == "" || groups[group.Key] {
-			return fmt.Errorf("DataList: group keys must be nonempty and unique")
-		}
-		groups[group.Key] = true
-		if (len(p.Groups) > 1 || group.Collapsible) && (strings.TrimSpace(group.Title) == "" || strings.TrimSpace(group.CountText) == "") {
-			return fmt.Errorf("DataList: named groups require Title and CountText")
-		}
-		if len(group.Rows) == 0 && strings.TrimSpace(group.CountText) == "" {
-			return fmt.Errorf("DataList: an empty group requires CountText")
-		}
-		if group.Collapsed && !group.Collapsible {
-			return fmt.Errorf("DataList: only collapsible groups may be collapsed")
-		}
-		for _, row := range group.Rows {
-			if strings.TrimSpace(row.ID) == "" || rows[row.ID] {
-				return fmt.Errorf("DataList: row IDs must be nonempty and unique")
-			}
-			rows[row.ID] = true
-			if p.SelectionName != "" && strings.TrimSpace(row.SelectionLabel) == "" {
-				return fmt.Errorf("DataList: every selection control requires SelectionLabel")
-			}
-			if row.Selectable {
-				eligible++
-			}
-		}
+	eligible, err := validateDataListGroups(p)
+	if err != nil {
+		return err
 	}
-	if p.SelectionName != "" {
-		for _, label := range []string{p.ID, p.FormID, p.ResultKey, p.SelectAllLabel, p.ClearSelectionLabel} {
-			if strings.TrimSpace(label) == "" {
-				return fmt.Errorf("DataList: selection requires ID, FormID, ResultKey and control labels")
-			}
-		}
-		if len(p.SelectionCountLabels) != eligible+1 {
-			return fmt.Errorf("DataList: SelectionCountLabels must cover zero through eligible count")
-		}
-		for _, label := range p.SelectionCountLabels {
-			if strings.TrimSpace(label) == "" {
-				return fmt.Errorf("DataList: selection count labels must be nonempty")
-			}
-		}
-	} else if len(p.SelectedIDs) != 0 {
-		return fmt.Errorf("DataList: SelectedIDs requires selection controls")
-	}
-	return nil
+	return validateDataListSelection(p, eligible)
 }
 
 func DataList(p DataListProps) g.Node { return DataListWithSlots(p, DataListSlots{}) }
@@ -139,6 +84,32 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 	if p.ResultCountText != "" && (p.State.ready() || p.State.Status == MediaEmpty) {
 		nodes = append(nodes, h.P(h.Class(clDataCount.Compile()), g.Text(p.ResultCountText)))
 	}
+	state := dataListState(p, slots)
+
+	nodes = append(nodes, state)
+	if !p.State.ready() {
+		if p.State.Status == MediaEmpty {
+			nodes = append(nodes, slots.Footer...)
+			if p.Pagination != nil {
+				nodes = append(nodes, Pagination(*p.Pagination))
+			}
+		}
+		return h.Section(nodes...)
+	}
+	selected := dataListSelectedRows(p)
+	for _, group := range p.Groups {
+		nodes = append(nodes, dataListGroup(p, slots, group, selected))
+	}
+	nodes = dataListSelectionControls(p, slots, selected, nodes)
+
+	nodes = append(nodes, slots.Footer...)
+	if p.Pagination != nil {
+		nodes = append(nodes, Pagination(*p.Pagination))
+	}
+	return h.Section(nodes...)
+}
+
+func dataListState(p DataListProps, slots DataListSlots) g.Node {
 	state := contentStateNode(p.State, slots.EmptyAction, slots.RetryAction,
 		TableSkeleton(TableSkeletonProps{Columns: len(p.Columns), Compact: p.Compact}))
 	if p.State.Status == MediaEmpty && len(p.Columns) != 0 {
@@ -150,16 +121,10 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 			Label: p.Label, Compact: p.Compact, Sortable: slots.SortURL != nil}, emptySlots),
 			h.P(h.Class(clDataCount.Compile()), g.Text(p.State.Text)), g.Group(slots.EmptyAction)}
 	}
-	nodes = append(nodes, state)
-	if !p.State.ready() {
-		if p.State.Status == MediaEmpty {
-			nodes = append(nodes, slots.Footer...)
-			if p.Pagination != nil {
-				nodes = append(nodes, Pagination(*p.Pagination))
-			}
-		}
-		return h.Section(nodes...)
-	}
+	return state
+}
+
+func dataListSelectedRows(p DataListProps) map[string]bool {
 	selected := map[string]bool{}
 	for _, group := range p.Groups {
 		for _, row := range group.Rows {
@@ -168,55 +133,64 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 			}
 		}
 	}
-	for _, group := range p.Groups {
-		rows := make([]TableRow, 0, len(group.Rows))
-		byID := make(map[string]DataRow, len(group.Rows))
-		for _, row := range group.Rows {
-			rows, byID[row.ID] = append(rows, row.TableRow), row
-		}
-		tableSlots := slots.TableSlots
-		tableSlots.SelectionName, tableSlots.SelectionFormID = p.SelectionName, p.FormID
-		tableSlots.SelectAllLabel = p.SelectAllLabel
-		tableSlots.SelectRowLabel = func(row TableRow) string { return byID[row.ID].SelectionLabel }
-		tableSlots.SelectRowChecked = func(row TableRow) bool { return selected[row.ID] }
-		tableSlots.SelectRowDisabled = func(row TableRow) bool { return p.Disabled || !byID[row.ID].Selectable }
-		tableSlots.Cell = func(row TableRow, col TableColumn) g.Node {
-			var cell g.Node
-			if slots.Cell != nil {
-				cell = slots.Cell(row, col)
-			}
-			if cell == nil && col.Primary && byID[row.ID].Href != "" {
-				cell = recoveryAction(ButtonProps{Label: fmt.Sprint(row.Cells[col.Key]), Href: byID[row.ID].Href, Variant: "link"}, p.Disabled)
-			}
-			if !col.Primary {
-				return cell
-			}
-			if cell == nil {
-				cell = g.Text(fmt.Sprint(row.Cells[col.Key]))
-			}
-			content := []g.Node{cell}
-			if data := byID[row.ID]; data.StatusLabel != "" {
-				content = append(content, Badge(BadgeProps{Label: data.StatusLabel, Tone: data.Tone}))
-			}
-			if slots.RowActions != nil {
-				content = append(content, slots.RowActions(byID[row.ID]))
-			}
-			return Flex(FlexProps{Gap: "2", Wrap: true, Align: "center"}, content...)
-		}
-		table := TableWithSlots(TableProps{HTMXProps: p.HTMXProps, Columns: p.Columns, Rows: rows,
-			Label: cmp.Or(group.Title, p.Label), EmptyText: group.CountText, Selectable: p.SelectionName != "",
-			Sortable: slots.SortURL != nil, Compact: p.Compact}, tableSlots)
-		heading := []g.Node{g.Text(group.Title), h.Span(h.Class(clDataCount.Compile()), g.Text(group.CountText))}
-		if group.Collapsible {
-			nodes = append(nodes, h.Details(g.If(!group.Collapsed, h.Open()), h.Summary(append([]g.Node{h.Class(clDataDisclosure.Compile())}, heading...)...), table))
-		} else {
-			var body []g.Node
-			if group.Title != "" {
-				body = append(body, h.H2(append([]g.Node{h.Class(clDataHeading.Compile())}, heading...)...))
-			}
-			nodes = append(nodes, h.Div(append(body, table)...))
-		}
+	return selected
+}
+
+func dataListGroup(p DataListProps, slots DataListSlots, group DataGroup, selected map[string]bool) g.Node {
+	rows := make([]TableRow, 0, len(group.Rows))
+	byID := make(map[string]DataRow, len(group.Rows))
+	for _, row := range group.Rows {
+		rows, byID[row.ID] = append(rows, row.TableRow), row
 	}
+	tableSlots := slots.TableSlots
+	tableSlots.SelectionName, tableSlots.SelectionFormID = p.SelectionName, p.FormID
+	tableSlots.SelectAllLabel = p.SelectAllLabel
+	tableSlots.SelectRowLabel = func(row TableRow) string { return byID[row.ID].SelectionLabel }
+	tableSlots.SelectRowChecked = func(row TableRow) bool { return selected[row.ID] }
+	tableSlots.SelectRowDisabled = func(row TableRow) bool { return p.Disabled || !byID[row.ID].Selectable }
+	tableSlots.Cell = func(row TableRow, col TableColumn) g.Node {
+		return dataListCell(p, slots, byID[row.ID], row, col)
+	}
+	table := TableWithSlots(TableProps{HTMXProps: p.HTMXProps, Columns: p.Columns, Rows: rows,
+		Label: cmp.Or(group.Title, p.Label), EmptyText: group.CountText, Selectable: p.SelectionName != "",
+		Sortable: slots.SortURL != nil, Compact: p.Compact}, tableSlots)
+	heading := []g.Node{g.Text(group.Title), h.Span(h.Class(clDataCount.Compile()), g.Text(group.CountText))}
+	if group.Collapsible {
+		return h.Details(g.If(!group.Collapsed, h.Open()), h.Summary(append([]g.Node{h.Class(clDataDisclosure.Compile())}, heading...)...), table)
+	} else {
+		var body []g.Node
+		if group.Title != "" {
+			body = append(body, h.H2(append([]g.Node{h.Class(clDataHeading.Compile())}, heading...)...))
+		}
+		return h.Div(append(body, table)...)
+	}
+}
+
+func dataListCell(p DataListProps, slots DataListSlots, data DataRow, row TableRow, col TableColumn) g.Node {
+	var cell g.Node
+	if slots.Cell != nil {
+		cell = slots.Cell(row, col)
+	}
+	if cell == nil && col.Primary && data.Href != "" {
+		cell = recoveryAction(ButtonProps{Label: fmt.Sprint(row.Cells[col.Key]), Href: data.Href, Variant: "link"}, p.Disabled)
+	}
+	if !col.Primary {
+		return cell
+	}
+	if cell == nil {
+		cell = g.Text(fmt.Sprint(row.Cells[col.Key]))
+	}
+	content := []g.Node{cell}
+	if data.StatusLabel != "" {
+		content = append(content, Badge(BadgeProps{Label: data.StatusLabel, Tone: data.Tone}))
+	}
+	if slots.RowActions != nil {
+		content = append(content, slots.RowActions(data))
+	}
+	return Flex(FlexProps{Gap: "2", Wrap: true, Align: "center"}, content...)
+}
+
+func dataListSelectionControls(p DataListProps, slots DataListSlots, selected map[string]bool, nodes []g.Node) []g.Node {
 	if p.SelectionName != "" {
 		labels := make([]g.Node, 0, len(p.SelectionCountLabels))
 		for _, label := range p.SelectionCountLabels {
@@ -228,11 +202,7 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 				recoveryAction(ButtonProps{Label: p.ClearSelectionLabel, Variant: "secondary", ComponentProps: ComponentProps{Attrs: map[string]string{"data-clear-selection": ""}}}, p.Disabled)))
 		nodes = append(nodes, slots.BulkActions...)
 	}
-	nodes = append(nodes, slots.Footer...)
-	if p.Pagination != nil {
-		nodes = append(nodes, Pagination(*p.Pagination))
-	}
-	return h.Section(nodes...)
+	return nodes
 }
 
 // The fields that describe a result set rather than the request for it. A
@@ -287,4 +257,86 @@ func dataListLoading(p DataListProps) g.Node {
 		nodes = append(nodes, h.Div(g.Attr("aria-hidden", "true"), Button(ButtonProps{Label: "\u00a0", Size: "lg", ComponentProps: ComponentProps{Disabled: true}})))
 	}
 	return h.Section(nodes...)
+}
+
+func validateDataListPager(p DataListProps) error {
+	if pager := p.Pagination; pager != nil && pager.TotalPages > 1 {
+		if pager.CurrentPage < 1 || (pager.CurrentPage > pager.TotalPages && p.State.Status != MediaEmpty) || strings.TrimSpace(pager.BaseURL) == "" {
+			return fmt.Errorf("DataList: invalid pagination range or URL")
+		}
+		for _, label := range []string{pager.NavigationLabel, pager.PreviousLabel, pager.NextLabel, pager.PageLabel, pager.CurrentPageLabel} {
+			if strings.TrimSpace(label) == "" {
+				return fmt.Errorf("DataList: pagination labels must be localized by the caller")
+			}
+		}
+	}
+	if p.LoadingLayout != nil && p.LoadingLayout.Rows < 1 {
+		return fmt.Errorf("DataList: loading rows must be positive")
+	}
+	return nil
+}
+
+func validateDataListColumns(columnsList []TableColumn) error {
+	columns := map[string]bool{}
+	for _, col := range columnsList {
+		if strings.TrimSpace(col.Key) == "" || columns[col.Key] || strings.TrimSpace(col.Label) == "" {
+			return fmt.Errorf("DataList: columns require unique keys and labels")
+		}
+		columns[col.Key] = true
+	}
+	return nil
+}
+
+func validateDataListGroups(p DataListProps) (int, error) {
+	groups, rows := map[string]bool{}, map[string]bool{}
+	eligible := 0
+	for _, group := range p.Groups {
+		if strings.TrimSpace(group.Key) == "" || groups[group.Key] {
+			return 0, fmt.Errorf("DataList: group keys must be nonempty and unique")
+		}
+		groups[group.Key] = true
+		if (len(p.Groups) > 1 || group.Collapsible) && (strings.TrimSpace(group.Title) == "" || strings.TrimSpace(group.CountText) == "") {
+			return 0, fmt.Errorf("DataList: named groups require Title and CountText")
+		}
+		if len(group.Rows) == 0 && strings.TrimSpace(group.CountText) == "" {
+			return 0, fmt.Errorf("DataList: an empty group requires CountText")
+		}
+		if group.Collapsed && !group.Collapsible {
+			return 0, fmt.Errorf("DataList: only collapsible groups may be collapsed")
+		}
+		for _, row := range group.Rows {
+			if strings.TrimSpace(row.ID) == "" || rows[row.ID] {
+				return 0, fmt.Errorf("DataList: row IDs must be nonempty and unique")
+			}
+			rows[row.ID] = true
+			if p.SelectionName != "" && strings.TrimSpace(row.SelectionLabel) == "" {
+				return 0, fmt.Errorf("DataList: every selection control requires SelectionLabel")
+			}
+			if row.Selectable {
+				eligible++
+			}
+		}
+	}
+	return eligible, nil
+}
+
+func validateDataListSelection(p DataListProps, eligible int) error {
+	if p.SelectionName != "" {
+		for _, label := range []string{p.ID, p.FormID, p.ResultKey, p.SelectAllLabel, p.ClearSelectionLabel} {
+			if strings.TrimSpace(label) == "" {
+				return fmt.Errorf("DataList: selection requires ID, FormID, ResultKey and control labels")
+			}
+		}
+		if len(p.SelectionCountLabels) != eligible+1 {
+			return fmt.Errorf("DataList: SelectionCountLabels must cover zero through eligible count")
+		}
+		for _, label := range p.SelectionCountLabels {
+			if strings.TrimSpace(label) == "" {
+				return fmt.Errorf("DataList: selection count labels must be nonempty")
+			}
+		}
+	} else if len(p.SelectedIDs) != 0 {
+		return fmt.Errorf("DataList: SelectedIDs requires selection controls")
+	}
+	return nil
 }

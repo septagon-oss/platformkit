@@ -40,12 +40,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// reviewTenant is the tenant this fixture's host resolves to.
-var reviewTenant = uuid.MustParse("77777777-7777-4777-8777-777777777777")
+// counterTenant is the tenant this fixture's host resolves to.
+var counterTenant = uuid.MustParse("77777777-7777-4777-8777-777777777777")
 
-// reviewFixture is a router with two operations: one that reads a query value and
-// one whose handler fails. Both resolve "acme.test" to reviewTenant.
-func reviewFixture(t *testing.T) http.Handler {
+// counterFixture is a router with two operations: one that reads a query value and
+// one whose handler fails. Both resolve "acme.test" to counterTenant.
+func counterFixture(t *testing.T) http.Handler {
 	t.Helper()
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
@@ -56,7 +56,7 @@ func reviewFixture(t *testing.T) http.Handler {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 			}
-			return tenancy.Tenant{ID: reviewTenant, Slug: "acme", Name: "Acme"}, nil
+			return tenancy.Tenant{ID: counterTenant, Slug: "acme", Name: "Acme"}, nil
 		}),
 		Authorize: authorizerFunc(func(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 			return true, nil
@@ -68,12 +68,12 @@ func reviewFixture(t *testing.T) http.Handler {
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "review_query", Method: http.MethodGet, Path: "/query",
-	}, httpx.SignedIn(), func(context.Context, *reviewInput) (*struct{}, error) {
+	}, httpx.SignedIn(), func(context.Context, *counterInput) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "review_public_query", Method: http.MethodGet, Path: "/public-query",
-	}, httpx.Public(), func(context.Context, *reviewInput) (*struct{}, error) {
+	}, httpx.Public(), func(context.Context, *counterInput) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
@@ -87,7 +87,7 @@ func reviewFixture(t *testing.T) http.Handler {
 	return router
 }
 
-type reviewInput struct {
+type counterInput struct {
 	Limit int64 `query:"limit"`
 }
 
@@ -96,8 +96,8 @@ type reviewInput struct {
 // table gives a 400 is "invalid". The counter is asked for the difference this one
 // request made, and for the tenant the request resolved.
 func TestARefusalTheRouterWritesItselfIsCountedClassInvalid(t *testing.T) {
-	router := reviewFixture(t)
-	before := reviewRefusalTotal(t, "invalid")
+	router := counterFixture(t)
+	before := counterRefusalTotal(t, "invalid")
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/probe/public-query?limit=many", nil))
@@ -112,15 +112,15 @@ func TestARefusalTheRouterWritesItselfIsCountedClassInvalid(t *testing.T) {
 		t.Fatalf("RefusalClass(%d) = %q, want the class the table gives a refusal of this kind", rec.Code, class)
 	}
 
-	got := reviewRefusalTotal(t, "invalid") - before
+	got := counterRefusalTotal(t, "invalid") - before
 	if got < 1 {
 		t.Errorf("the counter moved by %d for a request the router answered %d; it refused it and "+
 			"pkit.http.refusals did not notice, so a dashboard reading class=%q reads zero "+
 			"while clients are being refused: the counted writers are fail and refuse only, and huma "+
 			"answers this shape itself", got, rec.Code, "invalid")
 	}
-	if !reviewRefusalNamesTenant(t, "invalid", reviewTenant) {
-		t.Errorf("a refusal of this request carries no pkit.tenant.id for %s, though the host resolved it", reviewTenant)
+	if !counterRefusalNamesTenant(t, "invalid", counterTenant) {
+		t.Errorf("a refusal of this request carries no pkit.tenant.id for %s, though the host resolved it", counterTenant)
 	}
 }
 
@@ -129,15 +129,15 @@ func TestARefusalTheRouterWritesItselfIsCountedClassInvalid(t *testing.T) {
 // comment says the counter counts refusals and not errors — but a 500 the client
 // saw is still an answer nobody would find in the number if nothing writes it.
 func TestAHandlerFailureIsCountedAtAll(t *testing.T) {
-	router := reviewFixture(t)
-	before := reviewRefusalTotal(t, "failed")
+	router := counterFixture(t)
+	before := counterRefusalTotal(t, "failed")
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/probe/failing", nil))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("a handler that failed was answered %d, want 500: %s", rec.Code, rec.Body.String())
 	}
-	if got := reviewRefusalTotal(t, "failed") - before; got < 1 {
+	if got := counterRefusalTotal(t, "failed") - before; got < 1 {
 		t.Errorf("a client was answered 500 by a handler that returned an error and the counter moved by "+
 			"%d: that answer is written by huma, so the only writer class \"failed\" ever has is a handler "+
 			"that panics, and an operator reading the number sees an outage that never happened", got)
@@ -149,8 +149,8 @@ func TestAHandlerFailureIsCountedAtAll(t *testing.T) {
 // this: a 401 written by the authorization guard inside the huma chain is counted,
 // and it names the tenant that request resolved.
 func TestAGuardRefusalOfAnAnonymousCallerNamesItsTenant(t *testing.T) {
-	router := reviewFixture(t)
-	before := reviewRefusalTotal(t, "unauthenticated")
+	router := counterFixture(t)
+	before := counterRefusalTotal(t, "unauthenticated")
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/probe/query?limit=5", nil))
@@ -158,23 +158,23 @@ func TestAGuardRefusalOfAnAnonymousCallerNamesItsTenant(t *testing.T) {
 		t.Fatalf("an anonymous caller at a signed-in route was answered %d, want a refusal: %s",
 			rec.Code, rec.Body.String())
 	}
-	if got := reviewRefusalTotal(t, "unauthenticated") - before; got < 1 {
+	if got := counterRefusalTotal(t, "unauthenticated") - before; got < 1 {
 		t.Fatalf("the guard's refusal was not counted: the counter moved by %d for a %d answer",
 			got, rec.Code)
 	}
-	if !reviewRefusalNamesTenant(t, "unauthenticated", reviewTenant) {
+	if !counterRefusalNamesTenant(t, "unauthenticated", counterTenant) {
 		t.Errorf("the guard's refusal was counted with no pkit.tenant.id for %s; the tenant on every "+
-			"number is the brief's headline and this is the one refusal path that holds the tenant", reviewTenant)
+			"number is the brief's headline and this is the one refusal path that holds the tenant", counterTenant)
 	}
 }
 
 // --- helpers ---
 
-// reviewRefusalTotal is the running total counted for one class. An instrument
+// counterRefusalTotal is the running total counted for one class. An instrument
 // that nothing has ever recorded on is absent from a collection rather than
 // present at zero, so absence is this number's zero — and a case that sees zero
 // after a client was refused is asking the question the case exists to ask.
-func reviewRefusalTotal(t *testing.T, class string) int64 {
+func counterRefusalTotal(t *testing.T, class string) int64 {
 	t.Helper()
 	m, ok := metrics(t)["pkit.http.refusals"]
 	if !ok {
@@ -193,8 +193,8 @@ func reviewRefusalTotal(t *testing.T, class string) int64 {
 	return total
 }
 
-// reviewRefusalNamesTenant reports whether any datapoint of one class names want.
-func reviewRefusalNamesTenant(t *testing.T, class string, want uuid.UUID) bool {
+// counterRefusalNamesTenant reports whether any datapoint of one class names want.
+func counterRefusalNamesTenant(t *testing.T, class string, want uuid.UUID) bool {
 	t.Helper()
 	m, ok := metrics(t)["pkit.http.refusals"]
 	if !ok {

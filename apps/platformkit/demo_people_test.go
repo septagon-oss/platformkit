@@ -37,13 +37,13 @@ func TestDemoPeopleHaveTheirRolesAndPassword(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "demo", Name: "Demo", Host: "demo.localhost", Demo: true,
 		})
 		if err != nil {
 			return err
 		}
-		_, err = c.users.Provision(ctx, system, created.ID, "root@demo.localhost", "Root",
+		_, err = c.testUsers().Provision(ctx, system, created.ID, "root@demo.localhost", "Root",
 			adminPass, []string{authcontracts.RoleAdmin})
 		return err
 	}); err != nil {
@@ -54,13 +54,13 @@ func TestDemoPeopleHaveTheirRolesAndPassword(t *testing.T) {
 	}
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, "demo.localhost")
+		tenant, err := c.testTenants().ByHost(ctx, system, "demo.localhost")
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			for _, email := range []string{"marta@example.test", "devin@example.test", "amara@example.test"} {
-				person, err := c.users.ByEmail(ctx, tx, email)
+				person, err := c.testUsers().ByEmail(ctx, tx, email)
 				if err != nil {
 					t.Errorf("seeded person %s: %v", email, err)
 					continue

@@ -72,6 +72,7 @@ var census = []rule{
 		literal: regexp.MustCompile(`"__Host-[a-z0-9]`),
 		allow: []allowed{
 			{"kit/appname/appname.go", 3, "owner"},
+			{"kit/httpx/cookie_names_test.go", 1, "exempt: the complete expected cookie name for an empty base is the host prefix itself; this is a byte assertion, not a runtime name builder"},
 		},
 	},
 	{
@@ -144,6 +145,11 @@ var census = []rule{
 			{"kit/events/providers/nats/jetstream.go", 1, "shared: its subjects are app-scoped"},
 			{"kit/events/internal_test.go", 1, "shared: the case reads the stream the transport made"},
 			{"kit/events/two_apps_replay_moved_ledgers_test.go", 3, "exempt: the decision-0008 pin purges and inspects the shared stream by name to prove a replay landed; its bytes are not this census's to migrate"},
+			// The word is an operand of a join that builds environment-door names at run
+			// time, in the one place the pattern is compared against door-shaped names no
+			// document uses yet. No code forms a stream there, and migrating it to a
+			// constructor would make the guard read the names through the code it guards.
+			{"ui/served_floor_door_vocabulary_test.go", 1, "exempt: a door-pattern guard spells door-shaped names from parts at run time; this is an operand of that join, not a stream any code forms"},
 		},
 	},
 }

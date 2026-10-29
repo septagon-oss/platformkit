@@ -15,8 +15,8 @@
 package module
 
 import (
-	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"io/fs"
 	"regexp"
 	"slices"
@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/tour"
 )
 
 // Module is one business capability, described to the kernel.
@@ -71,21 +72,9 @@ type Module struct {
 	// list that says so; nothing reads these two fields separately.
 	Events []string
 
-	// Declared are the events this module emits, each named with the Go type of
-	// its payload: events.Declare[contracts.Invited](contracts.EventInvited).
-	// It is the typed form of Events, and the one a module composes from this
-	// repository's own contracts uses.
-	//
-	// The payload type is not decoration. It is projected into a JSON Schema
-	// (kit/events/schema.go), the outbox refuses a payload that is not one
-	// before the row is written, and the composition's AsyncAPI document is
-	// emitted from it (kit/app/asyncapi.go). An event named only in Events is
-	// the same list item with Payload nil, which is what events.Declared calls
-	// a payload the kernel does not describe: published unchecked, listed as
-	// uncovered rather than pretended to be.
-	//
-	// A name given in both fields is one event, described — Emits keeps the
-	// typed item and drops the bare name.
+	// Declared names emitted events with their payload types for outbox validation
+	// and AsyncAPI. Emits prefers a typed declaration over the same bare Events
+	// name; a bare event has no payload validation and is reported as uncovered.
 	Declared []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
@@ -116,6 +105,16 @@ type Module struct {
 
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
+	// Views are immutable custom-screen descriptors, checked again after Routes.
+	Views []screen.View
+
+	// Tours is how this module's features teach themselves: instructions
+	// anchored to published screens, read by whatever renders them and
+	// validated twice — here, as a declaration, and after routes are
+	// registered, against what the composition actually published. A
+	// composition that selects no tour runner validates them all the same and
+	// shows nothing.
+	Tours []tour.Tour
 
 	// There is no Health. Nothing in three repositories ever contributed a
 	// check, and /ready is the one question a probe can act on — is this
@@ -164,6 +163,20 @@ type Module struct {
 	// its to refuse. See httpx.Surfaces.
 	Routes func(r httpx.Surfaces)
 
+	// SystemAccess declares that this module has work no tenant transaction can
+	// do, and what that work is. The kernel mints one cross-tenant credential per
+	// module that declares it and hands it out while that module is being wired
+	// (httpx.Surfaces.SystemToken); a module that takes one without declaring it
+	// is refused at composition, and one that declares it and never takes it is
+	// refused too — the declaration is read in both directions. The zero value
+	// says the module crosses no tenant boundary, which is the answer for every
+	// module but the few this repository holds.
+	//
+	// It declares a scope and not an authorization: who may make the request that
+	// reaches the handler holding the token is that route's own guard, and
+	// docs/adr/0006 says why the two are not the same question.
+	SystemAccess SystemAccess
+
 	// Moved is the addresses this module used to answer at and where each one
 	// lives now. The kernel answers an old address with a redirect and nothing
 	// else — 302 for a safe method, 307 for the rest, never cached, never a
@@ -179,6 +192,42 @@ type Module struct {
 // request under From keeps its remainder and its query.
 type Move struct {
 	From, To string
+}
+
+// SystemAccess is one module's declared need for a transaction that sees every
+// tenant. Reason is the whole of it: one sentence, in source language, naming
+// the work. It is the audit record of every cross-tenant transaction the module
+// opens — a slog field and a span attribute, and nowhere else — so it names the
+// work rather than the capability, and Validate refuses anything longer or
+// spanning lines. It is operator text and deliberately not translatable: a
+// security fact a tenant could rewrite is not a security fact.
+type SystemAccess struct {
+	Reason string
+}
+
+// maxSystemReason bounds the one sentence a module says about its cross-tenant
+// work. The value is a log field and a span attribute and nothing else, so a
+// bound is what keeps the audit line a line.
+const maxSystemReason = 200
+
+// Declared says this module crosses tenant boundaries. An empty Reason is not a
+// weaker claim but no claim, which is why the question is a method and the field
+// stays the zero value.
+func (s SystemAccess) Declared() bool { return strings.TrimSpace(s.Reason) != "" }
+
+// fault is why this declaration is not a usable audit sentence, or "" when it
+// is. The refusal names what to write rather than only what is wrong, because
+// whoever reads it is editing a manifest and not debugging a request.
+func (s SystemAccess) fault() string {
+	switch {
+	case !s.Declared():
+		return ""
+	case len(s.Reason) > maxSystemReason:
+		return fmt.Sprintf("SystemAccess reason is %d characters; it is the audit record of every cross-tenant transaction this module opens — name the work in one sentence of at most %d characters", len(s.Reason), maxSystemReason)
+	case strings.ContainsAny(s.Reason, "\n\t"):
+		return "SystemAccess reason spans lines; it is one sentence in a log field and a span attribute"
+	}
+	return ""
 }
 
 // Emits returns everything the module says it emits, in the one shape the
@@ -238,23 +287,9 @@ type Permission struct {
 	Operator bool
 }
 
-// Grants is every permission the composed modules declare: the catalogue of
-// what a role in this installation may be granted at all, and the only honest
-// answer to that question, because a permission is defined by the module that
-// owns it and a module that is not composed defines nothing.
-//
-// It is exported rather than built where it is needed because it is needed
-// twice and the two answers have to be the same list. kit/app hands it to
-// kit/httpx so that a module validating a permission somebody typed asks the
-// composition instead of guessing; a composition hands it to whatever seeds a
-// new tenant's roles for the same reason. A product that wrote the second list
-// out by hand — and every one of them did — seeds a grant no route will ever
-// accept the day it drops the module that defined it. See modules/auth.SeedRoles.
-//
-// Valid has already refused a manifest whose permission is malformed or defined
-// twice, so this does not check either; it is the list, in composition order,
-// with each permission's Label carried through so the layer that renders a
-// refusal can name the grant in words (see tenancy.Grant).
+// Grants returns declared permissions and labels in composition order for
+// request guards and role seeding. Validate must first reject malformed or
+// duplicate permissions; this function does not validate them again.
 func Grants(mods []Module) []tenancy.Grant {
 	var out []tenancy.Grant
 	for _, m := range mods {
@@ -365,207 +400,6 @@ func validMoves(mods []Module) []string {
 	return bad
 }
 
-func Validate(mods []Module) error {
-	var bad []string
-	add := func(format string, args ...any) { bad = append(bad, fmt.Sprintf(format, args...)) }
-
-	names := map[string]bool{}
-	owner := map[string]string{}     // permission key -> the module that defined it
-	roleOwner := map[string]string{} // role name -> the module that declared it
-	for _, m := range mods {
-		switch {
-		case m.Name == "":
-			add("a module has no name")
-			continue
-		case !moduleName.MatchString(m.Name):
-			add("module %q: a name is a lower-case identifier, because the events it emits are prefixed with it", m.Name)
-		case surfacesNames[m.Name]:
-			add("module %q: a module may not be named public or ops; the two name surfaces", m.Name)
-		}
-		if names[m.Name] {
-			add("module %q: declared twice", m.Name)
-		}
-		names[m.Name] = true
-
-		for _, p := range m.Permissions {
-			if !httpx.ValidPermission(p.Key) {
-				add("module %q: permission %q is not %q", m.Name, p.Key, "<resource>:<action>")
-				continue
-			}
-			// A label nothing would read is a field that should not exist; a label
-			// equal to the key is the defect the field exists to close, and it is
-			// shippable by accident — the key copied twice — unless boot says no.
-			switch p.Label {
-			case "":
-				add("module %q: permission %q has no Label; a refusal has to name what is missing in words, not only as a key", m.Name, p.Key)
-			case p.Key:
-				add("module %q: permission %q is labelled with its own key; a Label is the grant in words", m.Name, p.Key)
-			}
-			if first, seen := owner[p.Key]; seen {
-				add("module %q: permission %q is already defined by module %q", m.Name, p.Key, first)
-				continue
-			}
-			owner[p.Key] = m.Name
-		}
-
-		for _, j := range m.Jobs {
-			if err := jobs.Valid(j); err != nil {
-				add("module %q: %s", m.Name, err)
-			}
-		}
-
-		// A person's rows can only be in a table this module's own SQL creates, so the
-		// claim is asked of a module that has SQL and of nobody else: one with no
-		// tables of its own holds no person column by construction, and asking it for a
-		// sentence would teach that the field is a formality. Every refusal here reads
-		// the module's migration bytes, so it lands before a database is opened — and
-		// the module that added a uuid column and filed nothing is refused now instead
-		// of being discovered by a person asking for their data. See ADR 0020.
-		if m.Migrations != nil {
-			for _, problem := range m.PersonalData.Check(m.Name, m.Migrations) {
-				add("%s", problem)
-			}
-		}
-
-		// A declared role is a promise about this module's own permissions, so every
-		// check but one is local to it. The refusals are all compose-time, which is
-		// where checkPersonas already put a bad persona grant: boot and bootstrap fail
-		// before the database opens, and a role that seeds a lie never reaches a tenant.
-		own := map[string]Permission{}
-		for _, p := range m.Permissions {
-			own[p.Key] = p
-		}
-		seenRole := map[string]bool{}
-		for _, rd := range m.Roles {
-			name := strings.ToLower(strings.TrimSpace(rd.Name))
-			switch {
-			case name == "":
-				add("module %q declares a role with no name", m.Name)
-			case !roleName.MatchString(name):
-				add("module %q: role %q is not a lower-case identifier, which is what the roles table and the roles route both require", m.Name, rd.Name)
-			case len(name) > maxRoleName:
-				add("module %q: role %q is longer than %d characters", m.Name, name, maxRoleName)
-			case reservedRoleNames[name]:
-				add("module %q: role %q is auth's own to seed; a module may not declare it", m.Name, name)
-			case seenRole[name]:
-				add("module %q: role %q is declared twice", m.Name, name)
-			case roleOwner[name] != "":
-				add("module %q: role %q is already declared by module %q; two modules seeding one name would write two answers into one row", m.Name, name, roleOwner[name])
-			default:
-				seenRole[name], roleOwner[name] = true, m.Name
-			}
-			if len(rd.Grants) == 0 {
-				add("module %q: role %q grants nothing; a role nobody asked for is auth's member role and that one is seeded already", m.Name, name)
-			}
-			for _, g := range rd.Grants {
-				p, declared := own[g]
-				switch {
-				case !declared:
-					add("module %q: role %q grants %q, which this module does not declare; a module may only open what it owns",
-						m.Name, name, g)
-				case p.Operator:
-					add("module %q: role %q grants %q, an operator permission; a customer's role may not reach the control plane",
-						m.Name, name, g)
-				}
-			}
-		}
-
-		// The files an adoption names are checked by db.Migrate against the
-		// module's SQL before it connects; what only the manifest can say is
-		// that there is SQL to check against at all.
-		if len(m.Adopts) > 0 && m.Migrations == nil {
-			add("module %q: adopts migration history and declares no Migrations", m.Name)
-		}
-
-		for _, e := range m.Emits() {
-			if !events.ValidName(e.Name) {
-				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
-				continue
-			}
-			// The kernel's own manifest is the one exemption, and only for the
-			// events KernelEvents names: security.denied is raised by the kernel
-			// because the refusal is its — no module ran — so it carries the
-			// kernel's namespace and not the manifest's. Every other manifest
-			// still emits inside its own name, which is what makes a duplicate
-			// emitter impossible rather than merely discourled.
-			if !strings.HasPrefix(e.Name, m.Name+".") &&
-				!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
-				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
-			}
-		}
-		// The other half of one emitter per name: one emitter, one shape. The
-		// namespace rule above makes it impossible for two modules to declare one
-		// name, so the manifest that can still write one name twice is its own, and
-		// a manifest that does has promised two documents for one event. The check
-		// is kit/events', because what counts as one shape is the projection of the
-		// payload type rather than the Go type; the refusal is the manifest gate's,
-		// because a composition that contradicts itself is refused where every
-		// other composition problem is answered, with the list read once.
-		for _, problem := range events.OneShapePerName(m.Emits()) {
-			add("module %q: %s", m.Name, problem)
-		}
-	}
-
-	// Nav and subscriptions are checked after every module has been read,
-	// because both point at something another module owns: a link is about what
-	// the reader may see, and a subscription is about what somebody else emits.
-	emitted := map[string]bool{}
-	for _, e := range KernelEvents {
-		emitted[e] = true
-	}
-	for _, m := range mods {
-		for _, e := range m.Emits() {
-			emitted[e.Name] = true
-		}
-	}
-	for _, m := range mods {
-		// The handler once, with no name: a second subscription beside it would
-		// be one the expansion silently ignored.
-		if m.SubscribeAll && len(m.Subscriptions) != 1 {
-			add("module %q: SubscribeAll declares %d subscriptions; it takes exactly one, the handler every event goes to",
-				m.Name, len(m.Subscriptions))
-		}
-		for _, s := range m.Subscriptions {
-			switch {
-			case s.Handler == nil:
-				add("module %q: subscription to %q has no handler", m.Name, s.Name)
-			case s.Module != m.Name:
-				add("module %q: subscription to %q is attributed to module %q", m.Name, s.Name, s.Module)
-			case m.SubscribeAll && s.Name == "":
-				// Unexpanded, which is a composition nobody ran through
-				// Expand. Validate is called by kit/app, which expands first.
-			case !emitted[s.Name]:
-				add("module %q: subscribes to %q, which no module emits", m.Name, s.Name)
-			}
-		}
-		for _, n := range m.Nav {
-			if !screenName.MatchString(n.Screen) {
-				add("module %q: nav entry %q names Screen %q; a nav entry names its screen relative to the workspace — %q", m.Name, n.Label, n.Screen, "task/tasks")
-			}
-			if n.Permission == "" {
-				add("module %q: nav entry %q declares no permission; a link everyone sees is still a decision", m.Name, n.Label)
-				continue
-			}
-			if _, ok := owner[n.Permission]; !ok {
-				add("module %q: nav entry %q requires permission %q, which no module defines", m.Name, n.Label, n.Permission)
-			}
-		}
-		// A stream is a door onto an event, so it is checked beside the subscription
-		// that is the other door onto the same set: the event has to exist, and the
-		// policy has to name someone who may walk through it.
-		for _, problem := range streamProblems(m, emitted, owner) {
-			add("%s", problem)
-		}
-	}
-
-	bad = append(bad, validMoves(mods)...)
-	if len(bad) == 0 {
-		return nil
-	}
-	sort.Strings(bad)
-	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
-}
-
 // security.access_requested is the ask that follows a refusal, emitted for the
 // same reason: no module ran, the person was refused by the kernel's own guard.
 //
@@ -583,26 +417,9 @@ var KernelEvents = []string{"security.denied", "security.access_requested", even
 // that sentence.
 const KernelName = "platformkit"
 
-// Expand turns every SubscribeAll manifest's one subscription into one per
-// event the composition emits, and returns the modules with that done.
-//
-// One subscription per event rather than one wildcard, because the kernel's
-// durable consumers are named after the subscription: a wildcard would be one
-// consumer whose backlog is every event in the system, and one slow payload
-// would hold up the trail of everything else.
-//
-// It runs before Validate and before anything is constructed, so a module that
-// arrives after the subscriber in the list is still subscribed to. The argument
-// is not modified: the returned slice is a copy, sorted so every replica
-// registers the same consumers, and in it SubscribeAll is cleared — the flag is
-// a request and this is it answered.
-//
-// What it answers is subscriptions and nothing else, and that is a contract: the
-// permissions of every module it returns are the ones the module it came from
-// defined, so Grants reads one catalogue off either list — which is what makes
-// the catalogue kit/app declares to the request guard and the one a composition
-// hands its seeder answer "does this installation define this permission" the
-// same way. TestExpandRewritesSubscriptionsAndNothingElse holds the line.
+// Expand copies modules and expands SubscribeAll into sorted subscriptions
+// for all composed and kernel events, then clears SubscribeAll. Call before
+// Validate. Other declarations are unchanged and input slices are not mutated.
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
@@ -622,21 +439,62 @@ func Expand(mods []Module) []Module {
 
 	out := slices.Clone(mods)
 	for i, m := range out {
-		if !m.SubscribeAll || len(m.Subscriptions) != 1 {
-			continue
+		if m.SubscribeAll && len(m.Subscriptions) == 1 {
+			template := m.Subscriptions[0]
+			subs := make([]events.Subscription, 0, len(all))
+			for _, e := range all {
+				// App travels with the template rather than being invented here: the
+				// expansion is one subscription per emitted event and nothing else,
+				// and the durable each of them gets is the template's app joined to
+				// that event (kit/appname.Durable). Dropping the field would hand a
+				// SubscribeAll module the unscoped consumer name for every event in
+				// the system.
+				subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
+			}
+			m.Subscriptions, m.SubscribeAll = subs, false
+			out[i].SubscribeAll = false
 		}
-		template := m.Subscriptions[0]
-		subs := make([]events.Subscription, 0, len(all))
-		for _, e := range all {
-			// App travels with the template rather than being invented here: the
-			// expansion is one subscription per emitted event and nothing else,
-			// and the durable each of them gets is the template's app joined to
-			// that event (kit/appname.Durable). Dropping the field would hand a
-			// SubscribeAll module the unscoped consumer name for every event in
-			// the system.
-			subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
+		// The two facts the kernel can answer for a manifest: a subscription no
+		// module is named on belongs to the manifest that carries it, and a screen
+		// named by its entity alone is this module's own screen. Both are the same
+		// answer Validate gives, filled where it is the only moment before either
+		// is read — pkit, the durable consumer name and the navigation are all
+		// asked long before any router exists.
+		out[i].Subscriptions = attributedTo(m.Subscriptions, m.Name)
+		out[i].Nav = screensOf(m.Nav, m.Name)
+	}
+	return out
+}
+
+// attributedTo names every subscription that names none, and only those: a name
+// the manifest already wrote survives, including another module's, because that
+// disagreement is what Validate refuses and the durable consumer name is stamped
+// from it. The answer is always a slice of its own, so the expanded plan holds no
+// window onto the manifest it was built from.
+func attributedTo(subs []events.Subscription, owner string) []events.Subscription {
+	out := make([]events.Subscription, len(subs))
+	for i, s := range subs {
+		if s.Module == "" {
+			s.Module = owner
 		}
-		out[i].Subscriptions, out[i].SubscribeAll = subs, false
+		out[i] = s
+	}
+	return out
+}
+
+// screensOf completes the nav entries that name only their entity: "tasks" in
+// module task is the task module's own screen, "task/tasks". An entry that
+// already names a module keeps it, including across modules — a shell linking to
+// another module's screens says so — and an empty Screen is left for Validate
+// to refuse, which is what makes filling it and requiring it one rule. Like
+// attributedTo it answers with a slice of its own.
+func screensOf(entries []NavEntry, owner string) []NavEntry {
+	out := make([]NavEntry, len(entries))
+	for i, n := range entries {
+		if n.Screen != "" && !strings.Contains(n.Screen, "/") {
+			n.Screen = owner + "/" + n.Screen
+		}
+		out[i] = n
 	}
 	return out
 }

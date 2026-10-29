@@ -93,7 +93,7 @@ func TestADeliverySpanNamesTheRequestThatCausedIt(t *testing.T) {
 
 	// The two things that work today, asserted first so the case is known to have
 	// reached a real delivery span before it asks for the third.
-	tenantID, hasTenant := reviewAttr(delivery, telemetry.AttrTenantID)
+	tenantID, hasTenant := attrOnSpan(delivery, telemetry.AttrTenantID)
 	if !hasTenant {
 		t.Fatalf("the delivery span carries no %s: %v", telemetry.AttrTenantID, delivery.Attributes())
 	}
@@ -107,7 +107,7 @@ func TestADeliverySpanNamesTheRequestThatCausedIt(t *testing.T) {
 	}
 
 	// And the brief's second half.
-	id, has := reviewAttr(delivery, telemetry.AttrRequestID)
+	id, has := attrOnSpan(delivery, telemetry.AttrRequestID)
 	if !has {
 		t.Errorf("the delivery span carries no %s, though the brief names it for every boundary "+
 			"and the request that published this event carried %q: the outbox row stores the two W3C "+
@@ -119,8 +119,8 @@ func TestADeliverySpanNamesTheRequestThatCausedIt(t *testing.T) {
 	}
 }
 
-// reviewAttr reads one attribute off a recorded span.
-func reviewAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
+// attrOnSpan reads one attribute off a recorded span.
+func attrOnSpan(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	for _, kv := range s.Attributes() {
 		if string(kv.Key) == key {
 			return kv.Value, true

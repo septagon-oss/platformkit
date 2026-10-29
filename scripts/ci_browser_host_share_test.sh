@@ -7,7 +7,8 @@
 # no idea what the host was doing or how full the buffer pool its renderer died in was.
 # scripts/ci_browser_host_share.sh is the answer to both, and a guard nobody runs is prose, so one
 # group of cases runs its three subcommands: a host with a share to give starts at once, a host
-# without one waits, the bound ends the wait rather than the run, a host that cannot be read says so,
+# without one waits — including one whose last minute dipped while its last five stayed queued over
+# one task per core — the bound ends the wait rather than the run, a host that cannot be read says so,
 # one sample names the memory, the queue, the ceiling and the pool, and the suite's own verdict
 # survives the sampler wrapped around it. The container's ceiling is asked of all three shapes a host
 # can leave memory accounting in — cgroup v2, cgroup v1, and none — because a promise one layout keeps
@@ -40,6 +41,17 @@ out="$(bash "$guard" wait 1 "$temporary/busy" 1)" || fail "a host with no free s
 case "$out" in
 	*"waiting for a free core"*"still has no free share after"*) ;;
 	*) fail "the wait neither waited nor said it was starting anyway: $out" ;;
+esac
+
+# A host whose last minute dipped while its last five minutes stayed queued. The first term alone is
+# what opened one gate-10 suite on `load 12.98 16.23 19.83 across 16 cores` and lost a page at 21.74
+# four minutes in (job 80264 at 5b0dc4c0), so the 5-minute term is asked beside it and the wait — not
+# the browser — is what the step does on a host still working its queue off.
+printf '1.0 9999.0 9999.0 1/200 99\n' > "$temporary/dipped"
+out="$(bash "$guard" wait 1 "$temporary/dipped" 1)" || fail "a host with no free share over five minutes failed the step"
+case "$out" in
+	*"waiting for a free core"*) ;;
+	*) fail "wait read a dipped minute on a queued host as a free share: $out" ;;
 esac
 
 # The wait ends when the host frees up: the same file answers busy and then quiet, and the step is

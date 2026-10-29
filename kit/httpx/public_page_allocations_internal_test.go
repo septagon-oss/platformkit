@@ -1,3 +1,5 @@
+//go:build !race
+
 package httpx
 
 // public_page_allocations_internal_test.go is this kernel's only allocation guard,
@@ -11,6 +13,9 @@ package httpx
 // a time and each one is cheap alone. The ceiling is what this revision costs, and
 // a commit that raises it names the feature on this request that needs the extra
 // allocations.
+//
+// The file is not built under -race: the detector instruments every allocation site,
+// so the count there (163 at fabf73c) is not the one a deployment pays.
 
 import (
 	"context"
@@ -35,11 +40,11 @@ import (
 const publicPageHost = "stockpilot.example"
 
 // publicPageCeiling is the most this chain may allocate per anonymous page
-// request. It is the count this revision costs — not a target, and not a claim
-// about what an older kernel cost, but the line a later change has to explain
-// itself over. Raising it belongs to the one commit that names the feature on this
-// request which needs the extra allocations.
-const publicPageCeiling = 150
+// request. It is the count this revision costs, not a target and not a claim
+// about an older kernel: the line a later change explains itself over. This one
+// sits above the page before it because the negotiated int64 media answers with
+// Vary: Accept, and a header write is one allocation.
+const publicPageCeiling = 151
 
 // publicPageDoc is the document the measured route answers: the tenant's own
 // landing page, one field, no query behind it.

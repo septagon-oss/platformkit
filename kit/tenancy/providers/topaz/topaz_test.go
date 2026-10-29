@@ -2,7 +2,6 @@ package topaz_test
 
 import (
 	"context"
-	"net"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -11,14 +10,12 @@ import (
 	"github.com/aserto-dev/go-authorizer/aserto/authorizer/v2"
 	"github.com/aserto-dev/go-authorizer/aserto/authorizer/v2/api"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/topaz"
+	"github.com/septagon-oss/platformkit/kit/tenancy/providers/topaz/topaztest"
 )
 
 func TestTopazCarriesTenantAndActorFactsWithoutDirectoryResolution(t *testing.T) {
@@ -200,32 +197,8 @@ func topazRequest() tenancy.PolicyRequest {
 	}
 }
 
-type topazServer struct {
-	authorizer.UnimplementedAuthorizerServer
-	is func(context.Context, *authorizer.IsRequest) (*authorizer.IsResponse, error)
-}
-
-func (s *topazServer) Is(ctx context.Context, request *authorizer.IsRequest) (*authorizer.IsResponse, error) {
-	return s.is(ctx, request)
-}
-
 func topazClient(t *testing.T, is func(context.Context, *authorizer.IsRequest) (*authorizer.IsResponse, error)) authorizer.AuthorizerClient {
 	t.Helper()
-	listener := bufconn.Listen(1024 * 1024)
-	server := grpc.NewServer()
-	authorizer.RegisterAuthorizerServer(server, &topazServer{is: is})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	connection, err := grpc.NewClient("passthrough:///topaz-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
-	return authorizer.NewAuthorizerClient(connection)
+	client, _ := topaztest.Client(t, is)
+	return client
 }

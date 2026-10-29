@@ -4,9 +4,10 @@ package httpx
 // names an earlier release used are still read so a signed-in person stays so.
 
 import (
-	"github.com/septagon-oss/platformkit/kit/appname"
 	"net/http"
 	"strings"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // SessionCookie is the base name of the cookie a browser session travels in.
@@ -28,26 +29,23 @@ const SessionCookie = "session"
 // visit after the upgrade. Removed with the aliases, in v1.3.0.
 var legacySessionCookies = []string{"platformkit_session"}
 
-// CookieName is the name a first-party cookie is set under, which depends on
-// whether it will carry Secure.
+// CookieName returns base with the __Host- prefix when secure is true.
 //
-// __Host- is a rule the browser enforces: a cookie named with it is accepted
-// only with Secure, Path=/ and no Domain, and a page on another host cannot set
-// one the browser will send here. That last part is why it matters here — every
-// tenant is reached at its own host, often as siblings under one registrable
-// domain, so without the prefix a page at one customer's host can set
-// platformkit_session for the parent domain and have it attached at every
-// other customer's. It is dropped when the cookie is not Secure, because a
-// browser refuses one of those over http://localhost; both names are recognised
-// on the way in, and a deployment only ever presents one.
-func CookieName(base string, secure bool) string { return CookieNameOf(appname.Name(""), base, secure) }
+// Deprecated: Use CookieNameFor with the zero appname.Name.
+func CookieName(base string, secure bool) string { return CookieNameFor("", base, secure) }
 
-// CookieNameOf is CookieName for a deployment that names its app: the slug sits
-// between the host-only prefix and the base, so two apps served from two hosts of
-// one deployment with the same cookie base stop signing each other out, and two
-// apps on one localhost port stop sharing one jar. With no slug set it is the name
-// every jar in the field already carries.
+// CookieNameOf returns the cookie name under app, adding __Host- when secure.
+//
+// Deprecated: Use CookieNameFor with the same app, base and secure values.
 func CookieNameOf(app appname.Name, base string, secure bool) string {
+	return CookieNameFor(app, base, secure)
+}
+
+// CookieNameFor returns appname.Cookie's spelling of app and base, without
+// additional validation. The zero app preserves the unscoped name. secure adds
+// __Host-; the caller must also set Secure, Path=/ and no Domain so sibling hosts
+// cannot set a cookie the browser sends here. base is forwarded unchanged.
+func CookieNameFor(app appname.Name, base string, secure bool) string {
 	return appname.Cookie(app, base, secure)
 }
 
@@ -69,7 +67,7 @@ func SessionCookieOf(r *http.Request) (*http.Cookie, bool) {
 		// which is what makes this the same answer, reached without the list.
 		return nil, false
 	}
-	for _, name := range append([]string{CookieName(SessionCookie, true), SessionCookie}, legacyNames()...) {
+	for _, name := range append([]string{CookieNameFor("", SessionCookie, true), SessionCookie}, legacyNames()...) {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			return c, true
 		}
@@ -86,7 +84,7 @@ func LegacySessionCookies() []string { return legacyNames() }
 func legacyNames() []string {
 	var out []string
 	for _, base := range legacySessionCookies {
-		out = append(out, CookieNameOf(appname.Name(""), base, true), base)
+		out = append(out, CookieNameFor("", base, true), base)
 	}
 	return out
 }

@@ -9,6 +9,8 @@ import (
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Button renders ButtonProps without trusted Go-composed slots.
@@ -29,34 +31,7 @@ type ButtonSlots struct {
 // button styling and link semantics. The two modes intentionally share one
 // appearance, accessibility, HTMX, and state implementation.
 func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
-	variant := strings.ToLower(strings.TrimSpace(p.Variant))
-	if _, exists := clButtonVariant[variant]; !exists {
-		variant = "primary"
-	}
-	appearance := variantOr(clButtonVariant, variant, "primary")
-	tone := strings.ToLower(strings.TrimSpace(p.Tone))
-	if _, exists := clButtonTone[tone]; !exists {
-		tone = "neutral"
-	}
-	if tone != "neutral" {
-		appearance = clButtonTone[tone]
-	}
-	size := strings.ToLower(strings.TrimSpace(p.Size))
-	if _, exists := clButtonSize[size]; !exists {
-		size = "md"
-	}
-	cl := clButtonBase.
-		Merge(appearance).
-		Merge(clButtonSize[size])
-	if p.FullWidth {
-		cl = cl.Merge(clButtonFull)
-	}
-	if p.IconOnly {
-		cl = cl.Merge(clButtonIconOnly)
-	}
-	if p.Href != "" && p.Disabled {
-		cl = cl.Merge(clButtonDisabledLink)
-	}
+	cl, variant, tone := buttonAppearance(p)
 	typ := p.Type
 	switch typ {
 	case "button", "submit", "reset":
@@ -93,28 +68,7 @@ func ButtonWithSlots(p ButtonProps, slots ButtonSlots) g.Node {
 			g.Attr("aria-busy", "true"),
 		)
 	}
-	if len(slots.Content) > 0 {
-		children = append(children, slotRegion("Content", slots.Content))
-	} else if p.Loading {
-		indicatorAppearance := variantOr(clButtonLoadingVariant, variant, "primary")
-		if tone != "neutral" {
-			indicatorAppearance = variantOr(clButtonLoadingTone, tone, "brand")
-		}
-		children = append(children, spinnerWithAppearance(
-			SpinnerProps{Size: "sm", Label: ""},
-			indicatorAppearance,
-		))
-	} else if len(slots.IconStart) > 0 {
-		children = append(children, slotRegion("IconStart", slots.IconStart))
-	}
-	if len(slots.Content) == 0 && !p.IconOnly {
-		children = append(children, g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"))
-	}
-	if len(slots.Content) == 0 && !p.Loading {
-		if len(slots.IconEnd) > 0 {
-			children = append(children, slotRegion("IconEnd", slots.IconEnd))
-		}
-	}
+	children = append(children, buttonContent(p, slots, variant, tone)...)
 	if p.Href != "" {
 		children = append(children, g.Attr("data-button-as-link", "true"))
 		if p.Disabled {
@@ -139,4 +93,63 @@ func slotRegion(name string, nodes []g.Node) g.Node {
 		g.Group(slices.Clone(nodes)),
 		g.Raw("<!--/pk-slot:" + name + "-->"),
 	}
+}
+
+func buttonAppearance(p ButtonProps) (style.ClassList, string, string) {
+	variant := strings.ToLower(strings.TrimSpace(p.Variant))
+	if _, exists := clButtonVariant[variant]; !exists {
+		variant = "primary"
+	}
+	appearance := variantOr(clButtonVariant, variant, "primary")
+	tone := strings.ToLower(strings.TrimSpace(p.Tone))
+	if _, exists := clButtonTone[tone]; !exists {
+		tone = "neutral"
+	}
+	if tone != "neutral" {
+		appearance = clButtonTone[tone]
+	}
+	size := strings.ToLower(strings.TrimSpace(p.Size))
+	if _, exists := clButtonSize[size]; !exists {
+		size = "md"
+	}
+	cl := clButtonBase.
+		Merge(appearance).
+		Merge(clButtonSize[size])
+	if p.FullWidth {
+		cl = cl.Merge(clButtonFull)
+	}
+	if p.IconOnly {
+		cl = cl.Merge(clButtonIconOnly)
+	}
+	if p.Href != "" && p.Disabled {
+		cl = cl.Merge(clButtonDisabledLink)
+	}
+	return cl, variant, tone
+}
+
+func buttonContent(p ButtonProps, slots ButtonSlots, variant, tone string) []g.Node {
+	var children []g.Node
+	if len(slots.Content) > 0 {
+		children = append(children, slotRegion("Content", slots.Content))
+	} else if p.Loading {
+		indicatorAppearance := variantOr(clButtonLoadingVariant, variant, "primary")
+		if tone != "neutral" {
+			indicatorAppearance = variantOr(clButtonLoadingTone, tone, "brand")
+		}
+		children = append(children, spinnerWithAppearance(
+			SpinnerProps{Size: "sm", Label: ""},
+			indicatorAppearance,
+		))
+	} else if len(slots.IconStart) > 0 {
+		children = append(children, slotRegion("IconStart", slots.IconStart))
+	}
+	if len(slots.Content) == 0 && !p.IconOnly {
+		children = append(children, g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"))
+	}
+	if len(slots.Content) == 0 && !p.Loading {
+		if len(slots.IconEnd) > 0 {
+			children = append(children, slotRegion("IconEnd", slots.IconEnd))
+		}
+	}
+	return children
 }

@@ -1,19 +1,7 @@
 package resource
 
-// history.go is the version series beside the record it describes.
-//
-// A version is the one part of a record a detail view cannot read off the row: the
-// row says what it is, and only the series says what it used to be. The panel is
-// drawn from what the adapter read behind the record's own read guard, inside the
-// request's own transaction — ui/resource still draws and does no I/O, so nothing
-// here opens a store or asks a question of a caller.
-//
-// Restoring is a command like any other, and the panel carries that command rather
-// than redrawing it: each version's form posts to the address the Spec mounted,
-// with the version it asks for and the write count this page was drawn from. That
-// second number is why a form here can be refused: two people reading one record,
-// one of them restoring first, is the ordinary case, and a write that arrives
-// quoting a revision the record has left behind is refused and writes nothing.
+// The version panel renders supplied history without reading a store. Restore
+// forms retain the displayed row's revision so the command can refuse stale writes.
 
 import (
 	"strconv"
@@ -21,12 +9,15 @@ import (
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
 // HistoryPanel is one record's versions, beside the two addresses and the words
 // their controls need. The adapter reads the series; this package draws it.
 type HistoryPanel struct {
+	// Resolved supplies the authorized restore command; nil preserves legacy panels.
+	Resolved *present.ResolvedCommand
 	// Action is where a restore posts: the record's own address plus the verb of
 	// the command the Spec mounted. Carries names that verb, so the page that shows
 	// this panel shows the restore once and not twice.
@@ -106,7 +97,7 @@ func historyDisclosure(o Options, p *HistoryPanel) g.Node {
 		return g.Group{}
 	}
 	versions := make([]g.Node, 0, len(p.Rows))
-	for _, v := range p.Rows {
+	for i, v := range p.Rows {
 		meta := "v" + strconv.FormatInt(v.Number, 10)
 		if v.When != "" {
 			meta += " · " + v.When
@@ -121,7 +112,7 @@ func historyDisclosure(o Options, p *HistoryPanel) g.Node {
 			// is the difference between "Body: Earlier text" as a mystery and as the
 			// fourth entry in a record's story.
 			lines = append(lines, components.FormSentence(components.FormSentenceProps{
-				Text: o.Text("screens.history.restored", "Restored from") + " v" + strconv.FormatInt(v.RestoredFrom, 10),
+				Text: o.Text("screens.history.restored", "Restored from v%[1]d", v.RestoredFrom),
 			}))
 		}
 		for _, change := range v.Changes {
@@ -145,19 +136,9 @@ func historyDisclosure(o Options, p *HistoryPanel) g.Node {
 			}
 			lines = append(lines, components.FormSentence(components.FormSentenceProps{Text: sentence}))
 		}
-		button := components.ButtonProps{Label: p.Restore, Type: "submit", Size: "md"}
-		if p.Asking != "" {
-			button.ComponentProps = components.ComponentProps{Attrs: map[string]string{
-				"data-confirm": p.Asking, "data-confirm-label": p.Restore,
-			}}
+		if p.Action != "" {
+			lines = append(lines, restoreForm(p, v, i == 0))
 		}
-		lines = append(lines, components.Form(components.FormProps{
-			Action: p.Action, Label: p.Restore + " v" + strconv.FormatInt(v.Number, 10),
-		},
-			h.Input(h.Type("hidden"), h.Name("version"), h.Value(strconv.FormatInt(v.Number, 10))),
-			h.Input(h.Type("hidden"), h.Name("expectedRevision"), h.Value(p.Condition)),
-			components.Button(button),
-		))
 		versions = append(versions, h.Div(lines...))
 	}
 	return h.Details(
@@ -180,4 +161,28 @@ func editNode(e VersionEdit) g.Node {
 	default:
 		return g.Text(e.Text)
 	}
+}
+
+func restoreForm(p *HistoryPanel, v VersionRow, first bool) g.Node {
+	button := components.ButtonProps{Label: p.Restore, Type: "submit", Size: "md", Variant: "outline"}
+	if p.Resolved != nil {
+		if p.Resolved.Destructive {
+			button.Tone = "danger"
+		}
+		if p.Resolved.Primary && first {
+			button.Variant = "primary"
+		}
+	}
+	if p.Asking != "" {
+		button.ComponentProps = components.ComponentProps{Attrs: map[string]string{
+			"data-confirm": p.Asking, "data-confirm-label": p.Restore,
+		}}
+	}
+	return components.Form(components.FormProps{
+		Action: p.Action, Label: p.Restore + " v" + strconv.FormatInt(v.Number, 10),
+	},
+		h.Input(h.Type("hidden"), h.Name("version"), h.Value(strconv.FormatInt(v.Number, 10))),
+		h.Input(h.Type("hidden"), h.Name("expectedRevision"), h.Value(p.Condition)),
+		components.Button(button),
+	)
 }

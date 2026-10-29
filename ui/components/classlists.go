@@ -1,15 +1,8 @@
 package components
 
-// classlists.go declares every tw ClassList the renderers compose. This is
-// the load-bearing inversion of the usual CSS workflow: the stylesheet is
-// derived FROM these declarations via tw/emission.For(ClassLists()...), so a
-// class that no component declares is never emitted, and a declared class is
-// always backed by a rule. TestRenderedClassesAreDeclared closes the loop
-// from the other side.
+// Component class lists feed stylesheet emission, so every rendered class has a rule.
 
 import (
-	"maps"
-
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -31,52 +24,19 @@ var (
 	clStandalone = style.New().PaddingY(style.S12).PaddingX(style.S4).MinHeightScreen()
 	clShell      = style.New().Display(style.DisplayFlex).MinHeightScreen().
 			Bg(style.SurfaceSecondary).TextColor(style.FgPrimary)
-	// min-w-0 and no overflow of its own: a flex child defaults to min-width
-	// auto, so a wide table would push the column instead of scrolling inside
-	// it, and clipping here would hide the columns rather than let the table's
-	// own overflow-auto reach them.
-	clShellColumn = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).
-			MinWidth(style.S0)
 	// FlexWrap: below ~360px the tenant, the caller, the theme switch, the way out and — since
 	// SidebarDisclosure — the Menu cannot share one row, and a header that cannot wrap widens the page.
 	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().
 			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
 			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
-	// clShellMain carries the break rule for everything the frame shows. A row's name can be one token
-	// nobody can hyphenate — a UUID pasted into a title, a commit hash, a URL — and a token with no break
-	// opportunity sets the min-content width of the flex column it sits in, so the page scrolls sideways.
-	// overflow-wrap: anywhere is the value that takes part in that sizing (break-words is not, which is why
-	// it reads like the fix and is not), and `overflow-wrap` inherits, so one rule on the content region
-	// reaches the heading, the breadcrumb, the table cell and the label. It sits here rather than on the
-	// heading because the design tool projects a component from what that component itself computes: its
-	// text rows and blocks are refused unless `overflow-wrap` and `word-break` are `normal` ("ordinary
-	// Unicode line breaking"), and a break rule on the Heading or Breadcrumb component made every card,
-	// toolbar and document that contains one unprojectable: 74 such refusals in its own suite at the
-	// head this cure replaces.
-	// Captured on its own, a component still computes `normal`, so the document it projects stays faithful
-	// to what was observed; the sideways-scrolling page is the frame's problem and the frame owns it here.
-	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6).BreakAnywhere()
 	clShellFooter = style.New().PaddingX(style.S6).PaddingY(style.S4).FontSize(style.TextXS).
 			TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
-	// clShellFooterMeasure bounds what a composition puts *inside* the footer. The footer itself keeps
-	// no max-width of its own: its top border is the frame's rule and must span the column. The bound is
-	// the one Bare (ui/document) and the reference app's fault page already chose — 24rem — because the
-	// design floor refuses a body measure above 75 characters and an unbounded footer sentence measured
-	// 189ch at 1440px (384px is 64ch at 12px, 48ch at 16px).
-	clShellFooterMeasure = style.New().MaxWScaled(style.MaxWSM)
-	clSkipLink           = style.New().SrOnly().
-				On(style.StateFocus, func(c style.ClassList) style.ClassList {
+	clSkipLink = style.New().SrOnly().
+			On(style.StateFocus, func(c style.ClassList) style.ClassList {
 			return c.NotSrOnly().Position(style.PositionAbsolute).Left(style.S4).Top(style.S4).
 				ZLayer(style.ZOverlay).Rounded(style.RadiusMD).PaddingX(style.S3).PaddingY(style.S2).
 				Bg(style.SurfacePrimary).TextColor(style.FgPrimary).Shadow(style.ShadowLG)
 		})
-	clToolbar = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
-			Justify(style.JustifyBetween).Gap(style.S4).FlexWrap()
-	clToolbarCopy    = style.New().SpaceY(style.S1)
-	clToolbarActions = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2)
-	clForm           = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
-	clFormActions    = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
-				Justify(style.JustifyEnd).Gap(style.S2).PaddingTop(style.S2)
 	// clFormSentence is a sentence of the form's own copy — what pressing the
 	// button costs, said above the button — at the form's text scale. It carries
 	// the measure every other sentence on a generated page carries, the one clHelp,
@@ -99,14 +59,6 @@ var (
 	clConfirmMessage = clFormSentence
 	// Shared fragments.
 	clIcon     = style.New().Display(style.DisplayInlineBlock).FlexShrink0()
-	clIconSize = map[string]style.ClassList{
-		"xs":  style.New().Width(style.S3).Height(style.S3),
-		"sm":  style.New().Width(style.S4).Height(style.S4),
-		"md":  style.New().Width(style.S5).Height(style.S5),
-		"lg":  style.New().Width(style.S6).Height(style.S6),
-		"xl":  style.New().Width(style.S8).Height(style.S8),
-		"2xl": style.New().Width(style.S12).Height(style.S12),
-	}
 	clIconTone = map[string]style.ClassList{
 		"neutral": style.New(),
 		"brand":   style.New().TextColor(style.FgBrand),
@@ -214,14 +166,6 @@ var (
 		"danger":  style.New().Bg(style.SurfaceDangerSoft).TextColor(style.FgDanger),
 		"info":    style.New().Bg(style.SurfaceInfoSoft).TextColor(style.FgInfo),
 	}
-	clBadgeSize = map[string]style.ClassList{
-		"xs":  style.New().PaddingX(style.S2).PaddingY(style.S0_5).FontSize(style.TextXS),
-		"sm":  style.New().PaddingX(style.S2_5).PaddingY(style.S0_5).FontSize(style.TextXS),
-		"md":  style.New().PaddingX(style.S2_5).PaddingY(style.S0_5).FontSize(style.TextSM),
-		"lg":  style.New().PaddingX(style.S3).PaddingY(style.S1).FontSize(style.TextSM),
-		"xl":  style.New().PaddingX(style.S3).PaddingY(style.S1).FontSize(style.TextBase),
-		"2xl": style.New().PaddingX(style.S4).PaddingY(style.S1).FontSize(style.TextBase),
-	}
 
 	clBadgeDot     = style.New().Width(style.S1_5).Height(style.S1_5).Rounded(style.RadiusFull)
 	clBadgeDotTone = map[string]style.ClassList{
@@ -276,21 +220,7 @@ var (
 			Transition(style.TransitionColors).Merge(clFocusRing)
 	clRecoveryAction = style.New().MinWidth(style.S11).MinHeight(style.S11).MaxWScaled(style.MaxWFull).BreakWords()
 
-	// Inputs.
-	// A field is a column of copy with a control in it — label, control, help sentence, error. The two
-	// lists below are alternatives rather than a merge because the sheet emits classes in sorted order, so
-	// a `max-w-none` could never override a `max-w-sm` on one element.
-	//
-	// Neither list bounds the field's own width. A measure on this element — the same 24rem the footer's
-	// sentence takes — is what refused to reach a client's design document: the design tool projects a
-	// composition only when its sizing is unconstrained (`composition constrained sizing requires further
-	// conversion`), so a max-width on a flex column put every Input, Select, Textarea, Checkbox, Form and
-	// document selection out of the projection — 44 refusals at the head this cure replaces. The measure
-	// the design floor reads is the measure of the *sentences*: those are paragraphs, bounded where they
-	// are written, on clHelp and clFieldErr below, which the projection carries as a wrapping paragraph.
-	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
-	clFieldWrapFull = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).Width(style.SFull)
-	clLabel         = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
+	clLabel = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
 	// clHelp bounds the sentence the way clShellFooterMeasure bounds the frame's own: the floor divides a
 	// paragraph's box by half its font size and refuses anything above 75 characters, and a help line
 	// under a full-width control on a generated record page measured 189ch at 1440px — a short sentence
@@ -323,19 +253,9 @@ var (
 		"warning": style.New().BorderColor(style.BorderWarning),
 		"danger":  style.New().BorderColor(style.BorderDanger),
 	}
-	clInputSize = map[string]style.ClassList{
-		"sm": style.New().PaddingX(style.S3).PaddingY(style.S1_5).FontSize(style.TextSM),
-		"md": style.New().PaddingX(style.S3).PaddingY(style.S2).FontSize(style.TextSM),
-		"lg": style.New().PaddingX(style.S4).PaddingY(style.S2_5).FontSize(style.TextBase),
-	}
-	clTextareaManual = style.New().ResizeY()
-	clTextareaAuto   = style.New().ResizeNone().Overflow(style.OverflowHidden)
-	clTextareaMeta   = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
-				Justify(style.JustifyBetween).Gap(style.S2)
-	clTextareaSupporting = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1)
-	clTextareaCounter    = style.New().FontSize(style.TextXS).TextColor(style.FgMuted).TabularNums().FlexShrink0()
-	clInputIconWrap      = style.New().Position(style.PositionRelative)
-	clInputIconStart     = style.New().
+	clTextareaCounter = style.New().FontSize(style.TextXS).TextColor(style.FgMuted).TabularNums().FlexShrink0()
+	clInputIconWrap   = style.New().Position(style.PositionRelative)
+	clInputIconStart  = style.New().
 				Position(style.PositionAbsolute).InsetY(style.S0).Left(style.S0).
 				Display(style.DisplayFlex).Items(style.ItemsCenter).
 				PaddingLeft(style.S3).PointerEvents(style.PointerNone)
@@ -345,12 +265,6 @@ var (
 			PaddingRight(style.S3).PointerEvents(style.PointerNone)
 	clInputPadStart = style.New().PaddingLeft(style.S10)
 	clInputPadEnd   = style.New().PaddingRight(style.S10)
-	clSelectCell    = style.New().ColSpanFull().RowSpanFull()
-	clSelectGrid    = style.New().Display(style.DisplayGrid).GridCols(1).GridRows(1)
-	clSelectSize    = style.New().PaddingLeft(style.S3).PaddingRight(style.S10).
-			PaddingY(style.S2).FontSize(style.TextSM).AppearanceNone().Merge(clSelectCell)
-	clSelectIndicator = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
-				Justify(style.JustifyEnd).PaddingRight(style.S3).PointerEvents(style.PointerNone).Merge(clSelectCell)
 
 	// Modal is the governed centered-dialog / mobile-sheet overlay. The root
 	// also doubles as the empty HTMX swap target used by server-loaded forms.
@@ -436,50 +350,6 @@ var (
 	clCheckboxLabel = style.New().MinWidth(style.S0).BreakWords().PaddingTop(style.S0_5).
 			FontSize(style.TextSM).TextColor(style.FgPrimary)
 
-	// Text and headings.
-	clTextColor = map[string]style.Color{
-		"primary": style.FgPrimary, "secondary": style.FgSecondary, "tertiary": style.FgTertiary, "muted": style.FgMuted,
-		"brand": style.FgBrand, "success": style.FgSuccess, "warning": style.FgWarning,
-		"danger": style.FgDanger, "info": style.FgInfo,
-	}
-	clTextSize = map[string]style.FontSize{
-		"xs": style.TextXS, "sm": style.TextSM, "base": style.TextBase,
-		"lg": style.TextLG, "xl": style.TextXL, "2xl": style.Text2XL,
-		"3xl": style.Text3XL, "4xl": style.Text4XL, "5xl": style.Text5XL,
-	}
-	clTextWeight = map[string]style.FontWeight{
-		"thin": style.FontThin, "extralight": style.FontExtralight, "light": style.FontLight,
-		"normal": style.FontNormal, "medium": style.FontMedium, "semibold": style.FontSemibold,
-		"bold": style.FontBold, "extrabold": style.FontExtrabold, "black": style.FontBlack,
-	}
-	clTextAlign = map[string]style.TextAlign{
-		"left": style.TextLeft, "center": style.TextCenter,
-		"right": style.TextRight, "justify": style.TextJustify,
-	}
-	clTextTransform = map[string]style.ClassList{
-		"none": {}, "uppercase": style.New().Uppercase(),
-		"lowercase": style.New().Lowercase(), "capitalize": style.New().Capitalize(),
-	}
-	clTextItalic    = style.New().Italic()
-	clTextUnderline = style.New().Underline()
-	clTextNoWrap    = style.New().WhitespaceNowrap()
-	clTruncate      = style.New().Truncate()
-
-	// clHeadingBase carries no break rule of its own. A heading does have to break a token nothing can
-	// hyphenate, and it does so because the frame's content region sets overflow-wrap: anywhere and the
-	// property inherits — see clShellMain. On the component it would be refused by the design tool, which
-	// builds text only under ordinary Unicode line breaking.
-	clHeadingBase = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).
-			FontWeight(style.FontSemibold)
-	clHeadingLevel = map[int]style.ClassList{
-		1: style.New().FontSize(style.Text3XL),
-		2: style.New().FontSize(style.Text2XL),
-		3: style.New().FontSize(style.TextXL),
-		4: style.New().FontSize(style.TextLG),
-		5: style.New().FontSize(style.TextBase),
-		6: style.New().FontSize(style.TextSM).Uppercase().Tracking(style.TrackingWider),
-	}
-
 	// Structure.
 	clDividerH        = style.New().Border(style.Border0).BorderTop(style.Border1).BorderColor(style.BorderPrimary).MarginY(style.S4)
 	clDividerV        = style.New().Border(style.Border0).BorderLeft(style.Border1).BorderColor(style.BorderPrimary).MarginX(style.S4)
@@ -495,14 +365,6 @@ var (
 			Display(style.DisplayInlineBlock).Rounded(style.RadiusFull).
 			Border(style.Border2).BorderColor(style.BorderSecondary).
 			AnimateSpin()
-	clSpinnerSize = map[string]style.ClassList{
-		"xs":  style.New().Width(style.S3).Height(style.S3),
-		"sm":  style.New().Width(style.S4).Height(style.S4),
-		"md":  style.New().Width(style.S6).Height(style.S6),
-		"lg":  style.New().Width(style.S8).Height(style.S8),
-		"xl":  style.New().Width(style.S10).Height(style.S10),
-		"2xl": style.New().Width(style.S12).Height(style.S12),
-	}
 	clSpinnerTone = map[string]style.ClassList{
 		"neutral": style.New().BorderTopColor(style.FgSecondary),
 		"brand":   style.New().BorderTopColor(style.FgBrand),
@@ -577,16 +439,6 @@ var (
 		On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgLinkHover) }).
 		Merge(clFocusRing)
 
-	// Layouts.
-	clFlex      = style.New().Display(style.DisplayFlex)
-	clGrid      = style.New().Display(style.DisplayGrid)
-	clContainer = style.New().MarginX(style.SAuto).Width(style.SFull).PaddingX(style.S4)
-
-	clGapScale = map[string]style.Spacing{
-		"0": style.S0, "1": style.S1, "2": style.S2, "3": style.S3, "4": style.S4,
-		"5": style.S5, "6": style.S6, "8": style.S8,
-	}
-
 	// Table.
 	clTableWrap = style.New().Width(style.SFull).Overflow(style.OverflowAuto).
 			Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderPrimary)
@@ -653,10 +505,14 @@ var (
 	clTableStackSort = style.New().Display(style.DisplayFlex).FlexWrap().
 				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
 
-	clDataList    = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
-	clDataCount   = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
-	clDataHeading = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
-			FontSize(style.TextSM).FontWeight(style.FontSemibold).PaddingY(style.S3)
+	clStepSegments        = style.New().Display(style.DisplayFlex).Gap(style.S2)
+	clStepSegment         = style.New().Flex1().BorderTop(style.Border2).BorderColor(style.BorderPrimary).PaddingTop(style.S2)
+	clStepSegmentComplete = style.New().Flex1().BorderTop(style.Border2).BorderColor(style.BorderBrand).PaddingTop(style.S2)
+	clStepSegmentActive   = clStepSegmentComplete.FontWeight(style.FontSemibold)
+	clDataList            = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
+	clDataCount           = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
+	clDataHeading         = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
+				FontSize(style.TextSM).FontWeight(style.FontSemibold).PaddingY(style.S3)
 	clDataDisclosure = style.New().FontSize(style.TextSM).FontWeight(style.FontSemibold).
 				PaddingY(style.S3).Merge(clFocusRing).MinHeight(style.S11).Cursor(style.CursorPointer)
 
@@ -729,22 +585,6 @@ var (
 
 	clMediaFigure  = style.New().Display(style.DisplayBlock)
 	clMediaCaption = style.New().FontSize(style.TextSM).TextColor(style.FgMuted).PaddingTop(style.S3)
-
-	// Geometry only. The crop used to live here, which meant a caller who asked
-	// for `fit: "contain"` got `object-cover object-contain` on one element and
-	// whichever the stylesheet happened to declare last won — the caller's sentence
-	// about the picture lost to source order. The crop is Media's Fit to answer, in
-	// one place, in whatever order the classes arrive.
-	clCardImageVertical   = style.New().Width(style.SFull)
-	clCardImageHorizontal = style.New().Width(style.S48)
-	// The two crops, named. They are declared here rather than built inline where
-	// they are used, because a class the registry cannot see is a class the
-	// stylesheet may never grow — TestRenderedClassesAreDeclared failed on exactly
-	// that the first time, and `object-cover` would have shipped unstyled.
-	clImageCover     = style.New().ObjectCover()
-	clImageContain   = style.New().ObjectContain()
-	clCardHorizontal = style.New().Display(style.DisplayFlex)
-	clCardVertical   = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
 
 	// Breadcrumb.
 	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
@@ -899,171 +739,3 @@ var (
 			Justify(style.JustifyCenter).PaddingY(style.S8)
 	clTabsLazyLabel = style.New().TextColor(style.FgSecondary)
 )
-
-// ClassLists is every ClassList the renderers compose, base and variant alike:
-// the shell's and the gallery's together. It is what a completeness check reads
-// — every class any renderer can emit — while an application's stylesheet is
-// composed from the two halves separately. See ShellClassLists.
-func ClassLists() []style.ClassList {
-	return append(ShellClassLists(), GalleryClassLists()...)
-}
-
-// GalleryClassLists are the classes of the components only the gallery page
-// renders: the divider, the empty state, the skeletons, the modal and the tabs.
-// A third of the stylesheet was these, downloaded by every person on every
-// page of an application that renders none of them.
-//
-// The line is drawn at the component and not at the prop. A component the shell
-// renders keeps every class its props can reach, however unlikely — a class
-// with no rule is unstyled HTML and nothing notices — so what moves here is
-// only what no shell page can produce at all.
-func GalleryClassLists() []style.ClassList {
-	out := []style.ClassList{
-		clDividerH, clDividerV, clDividerText, clDividerTextLine, clDividerTextLabel,
-		// Media's panels stay here while only the gallery can produce them. Card's
-		// picture routes through Media too, so the first screen that passes a Status
-		// — a cut-out still being cut, an artwork somebody may not look at — has to
-		// move clMediaAbsent, clMediaFailed and clMediaRefused into the shell list
-		// with it, or that panel arrives unstyled on the page that needed it.
-		clMediaFigure, clMediaCaption, clMediaAbsent, clMediaFailed, clMediaRefused,
-		clModalRoot, clModalCentered, clModalBottomSheet, clModalOverlay, clDetailPanel, clDetailFrame, clDetailBody,
-		clModalPanel, clModalHeader, clModalTitleBlock, clModalTitle,
-		clModalDescription, clModalBody, clModalFooter, clModalSeparator, clModalClose, clModalCancel,
-		clTabsRoot, clTabsRootHorizontal, clTabsRootVertical,
-		clTabsListBase, clTabsListHorizontal, clTabsListVertical,
-		clTabsListUnderlineHorizontal, clTabsListUnderlineVertical,
-		clTabsButtonBase, clTabsButtonPills, clTabsButtonUnderlineHorizontal,
-		clTabsButtonUnderlineVertical, clTabsPillsActive, clTabsPillsIdle,
-		clTabsUnderlineActive, clTabsUnderlineIdle, clTabsDisabled, clTabsIcon,
-		clTabsBadge, clTabsPanels, clTabsPanel, clTabsLazy, clTabsLazyLabel,
-	}
-	for _, m := range []map[string]style.ClassList{
-		clModalPanelSize, clAvatarSize, clDetailPlacement,
-	} {
-		for _, cl := range m {
-			out = append(out, cl)
-		}
-	}
-	return out
-}
-
-// ShellClassLists are the classes every other component can emit — the ones an
-// application's own pages render. ui.Stylesheet is composed from these.
-func ShellClassLists() []style.ClassList {
-	out := []style.ClassList{
-		clStandalone, clDisclosure, clDisclosureSummary, clDisclosureDescription, clDisclosureBody,
-		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clShellFooterMeasure,
-		clSkipLink,
-		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions, clFormSentence,
-		clConfirmDialog, clConfirmTitle, clConfirmMessage,
-		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
-		// A person, as read by the generated list: ui/resource composes a cell out of
-		// these whenever a field says `ui:"present:person"`, so they are on every page
-		// of an application that has people in it, not on the gallery alone.
-		clAvatar, clAvatarInitials, clAvatarLink, clAvatarLabel,
-		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
-		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,
-		clAlertTitle, clAlertMessage, clAlertBody, clAlertIcon, clAlertActions, clAlertClose, clRecoveryAction,
-		clFieldWrap, clFieldWrapFull, clLabel, clHelp, clFieldErr, clRequired,
-		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
-		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
-		clSelectGrid, clSelectSize, clSelectIndicator,
-		clTextareaManual, clTextareaAuto, clTextareaMeta,
-		clTextareaSupporting, clTextareaCounter,
-		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
-		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
-		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
-		clHeadingBase, clSpinner, clVideo, clProse,
-		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
-		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
-		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
-		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort, clTableStackSortRow,
-		// Generated lists compose DataList, including its empty and loading states.
-		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
-		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
-		clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
-		clDetailItems, clDetailRow, clDetailRowSeparated, clDetailTerm,
-		clDetailTermDescription, clDetailValue,
-		clCardFrame, clCardSectioned, clCardBorder,
-		clCardPadNone, clCardPadSmall, clCardPadDefault, clCardPadMedium, clCardPadLarge,
-		clCardShadowSmall, clCardShadowMedium, clCardShadowLarge,
-		clCardClickable, clCardHoverable, clCardTitle, clCardDesc,
-		clCardHeader, clCardFooter, clCardImageVertical, clCardImageHorizontal,
-		clImageCover, clImageContain,
-		clCardHorizontal, clCardVertical,
-		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur, clBreadcrumbItem,
-		clChromeContext,
-		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,
-		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
-		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
-		clSidebarColumnAdmin, clSidebarColumnContent,
-		clSidebarBrandAdmin, clSidebarBrandContent,
-		clSidebarBrandLinkAdmin, clSidebarBrandLinkContent,
-		clSidebarBrandTextAdmin, clSidebarBrandTextContent,
-		clSidebarNavWrapAdmin, clSidebarNavWrapContent, clSidebarNavAdmin, clSidebarNavContent,
-		clSidebarLinkAdmin, clSidebarLinkContent,
-		clSidebarLinkPadExpanded, clSidebarLinkPadCollapsed,
-		clSidebarLinkActiveAdmin, clSidebarLinkIdleAdmin,
-		clSidebarLinkActiveContent, clSidebarLinkIdleContent,
-		clSidebarItemDisabled, clSidebarSection, clSidebarSectionHeader,
-		clSidebarSectionHeaderAdmin, clSidebarSectionHeaderContent,
-		clSidebarSectionGlyph, clSidebarSectionList,
-		clSidebarPrefixAdmin, clSidebarPrefixContent,
-		clSidebarLabelVisible, clSidebarLabelHidden, clSidebarLabelContent,
-		clSidebarNestedGroup, clSidebarNestedIndent,
-		clSidebarFooterAdmin, clSidebarFooterContent,
-		clPagination, clPageBtn, clPageIdle, clPageCur,
-	}
-	for _, m := range []map[string]style.ClassList{
-		clButtonVariant, clButtonTone, clButtonSize, clButtonLoadingVariant, clButtonLoadingTone,
-		clBadgeVariant, clBadgeTone, clBadgeSize, clBadgeDotTone, clAlertVariant,
-		clIconSize, clIconTone, clInputSize, clInputTone, clSpinnerSize, clSpinnerTone,
-		clDetailValueTone, clTextTransform,
-		clSkeletonBlockSize, clSkeletonLineSize, clSkeletonCircleSize,
-	} {
-		for _, cl := range m {
-			out = append(out, cl)
-		}
-	}
-	for _, cl := range clHeadingLevel {
-		out = append(out, cl)
-	}
-	// Enumerated one-offs composed inline by renderers.
-	for _, sz := range clTextSize {
-		out = append(out, style.New().FontSize(sz))
-	}
-	for _, w := range clTextWeight {
-		out = append(out, style.New().FontWeight(w))
-	}
-	for _, c := range clTextColor {
-		out = append(out, style.New().TextColor(c))
-	}
-	for _, align := range clTextAlign {
-		out = append(out, style.New().TextAlign(align))
-	}
-	for lines := 1; lines <= 6; lines++ {
-		out = append(out, style.New().LineClamp(lines))
-	}
-	for _, s := range clGapScale {
-		out = append(out, style.New().Gap(s), style.New().MarginBottom(s))
-	}
-	for _, n := range []int{1, 2, 3, 4, 6, 12} {
-		out = append(out, style.New().GridCols(n))
-		for _, at := range []style.Breakpoint{style.BreakpointSM, style.BreakpointMD, style.BreakpointLG} {
-			out = append(out, style.New().Breakpoint(at, func(c style.ClassList) style.ClassList { return c.GridCols(n) }))
-		}
-	}
-	for justification := range maps.Values(justifyContent) {
-		out = append(out, style.New().Justify(justification))
-	}
-	out = append(out,
-		style.New().Items(style.ItemsStart), style.New().Items(style.ItemsCenter),
-		style.New().Items(style.ItemsEnd), style.New().Items(style.ItemsStretch),
-		style.New().FlexDir(style.FlexRow), style.New().FlexDir(style.FlexCol), style.New().FlexWrap(),
-		style.New().MaxWScaled(style.MaxWSM), style.New().MaxWScaled(style.MaxWMD),
-		style.New().MaxWScaled(style.MaxWLG), style.New().MaxWScaled(style.MaxWXL),
-		style.New().MaxWScaled(style.MaxW2XL), style.New().MaxWScaled(style.MaxW4XL),
-		style.New().MaxWScaled(style.MaxW7XL), style.New().MaxWScaled(style.MaxWFull),
-	)
-	return out
-}

@@ -8,6 +8,8 @@ import (
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Input renders InputProps as a labelled form field. When Error is set
@@ -41,6 +43,64 @@ func inputFieldWithSlots(
 	if !validType {
 		panic("pk-ui: unsupported Input type " + p.Type)
 	}
+	cl, tone, size, invalid := inputAppearance(p, iconStart, iconEnd)
+
+	input := []g.Node{
+		classes(cl.Compile(), p.Class),
+		h.ID(id), h.Name(p.Name), h.Type(typ),
+		g.Attr("data-tone", tone),
+		g.Attr("data-size", size),
+	}
+	input = append(input, attrPairs(p.Attrs)...)
+	input = append(input, htmxAttrs(p.HTMXProps)...)
+	input = inputValueAttrs(p, typ, input)
+	input = inputConstraintAttrs(p, input)
+	input = inputDescriptionAttrs(p, id, invalid, input)
+
+	fieldClass := clFieldWrap
+	if p.FullWidth {
+		fieldClass = clFieldWrapFull
+	}
+	field := []g.Node{h.Class(fieldClass.Compile()), g.Attr("data-component", componentName)}
+	if typ == "hidden" {
+		field = append(field, h.Hidden(""))
+	}
+	if p.Label != "" {
+		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
+			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
+		}))
+	}
+	field = append(field, inputIconControl(input, iconStart, iconEnd))
+	if p.Error != "" {
+		field = append(field, h.P(
+			h.ID(id+"-error"),
+			h.Class(clFieldErr.Compile()),
+			h.Role("alert"),
+			g.Text(p.Error),
+		))
+	}
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
+	}
+	return h.Div(field...)
+}
+
+func canonicalInputType(raw string) (string, bool) {
+	typ := strings.ToLower(strings.TrimSpace(raw))
+	if typ == "" {
+		return "text", true
+	}
+	switch typ {
+	case "text", "email", "password", "number", "tel", "url", "search",
+		"date", "time", "datetime-local", "month", "week", "color", "hidden", "file":
+		return typ, true
+	default:
+		return typ, false
+	}
+}
+
+func inputAppearance(p InputProps, iconStart, iconEnd []g.Node) (style.ClassList, string, string, bool) {
 	size := strings.ToLower(strings.TrimSpace(p.Size))
 	if _, exists := clInputSize[size]; !exists {
 		size = "md"
@@ -67,15 +127,10 @@ func inputFieldWithSlots(
 	if len(iconEnd) > 0 {
 		cl = cl.Merge(clInputPadEnd)
 	}
+	return cl, tone, size, invalid
+}
 
-	input := []g.Node{
-		classes(cl.Compile(), p.Class),
-		h.ID(id), h.Name(p.Name), h.Type(typ),
-		g.Attr("data-tone", tone),
-		g.Attr("data-size", size),
-	}
-	input = append(input, attrPairs(p.Attrs)...)
-	input = append(input, htmxAttrs(p.HTMXProps)...)
+func inputValueAttrs(p InputProps, typ string, input []g.Node) []g.Node {
 	if typ == "text" {
 		input = append(input, g.Attr("data-pk-value", "value"))
 	}
@@ -93,6 +148,10 @@ func inputFieldWithSlots(
 			input = append(input, g.Attr("multiple", "multiple"))
 		}
 	}
+	return input
+}
+
+func inputConstraintAttrs(p InputProps, input []g.Node) []g.Node {
 	if p.Placeholder != "" {
 		input = append(input, h.Placeholder(p.Placeholder))
 	}
@@ -129,6 +188,10 @@ func inputFieldWithSlots(
 	if p.Autocomplete != "" {
 		input = append(input, h.AutoComplete(p.Autocomplete))
 	}
+	return input
+}
+
+func inputDescriptionAttrs(p InputProps, id string, invalid bool, input []g.Node) []g.Node {
 	describedBy := make([]string, 0, 2)
 	if invalid {
 		input = append(input, g.Attr("aria-invalid", "true"))
@@ -136,7 +199,7 @@ func inputFieldWithSlots(
 	if p.Error != "" {
 		describedBy = append(describedBy, id+"-error")
 	}
-	if p.HelpText != "" {
+	if hasHelp(p.HelpText, p.HelpNotes) {
 		describedBy = append(describedBy, id+"-help")
 	}
 	if len(describedBy) > 0 {
@@ -145,20 +208,10 @@ func inputFieldWithSlots(
 	if p.Label == "" && p.Name != "" {
 		input = append(input, g.Attr("aria-label", p.Name))
 	}
+	return input
+}
 
-	fieldClass := clFieldWrap
-	if p.FullWidth {
-		fieldClass = clFieldWrapFull
-	}
-	field := []g.Node{h.Class(fieldClass.Compile()), g.Attr("data-component", componentName)}
-	if typ == "hidden" {
-		field = append(field, h.Hidden(""))
-	}
-	if p.Label != "" {
-		field = append(field, labelWithText(LabelProps{For: id, Required: p.Required}, g.Group{
-			g.Raw("<!--pk-text:label-->"), g.Text(p.Label), g.Raw("<!--/pk-text:label-->"),
-		}))
-	}
+func inputIconControl(input, iconStart, iconEnd []g.Node) g.Node {
 	control := h.Input(input...)
 	if len(iconStart) > 0 || len(iconEnd) > 0 {
 		controlChildren := []g.Node{h.Class(clInputIconWrap.Compile())}
@@ -175,34 +228,8 @@ func inputFieldWithSlots(
 				g.Group(iconEnd),
 			))
 		}
-		field = append(field, h.Div(controlChildren...))
+		return h.Div(controlChildren...)
 	} else {
-		field = append(field, control)
-	}
-	if p.Error != "" {
-		field = append(field, h.P(
-			h.ID(id+"-error"),
-			h.Class(clFieldErr.Compile()),
-			h.Role("alert"),
-			g.Text(p.Error),
-		))
-	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
-	}
-	return h.Div(field...)
-}
-
-func canonicalInputType(raw string) (string, bool) {
-	typ := strings.ToLower(strings.TrimSpace(raw))
-	if typ == "" {
-		return "text", true
-	}
-	switch typ {
-	case "text", "email", "password", "number", "tel", "url", "search",
-		"date", "time", "datetime-local", "month", "week", "color", "hidden", "file":
-		return typ, true
-	default:
-		return typ, false
+		return control
 	}
 }
