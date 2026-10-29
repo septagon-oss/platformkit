@@ -24798,8 +24798,8 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
-   "file": "kit/events/topic_declaration_review_test.go",
-   "id": "kit/events/topic_declaration_review_test.go#TestTopicDeclarationKeepsItsPayloadType",
+   "file": "kit/events/topic_declaration_keeps_its_payload_type_test.go",
+   "id": "kit/events/topic_declaration_keeps_its_payload_type_test.go#TestTopicDeclarationKeepsItsPayloadType",
    "kind": "go",
    "layer": "behaviour",
    "name": "TestTopicDeclarationKeepsItsPayloadType",
