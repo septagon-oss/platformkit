@@ -135,17 +135,35 @@ var deliverySpec = rest.Spec[*contracts.Delivery]{
 	Operations: []httpx.CRUD{rest.List, rest.Read},
 }
 
-// New is the manifest. It panics on a missing key or catalogue, at the
-// composition site: both are read by every write, and a module that started
-// anyway would be a module whose first create failed at runtime.
+// New is the manifest.
+//
+// Deprecated: use NewChecked, which answers a missing key or catalogue as the
+// same sentence. Both are read by every write, and a module that started anyway
+// would be a module whose first create failed at runtime.
 func New(deps Deps) module.Module {
-	svc := internal.NewService(internal.Deps{
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked builds the manifest and the delivery service, and answers as an
+// error the wiring every write depends on: a secret key that is not the 32 bytes
+// one read hands it, or no catalogue to name the events an endpoint may receive.
+// A zero RetentionDays or Every keeps the schedule beside it. It opens nothing,
+// runs no query and is safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
+	svc, err := internal.NewServiceChecked(internal.Deps{
 		SecretKey: deps.SecretKey,
 		Catalogue: deps.Catalogue,
 		Alerts:    deps.Alerts,
 		Policy:    internal.AddressPolicy{AllowLocal: deps.AllowLocalEndpoints},
 		Now:       deps.Now,
 	})
+	if err != nil {
+		return module.Module{}, err
+	}
 	days := deps.RetentionDays
 	if days <= 0 {
 		days = retentionDays
@@ -206,5 +224,5 @@ func New(deps Deps) module.Module {
 			deliverySpec.Mount(s)
 			internal.RegisterRoutes(s, mounted, deliverySpec, svc)
 		},
-	}
+	}, nil
 }

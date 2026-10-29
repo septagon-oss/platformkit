@@ -35,10 +35,14 @@ var Module = pkit.NewModule("site", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	skin := w.Skin()
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Gate:    pkit.Get[contracts.WriteGate](w),
 		Palette: siteAccent(skin.Theme),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	// One object answers both contracts and is put twice, so there is no second door
 	// through which a settings service that was never given a palette could reach a
 	// composition. internal.Service is built to answer both; a build in which it does

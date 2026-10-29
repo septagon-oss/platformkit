@@ -41,10 +41,14 @@ var Module = pkit.NewModule("user", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Administration: pkit.Get[usercontracts.Administration](w),
 		Granting:       pkit.Get[usercontracts.Granting](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[usercontracts.Lookup](w, svc)
 	pkit.Put[usercontracts.SystemProvisioner](w, svc)
