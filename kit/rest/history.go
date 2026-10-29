@@ -2,20 +2,13 @@ package rest
 
 // history.go is the version a mounted resource keeps of every write it commits.
 //
-// One decision runs through this file: a version is written by the door that
-// wrote the row, in the same transaction, after the UPDATE that normalised the
-// values and before the event that announces them. Recording before the write
-// would store what a caller asked for rather than what the row holds — crud.Update
-// runs the entity's own Validate, which trims and defaults — and recording after
-// the commit would leave a window where the event exists and the version it
-// describes does not, which is the half-written state rule 9 refuses. A resource
-// that records nothing is a resource whose users cannot see what changed; a
-// resource that records in a subscriber is a resource that records late.
-//
-// The version number is the row's own write count (entity.RevisionField), read
-// after the UPDATE that moved it. There is no counter here, and mount refuses a
-// History Spec whose entity carries no write count, because a version nobody can
-// quote against a row is a number with no meaning.
+// A version is written by the door that wrote the row, in the same transaction,
+// after the UPDATE that normalised the values and before the event that announces
+// them: before the write it would record what a caller asked for rather than what the
+// row holds (crud.Update runs the entity's own Validate), and after the commit it
+// would leave an event whose version does not exist. The version number is the row's
+// own write count (entity.RevisionField), read after the UPDATE that moved it; mount
+// refuses a History Spec whose entity carries no write count.
 
 import (
 	"context"
@@ -235,7 +228,7 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 				if err != nil {
 					return nil, err
 				}
-				if _, err := crud.Get[T](tx, in.ID); err != nil {
+				if _, err := crud.GetCtx[T](ctx, tx, in.ID); err != nil {
 					return nil, Fault(err)
 				}
 				limit := in.Limit
@@ -377,24 +370,15 @@ func (s Spec[T]) restoreVersion(ctx context.Context, tx db.Tx[db.Tenant], id uui
 }
 
 // replayable turns a stored document into the body a write accepts: JSON field
-// names the schema has a writable column for, and nothing else. It is one
-// function because the answer must not differ between the kit's restore and
-// anything else that replays a version.
+// names the schema has a writable column for, and nothing else. It is one function so
+// that the kit's restore and anything else replaying a version answer alike.
 //
-// Two encodings are held to here, and both were wrong once.
-//
-// A key the stored document does not carry is replayed as the field's own empty
-// value rather than left out. A version is the whole writable document, and the
-// document is encoded with the entity's own tags, so a body that was empty when the
-// version was written has no key at all: leaving the key out would make the restore
-// a partial write that keeps whatever the row has since become, and a person who
-// restored the empty first draft would be told it was back while reading the fourth
-// edit at them.
-//
-// A number is carried through as the bytes the version holds, never as a decoded
-// float. A minor unit is an int64 and JSON's only number is a float64, so decoding
-// into `any` rounds 9007199254740993 to a value two of them away — a restore that
-// succeeds, reports the row back, and is wrong in the last digits of the money.
+// Two encodings are held to here. A key the stored document does not carry is replayed
+// as the field's own empty value: a version is the whole writable document, so a body
+// that was empty when it was written has no key, and leaving that key out would make
+// the restore a partial write keeping whatever the row has since become. And a number
+// travels as the bytes the version holds, never as a decoded float: a minor unit is an
+// int64 and JSON's only number is a float64, which rounds the last digits of the money.
 func replayable(fields []crud.Field, immutable []string, document json.RawMessage, fresh any) (map[string]any, error) {
 	var stored map[string]json.RawMessage
 	if err := json.Unmarshal(document, &stored); err != nil {

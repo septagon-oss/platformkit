@@ -237,7 +237,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	}
 	deps := admin.Deps{
 		Modules: []module.Module{notes, catalogue, rolesModule}, Authorize: authorize,
-		SignIn: "/api/v1/auth/login",
+		SignIn: "/api/v1/auth/login", SignInOperationID: "auth-login",
 	}
 	for _, apply := range configure {
 		apply(&deps)

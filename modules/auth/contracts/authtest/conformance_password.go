@@ -2,12 +2,14 @@ package authtest
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
@@ -70,6 +72,55 @@ func requestPasswordReset(t *testing.T, f Fixture) {
 	if got := notices(f); len(got) != 0 {
 		t.Errorf("Forget raised %d notices; the request path raises none", len(got))
 	}
+}
+
+// NoMailDetail is the sentence an installation whose sender does not deliver
+// answers a door that would have to promise a person an email with. It is spelled
+// once here because every implementation of this contract answers in it, and a
+// case that quoted it twice could drift from what either one says.
+const NoMailDetail = "account email delivery is unavailable"
+
+// refuseResetWithoutMail is the forgotten-password door standing in the
+// installation with no mail host. The acknowledgment this route answers with
+// promises a link, so where the sender files the message instead of dialling the
+// door refuses — and a refused mutation writes nothing and publishes nothing.
+//
+// The claim belongs to the contract rather than to one implementation: the fake
+// and the SQL-backed service are both run against this case, so neither can keep
+// a promise the other breaks.
+func refuseResetWithoutMail(t *testing.T, f Fixture) {
+	f.User("ada@acme.example.com", Password)
+	if f.Delivering == nil {
+		t.Fatal("this harness cannot say whether its sender attempts a message")
+	}
+	f.Delivering(false)
+	var refused *problem.Problem
+	err := f.Service.Forget(f.Ctx, f.Tx, "ada@acme.example.com")
+	if !errors.As(err, &refused) {
+		t.Fatalf("Forget with no mail host returned %v, want the unavailable refusal", err)
+	}
+	if refused.GetStatus() != http.StatusServiceUnavailable || refused.Detail != NoMailDetail {
+		t.Errorf("Forget refused with %d %q, want the deployment's own unavailable sentence", refused.GetStatus(), refused.Detail)
+	}
+	// The same answer about an address nobody has: the refusal is a fact about the
+	// installation, so it cannot say which address has an account.
+	if err := f.Service.Forget(f.Ctx, f.Tx, "nobody@acme.example.com"); !errors.As(err, &refused) || refused.GetStatus() != http.StatusServiceUnavailable {
+		t.Errorf("an unknown address was answered differently from a known one: %v", err)
+	}
+	published(t, f)
+	if got := mailed(f); len(got) != 0 {
+		t.Errorf("a refused reset sent %d messages, want none", len(got))
+	}
+	if got := notices(f); len(got) != 0 {
+		t.Errorf("a refused reset raised %d notices, want none", len(got))
+	}
+	// The same request, the same address, one mail host later: accepted, and it is
+	// the request's own event that says so.
+	f.Delivering(true)
+	if err := f.Service.Forget(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+		t.Fatalf("with a mail host the same request was refused: %v", err)
+	}
+	published(t, f, contracts.EventResetRequested)
 }
 
 func mailPasswordReset(t *testing.T, f Fixture) {

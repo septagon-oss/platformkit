@@ -4,23 +4,13 @@ package rest
 // row is locked and the body merged, and the one computation every door uses to
 // say what a write changes.
 //
-// It exists because a module could not otherwise answer "may this field be
-// written directly" at all. The generic PATCH route is mounted from module code
-// that never sees the merge, so a gate that stood in each module's own service —
-// which is what modules/site had to do, on its singleton's Save closure — covers
-// one door per module and none of the ones a Spec mounts. The answer had to be in
-// the orchestration JSON routes and in-process resources share, which is the
-// sentence in rest.go above createRow.
-//
-// Two rules make it a door and not a wall:
-//
-//   - The gate is asked about the *entity*, not the request. Changed is computed
-//     from the value the merge produced, so a body that resends the current value
-//     is not a change and is not refused. A gate that read the request's keys
-//     would refuse a form that redraws the whole record.
-//   - The gate never stands on the write an approved change comes through. It
-//     stands on the doors a person types into. A gate on both is a wall: the
-//     change could be proposed and never applied.
+// It stands in the orchestration rather than in a module's own service because the
+// generic PATCH route is mounted from module code that never sees the merge: a gate
+// inside one service covers one door per module and none of the ones a Spec mounts.
+// Two rules keep it a door and not a wall. It is asked about the *entity*, from the
+// value the merge produced, so a body that resends the current value is not a change
+// and is not refused; and it never stands on the write an approved change comes
+// through, because a gate on both means a change that can be proposed and never applied.
 
 import (
 	"context"
@@ -290,23 +280,15 @@ func (s Spec[T]) zeroSnapshot() map[string]json.RawMessage {
 	return out
 }
 
-// commandGate asks the Spec's door about a command, in the same transaction the
-// command runs in — so the lock the answer is based on is the lock the command
-// then takes, and a proposal applied between the two is a proposal that waits its
-// turn rather than one that interleaves.
+// commandGate asks the Spec's door about a command, in the transaction the command
+// runs in, so the lock the answer is based on is the lock the command then takes:
+// a proposal applied in between waits its turn rather than interleaving.
 //
 // The question carries the command's verb and no field list. Which fields a command
-// moves is the subject owner's knowledge — resolution belongs to Resolve, which
-// moves it along with the status and the event beside it — and the door asks for it
-// by verb rather than holding a copy somebody has to remember to write: a command
-// whose author forgot a declaration would stand ungated, which is the bypass a door
-// exists to close. The answer a module gives for its own commands is normally empty
-// (that is the difference between a door and a wall: a protected slaDeadline must
-// never stop a task from being resolved), and an empty answer costs no switch read.
-//
-// A collection command is not asked: it names no row, and its answer would be a
-// subject with nothing in it. A Spec with no gate is not asked either, which is what
-// leaves every command written before this door behaving exactly as it did.
+// moves is the subject owner's knowledge, and a door holding its own copy would
+// leave a command whose author forgot the declaration ungated — the bypass a door
+// exists to close. A collection command names no row and is not asked, and neither is
+// a Spec with no gate.
 func (s Spec[T]) commandGate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, verb string, opts CommandOptions) error {
 	if s.Gate == nil || opts.Collection {
 		return nil

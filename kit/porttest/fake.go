@@ -156,21 +156,17 @@ func (s *Store[T]) Delete(ctx context.Context, id uuid.UUID) {
 // rowWitness is the store's answer to the one question a tenant case cannot ask
 // its own description.
 //
-// Provoke's documented job is to move the world into the state the refusal
-// answers, and for the tenant case that state is another tenant's. A Snapshot
-// taken through that world renders the row absent whether the refusal left it
-// with its owner or destroyed it, so "a refused call wrote nothing" is written
-// from the visitor's side of the refusal and the row's owner is not asked. The
-// store is the one party in a fake the description cannot move: it holds the row
-// for the tenant that owns it, and it can say whether it still does.
+// Provoke's job is to move the world into the state the refusal answers, and for
+// the tenant case that state is another tenant's. A Snapshot taken through that
+// world renders the row absent whether the refusal left it with its owner or
+// destroyed it, so "a refused call wrote nothing" gets written from the visitor's
+// side and the row's owner is never asked. The store is the one party a
+// description cannot move: it holds the row, and can say whether it still does.
 //
-// A row is watched by the id the case minted for it, for as long as one refused
-// call runs, and a loss is recorded only against a watched row. So the account
-// holds nothing between cases, and no case reads another's: the ids are uuids one
-// case made for itself. A world whose rows live where this Store cannot watch
-// them — a real transaction — is not covered by this; its tenant case reads the
-// row through the owner's own context, as this package's notes port does, or
-// declines the case with a reason that says so.
+// A row is watched by the id the case minted for it, for one refused call, so
+// nothing is held between cases. A world whose rows this Store cannot watch, such
+// as a real transaction, is not covered: its tenant case reads through the owner's
+// own context, as this package's notes port does, or declines with that reason.
 type rowWitness struct {
 	mu       sync.Mutex
 	watching map[uuid.UUID]bool

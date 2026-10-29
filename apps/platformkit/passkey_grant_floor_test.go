@@ -28,13 +28,13 @@ func TestAPasskeySignInGrantDoesNotHoldTheAdministratorsFloor(t *testing.T) {
 		{Permission: authcontracts.PermissionPasskeySignIn},
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Deactivate(ctx, tx, s.bob.ID)
+		_, err := c.testUsers().Deactivate(ctx, tx, s.bob.ID)
 		return err
 	}); err != nil {
 		t.Fatalf("deactivating bob: %v", err)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
+		_, err := c.testAuth().SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
 		return err
 	}); err != nil {
 		t.Fatalf("granting passkey:signin to door: %v", err)
@@ -42,7 +42,7 @@ func TestAPasskeySignInGrantDoesNotHoldTheAdministratorsFloor(t *testing.T) {
 	appoint(t, s, s.ada.ID, authcontracts.RoleAdmin, "door")
 
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, authcontracts.RoleAdmin,
+		_, err := c.testAuth().SetRole(ctx, tx, authcontracts.RoleAdmin,
 			[]string{authcontracts.PermissionPasskeySignIn}, catalogue)
 		return err
 	})

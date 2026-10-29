@@ -15,7 +15,7 @@ class X509ToolchainFloor(unittest.TestCase):
                 pathlib.Path(directory, "go.mod").write_text(
                     "module example.test/advisory\n\ngo 1.26.6\n\n"
                     f"toolchain go{version}\n\n"
-                    "require (\n\tgolang.org/x/net v0.60.0\n)\n"
+                    "require (\n\tgolang.org/x/net v0.62.0\n)\n"
                 )
                 result = subprocess.run(
                     ["bash", str(ROOT / "scripts/go_mod_above_advisory_test.sh"), directory],

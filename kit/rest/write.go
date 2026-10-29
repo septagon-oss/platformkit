@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
 // ErrStaleTag is a conditional write whose tag the row has passed: the caller read it
@@ -25,6 +26,11 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	if err := validateSketchInput(e); err != nil {
 		var zero T
 		return zero, err
+	}
+	var err error
+	e, err = s.choiceCreateRow(e)
+	if err != nil {
+		return e, err
 	}
 	if s.Create != nil {
 		return s.Create(ctx, tx, e)
@@ -80,7 +86,7 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // updateRow locks the row before merging and validating its submitted fields.
 // Responses, hooks and events therefore use the snapshot that this transaction
 // replaces, including after contention.
-func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
+func (s Spec[T]) updateRowRaw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -90,6 +96,10 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	before := rowCopy(e)
 	// The gate compares values, so resending an unchanged field is not a change.
 	beforeJSON, err := jsonSnapshot(e)
+	if err != nil {
+		return e, err
+	}
+	values, err = s.choicePatch(tx, e, fields, values, ifMatch)
 	if err != nil {
 		return e, err
 	}
@@ -219,7 +229,7 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := s.clearFileUses(ctx, tx, e); err != nil {
 		return e, err
 	}
-	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
+	if err := s.removeRow(ctx, tx, id); err != nil {
 		return e, err
 	}
 	// The record is gone, so every translation of it is gone with it, in this
@@ -235,16 +245,32 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
-// CreateRow runs this resource's create orchestration in the supplied tenant
-// transaction, including validation, hooks and outbox publication. The caller
-// must authorize the operation. Failure returns a zero row.
-func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
-	row, err := s.createRow(ctx, tx, e)
-	if err != nil {
-		var zero T
-		return zero, err
+// removeRow is the delete this resource declared: SoftDelete hides the row and
+// keeps it for anything that referenced it, DeleteRow ends it. Spec's own flag
+// decides which, and the two doors say it in their names.
+func (s Spec[T]) removeRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	if s.SoftDelete {
+		return crud.SoftDelete[T](ctx, tx, id)
 	}
-	return row, nil
+	return crud.DeleteRow[T](ctx, tx, id)
+}
+
+// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
+// the door an in-process caller stands at. The JSON routes and the generated
+// screens go through the same three bodies; a seed writer, or any composition-time
+// caller that is not a person's request, stands here. The reason they are
+// exported and not copied is that the three things a write must never skip are
+// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
+// row-level security alone, and the event that announces the change — and a
+// second spelling of them in an application is a spelling that can drift.
+// Authorization is not one of them: a route asks httpx, a seed run asks its
+// Authorizer, and neither answer belongs in this file.
+func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
+	}
+	return s.createRow(ctx, tx, e)
 }
 
 // UpdateRow patches the columns `values` names, of this Spec's own schema, and
@@ -256,15 +282,18 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
-	row, err := s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
-	if err != nil {
-		var zero T
-		return zero, err
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
 	}
-	return row, nil
+	return s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	if s.input != nil {
+		var none T
+		return none, problem.New(405, "Input-only resources have no writes")
+	}
 	return s.deleteRow(ctx, tx, id, "")
 }
 

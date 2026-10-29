@@ -64,7 +64,7 @@ func TestNoGrantTheRepairPrintsIsOneTheRunningInstallationStillHonours(t *testin
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		acme, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	})
 	if err != nil {
@@ -173,7 +173,7 @@ func TestNoGrantTheRepairPrintsIsOneTheRunningInstallationStillHonours(t *testin
 	// are needed: the surviving list accepted, and the printed one refused. A run
 	// that refused everything would satisfy the second alone.
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)

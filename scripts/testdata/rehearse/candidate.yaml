@@ -1,0 +1,29 @@
+# The candidate's own declaration, appended to the configuration
+# scripts/rehearse_migrations.sh writes for the release under test.
+#
+# app: — the declaration this release asks an installation for, written the way an
+# operator writes it: hosts, and no nats.app. That is the shape of a deployment that
+# has not taken a slug, and the migrate command of apps/platformkit always declares a
+# slug, here the empty one, so 000043 stamps each tenant with the empty slug rather
+# than leaving a NULL; the placement 000060 then finds nothing it may write and refuses
+# nothing, because a boot that named no app asserts nothing about whose anybody is. What
+# this step measures is exactly that upgrade: the release applying over an app-less
+# database of the previous release's size. An operator who names nats.app and app.hosts
+# gets the placement, and a tenant that declaration cannot account for gets the sentence
+# 000059 puts there, which names the tenant and writes nothing.
+#
+# Both hosts are named because both tenants exist: 000043 places a tenant only when
+# every host it holds is one the boot declares, so the second tenant the populated
+# fixture writes is carried by the second line and refused by its absence.
+app:
+  hosts:
+    - "rehearse.localhost"
+    - "rehearse-two.localhost"
+
+# webhook: — the composition of this release names webhook.Module, and that module
+# refuses to be composed without the key wrapping an endpoint signing secret, so the
+# candidate needs the line. The base revision is given none: that release's loader has
+# never heard of the key, and kit/config refuses a key it does not know. Thirty-two
+# bytes of this run, which no receiver anywhere verifies a delivery against.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"

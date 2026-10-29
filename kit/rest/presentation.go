@@ -28,6 +28,9 @@ func presentationFault(fields []crud.Field) string {
 		if bad := f.SketchFault(); bad != "" {
 			return bad
 		}
+		if err := entity.ValidateChoices(f); err != nil {
+			return fmt.Sprintf("field %q: %s", f.Name, err)
+		}
 		if !entity.ValidPresentation(f.Present) {
 			return fmt.Sprintf("field %q names presentation %q, which no screen renders", f.Name, f.Present)
 		}

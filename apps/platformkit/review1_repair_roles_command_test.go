@@ -43,7 +43,7 @@ func TestTheRepairCommandListsBeforeItRemoves(t *testing.T) {
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		acme, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestTheRepairCommandListsBeforeItRemoves(t *testing.T) {
 		out := map[string][]string{}
 		err := db.Run(httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn), conn,
 			func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				roles, e := c.auth.Roles(ctx, tx)
+				roles, e := c.testAuth().Roles(ctx, tx)
 				if e != nil {
 					return e
 				}

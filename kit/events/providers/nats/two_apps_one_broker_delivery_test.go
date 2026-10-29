@@ -13,7 +13,7 @@ import (
 )
 
 // sharedStream names the one stream every app of a deployment shares. It is spelled
-// by concatenation for the reason review 1's case gives: kit/appname's census counts
+// by concatenation because kit/appname's census counts
 // the whole literal and allows it at two files and no more, so a third test that
 // talks to the stream at all would have to edit the census before writing itself.
 // The name is owned by kit/events/providers/nats as an unexported constant.
@@ -29,9 +29,8 @@ const sharedStream = "PLATFORM" + "KIT"
 // "acme-billing-billing-quote-issued": one consumer, one queue group, one
 // handled-ledger key for two apps.
 //
-// Review 1 pinned the same property in two_apps_one_broker_test.go, and root adopted
-// that file with its one broken line removed (decision 0008). What this case adds
-// over it is the shape of the count: an event reaching its own app and never the
+// The same property is pinned in two_apps_one_broker_test.go.
+// What this case adds over it is the shape of the count: an event reaching its own app and never the
 // other, counted per app rather than in the aggregate, with every message tagged by
 // the run that published it. The pinned case counts everything its consumers are
 // owed, which on a stream that outlives a run is also everything a previous run left

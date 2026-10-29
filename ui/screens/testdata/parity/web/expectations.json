@@ -1,0 +1,215 @@
+{
+  "author": "Codex implementation; independent review pending",
+  "basis": "Accepted SPECIFY sections 3-6; literal HTML expectations",
+  "cases": {
+    "absent-hints": {
+      "heading": "Notes",
+      "columns": [
+        "Title",
+        "Created at"
+      ],
+      "sortLabels": [
+        "Id",
+        "Id",
+        "Title",
+        "Title",
+        "Created at",
+        "Created at"
+      ],
+      "sourceInputHash": "sha256:a4aff6f0f1ba3a0dd6bcfce986475b972132bd82addb2e9ff37241fd9ab25bca",
+      "sourceExpectedHash": "sha256:ac1d4614bf9518f50972b7632b7cd52de4ecf73c9611da7bafdd65a1531a92f6"
+    },
+    "blank-identity": {
+      "columns": [
+        "Title",
+        "Name"
+      ],
+      "sourceInputHash": "sha256:684bf83bfaf2ed72b140c65967ff523301a30c5e12047495c6b8b4dab31af152",
+      "sourceExpectedHash": "sha256:089a2027361023899bf1b203d09b688e538dd8e79f43220c02d907aaed29aa18"
+    },
+    "command-owned-create-fields": {
+      "columns": [
+        "Title",
+        "Status",
+        "Approved"
+      ],
+      "sourceInputHash": "sha256:5ab1ddf211c1a7671363ff28ea4a9e058dc69dcbeae340ae755bf334ae178f0b",
+      "sourceExpectedHash": "sha256:79de7d1fb8d94943b0bc8b293a78213acef725b7915064d7e9e3f5faa39376f1"
+    },
+    "commands-only": {
+      "columns": [],
+      "sourceInputHash": "sha256:49f8e9e7afb685304c3aed6b9b51d0f43bafedf83dd0d2bf652f238647fc9b5c",
+      "sourceExpectedHash": "sha256:260398a42d4988402d62990301e060d8057ef05899de2d43c985a60d2e0de248"
+    },
+    "deck-directions": {
+      "columns": [
+        "Title",
+        "Created at"
+      ],
+      "sortLabels": [
+        "Created at",
+        "Created at"
+      ],
+      "sourceInputHash": "sha256:7de45d4788f49fbbc5884dbc6653d2afd74e9bffad70235a78eef1b44852bcac",
+      "sourceExpectedHash": "sha256:b804b5c17e8dc6a19e251120d21151a72d458df1e1306abc524f61555e5d6d71"
+    },
+    "empty-declarations": {
+      "columns": [
+        "Title",
+        "Note"
+      ],
+      "sourceInputHash": "sha256:d98541bb54280035af4b0ba52e0b27dedbe5ff7e7a78e4d2bad660564809772d",
+      "sourceExpectedHash": "sha256:789ed1bae1a0f6e3ee3a72b275ac04dd012958b55be73938e48abc53b7e4d524"
+    },
+    "en-task": {
+      "heading": "Tasks",
+      "columns": [
+        "Title",
+        "Done",
+        "Created at"
+      ],
+      "sourceInputHash": "sha256:f01bf1831149ddb6171516f1997929eafd1682afd038d52f417c676cb3712ba9",
+      "sourceExpectedHash": "sha256:b46eced8eaeb4663e8d96c5a26ee8862a58d39fc7d8ebdbe4174a099dd9695f1"
+    },
+    "enum-fallbacks": {
+      "columns": [
+        "Title",
+        "Status"
+      ],
+      "overview": [
+        "Status"
+      ],
+      "sourceInputHash": "sha256:fd1a2679be170861cc90f54485bd679ec6036931f7f5b3182c808ca9ab51cb26",
+      "sourceExpectedHash": "sha256:09f33e87b181f655095392a8cfab2c1a13cd97dc5f85f5b87c98cc38bf9f65d0",
+      "probe": {
+        "id": "enum-probe",
+        "title": "Enum",
+        "status": "archived"
+      },
+      "readings": {
+        "status": "archived"
+      },
+      "tones": {
+        "status": "neutral"
+      }
+    },
+    "hidden-fields": {
+      "columns": [
+        "Title"
+      ],
+      "information": [
+        "Notes"
+      ],
+      "sourceInputHash": "sha256:742cefda6306cf0f233e95a7b1c1ee2f2301410ae99e1e8d26ac794ce44f7942",
+      "sourceExpectedHash": "sha256:28f2882d27b213a47779cba5fa64cb581bd489294900cf57a69d8bfe69a29e5f",
+      "probe": {
+        "id": "hidden-probe",
+        "title": "Visible title",
+        "notes": "Visible notes",
+        "secret": "SECRET_SENTINEL",
+        "code": "CODE_SENTINEL"
+      },
+      "absent": [
+        "SECRET_SENTINEL",
+        "CODE_SENTINEL"
+      ]
+    },
+    "malformed-hint": {
+      "heading": "Things",
+      "columns": [
+        "Status"
+      ],
+      "sourceInputHash": "sha256:2208aedbc6da31c3be4a40796ea4d0d4693687e8df9eb3b1665508058aef6978",
+      "sourceExpectedHash": "sha256:4f18ff137fb225a81c1314a34c308461c2c9e6ac9541ec7f6054534cd95091c4",
+      "probe": {
+        "id": "malformed-probe",
+        "status": "a"
+      },
+      "readings": {
+        "status": "A"
+      },
+      "tones": {
+        "status": "neutral"
+      }
+    },
+    "null-and-false": {
+      "columns": [
+        "Title",
+        "Active",
+        "Count"
+      ],
+      "sourceInputHash": "sha256:e094306e779c8163ce4cf5ff6a7adcee368fd71c5f3d2831fe148e897ad5ec50",
+      "sourceExpectedHash": "sha256:7961d8443977f7cc1af823543e82d89efca26a9abfe61fba6f470626f170d047"
+    },
+    "pictures-cover-thumbnail": {
+      "columns": [
+        "Title",
+        "Photo",
+        "Side"
+      ],
+      "information": [
+        "Side"
+      ],
+      "sourceInputHash": "sha256:8fdd679c783d69024cf8b51acd3453c988f3e41ca4c9176f7ba11f5e9d32b051",
+      "sourceExpectedHash": "sha256:d491c7f599bf1d44149dcab131b8d66c8c2adc1c4276e68ebfeaf11ea8b96b84",
+      "probe": {
+        "id": "picture-probe",
+        "title": "Picture probe",
+        "photo": "c1.cGhvdG8",
+        "side": "c1.c2lkZQ"
+      },
+      "images": [
+        "/composed/c1.cGhvdG8",
+        "/composed/c1.c2lkZQ"
+      ]
+    },
+    "plural-mass-noun": {
+      "heading": "Content",
+      "columns": [
+        "Title"
+      ],
+      "empty": "No content yet.",
+      "sourceInputHash": "sha256:3dcacda78d8dfc7d656527d9e914dcdf3b24d414187fdc9c9542045c6a404d07",
+      "sourceExpectedHash": "sha256:137a5c1a4bbb64f1ea66aa09097376452b3c8156407369ebeebf467af8881630",
+      "counts": [
+        "1 content",
+        "2 content"
+      ]
+    },
+    "pt-task": {
+      "heading": "Tarefas",
+      "columns": [
+        "Title",
+        "Done",
+        "Created at"
+      ],
+      "sourceInputHash": "sha256:32a96d60eab88f2dc7bca6d613a0295337b4e84647a20ff2100d98adcc8ada04",
+      "sourceExpectedHash": "sha256:4dc0d9ea27c322c8f48da553d1bc2062f467784e0815cc5e79281ed00c20aa31",
+      "probe": {
+        "title": "",
+        "done": false
+      },
+      "readings": {
+        "done": "Não"
+      },
+      "emptyTitle": "(sem título)"
+    },
+    "read-only-resource": {
+      "columns": [
+        "Title"
+      ],
+      "sourceInputHash": "sha256:027e651d127a97d3c68c8da441f0ed250d27e7dc81d851635c0c2bb00101580c",
+      "sourceExpectedHash": "sha256:e5c5757f2a656bbdad668040da93f8b3dc9adc08310512f47af42803f7288a49"
+    },
+    "singleton-update-surface": {
+      "columns": [],
+      "sourceInputHash": "sha256:d0e9a9ae3fceb6a7da0c7420bc32948458eeaa882efb1fd37e41f3919adc8399",
+      "sourceExpectedHash": "sha256:218e6d8ab9685441db440cfc2100f774c630aaa90b77a8b0d88cd55419ef6b82"
+    },
+    "singleton": {
+      "columns": [],
+      "sourceInputHash": "sha256:050ccb3d0865137cd1ae0dbb7531701a748e2faa10bc1a0bbb0b3f7cdafab764",
+      "sourceExpectedHash": "sha256:8f5e4113913286ed5b1041b83018b123eb6408521408d7cce85c86147453b43b"
+    }
+  }
+}

@@ -50,7 +50,7 @@ func ValidCRUD(verb string) bool {
 // which is ReadAuth's and WriteAuth's question, and answered by Readable,
 // Writable and CommandsFor.
 func (r Resource) Offers(c CRUD) bool {
-	if r.CommandsOnly {
+	if r.CommandsOnly || r.InputRun != nil {
 		return false
 	}
 	if len(r.Operations) == 0 {
@@ -69,7 +69,7 @@ func (r Resource) Offers(c CRUD) bool {
 // entry that hides no verb prints no list of them. A CommandsOnly resource is
 // the one empty, non-nil answer: it hides all five.
 func (r Resource) OperationWords() []string {
-	if r.CommandsOnly {
+	if r.CommandsOnly || r.InputRun != nil {
 		return []string{}
 	}
 	if len(r.Operations) == 0 {

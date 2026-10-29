@@ -54,13 +54,273 @@
           "name": "tags",
           "type": "list",
           "elem": "string"
-        },
-        {
-          "name": "drawing",
-          "type": "sketch"
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": false,
+                "interactions": []
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "publish",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "at"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "publish"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "archive",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "archive"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -69,7 +329,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -95,8 +354,7 @@
             "status",
             "rank",
             "pinned",
-            "tags",
-            "drawing"
+            "tags"
           ],
           "overview": [],
           "information": [
@@ -106,8 +364,7 @@
             "status",
             "rank",
             "pinned",
-            "tags",
-            "drawing"
+            "tags"
           ],
           "sections": [],
           "create": [
@@ -115,20 +372,19 @@
             "body",
             "rank",
             "pinned",
-            "tags",
-            "drawing"
+            "tags"
           ],
           "update": [
             "title",
             "body",
             "rank",
             "pinned",
-            "tags",
-            "drawing"
+            "tags"
           ]
         },
         "fields": [
           {
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -146,14 +402,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -175,13 +429,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -203,13 +456,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -227,14 +479,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -252,14 +502,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -277,27 +525,29 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -315,14 +565,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -340,14 +588,12 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -365,37 +611,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
-          },
-          {
-            "name": "drawing",
-            "label": "Drawing",
-            "help": "",
-            "section": "",
-            "onList": true,
-            "onRecord": true,
-            "editable": {
-              "create": true,
-              "update": true
-            },
-            "control": "sketch",
-            "kind": "sketch",
-            "reading": {
-              "format": "",
-              "missing": "—",
-              "true": "",
-              "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
-            },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -505,12 +723,16 @@
               "kind": "enum",
               "values": [
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "open",
                   "label": "Open",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "done",
                   "label": "Done",
                   "tone": "neutral",
@@ -524,12 +746,16 @@
               "kind": "bool",
               "values": [
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "true",
                   "label": "Yes",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "false",
                   "label": "No",
                   "tone": "neutral",
@@ -541,29 +767,51 @@
         },
         "commands": [
           {
+            "fields": [
+              {
+                "figure": null,
+                "name": "at",
+                "label": "At",
+                "help": "When it goes out; now if left empty",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "text",
+                "kind": "text",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": []
+              }
+            ],
             "verb": "publish",
             "label": "Publish a note",
             "visible": true,
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
+            "fields": [],
             "verb": "archive",
             "label": "Archive every resolved note",
             "visible": true,
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },
@@ -578,10 +826,6 @@
           "summary": "Publish a note",
           "description": "Makes the note visible. Publishing a published note changes nothing.",
           "fields": [
-            {
-              "name": "drawing",
-              "type": "sketch"
-            },
             {
               "name": "at",
               "type": "string",
@@ -653,6 +897,234 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -661,7 +1133,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -719,6 +1190,7 @@
         },
         "fields": [
           {
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -736,14 +1208,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -765,13 +1235,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -793,13 +1262,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -817,14 +1285,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -842,14 +1308,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -867,27 +1331,29 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -905,14 +1371,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -930,14 +1394,12 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -955,12 +1417,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -1070,12 +1529,16 @@
               "kind": "enum",
               "values": [
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "open",
                   "label": "Open",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "done",
                   "label": "Done",
                   "tone": "neutral",
@@ -1089,12 +1552,16 @@
               "kind": "bool",
               "values": [
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "true",
                   "label": "Yes",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "group": "",
+                  "noPreference": false,
                   "value": "false",
                   "label": "No",
                   "tone": "neutral",
@@ -1105,9 +1572,7 @@
           ]
         },
         "commands": [],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },
@@ -1170,6 +1635,116 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -1178,7 +1753,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -1221,6 +1795,7 @@
         },
         "fields": [
           {
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -1238,14 +1813,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -1267,13 +1840,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -1295,13 +1867,12 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -1319,14 +1890,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -1344,14 +1913,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -1369,27 +1936,29 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -1407,14 +1976,12 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -1432,14 +1999,12 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -1457,12 +2022,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -1471,9 +2033,7 @@
           "filters": []
         },
         "commands": [],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },

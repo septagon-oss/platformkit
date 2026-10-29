@@ -461,94 +461,202 @@
     ],
     "translation": "Merge by hand"
   },
-  "forms.sketch.empty": {
+  "forms.richtext.bold.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "No drawing."
+    "translation": "Bold (%[1]s)"
   },
-  "forms.sketch.unavailable": {
+  "forms.richtext.italic.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Drawing unavailable."
+    "translation": "Italic (%[1]s)"
   },
-  "forms.sketch.help": {
+  "forms.richtext.link.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Draw with a pointer, or use arrow keys to move, Shift for fine steps, Space or Enter to start and finish, and Escape to cancel."
+    "translation": "Link (%[1]s)"
   },
-  "forms.sketch.required": {
+  "forms.richtext.quote.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Add a drawing before continuing."
+    "translation": "Quote (%[1]s)"
   },
-  "forms.sketch.fallback": {
+  "forms.richtext.code.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Drawing needs JavaScript. Your saved drawing will be kept."
+    "translation": "Inline code (%[1]s)"
   },
-  "forms.sketch.undo": {
+  "forms.richtext.undo.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Undo"
+    "translation": "Undo (%[1]s)"
   },
-  "forms.sketch.clear": {
+  "forms.richtext.redo.name": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/richtext.go"
     ],
-    "translation": "Clear"
+    "translation": "Redo (%[1]s)"
   },
-  "forms.sketch.started": {
+  "forms.field.choose": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/control.go"
     ],
-    "translation": "Stroke started."
+    "translation": "Choose a %[1]s"
   },
-  "forms.sketch.finished": {
+  "forms.field.note.immutable": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/control.go"
     ],
-    "translation": "Stroke added."
+    "translation": "Changed by a command of its own, not by this form."
   },
-  "forms.sketch.canceled": {
+  "forms.field.note.entityPicker": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/control.go"
     ],
-    "translation": "Stroke canceled."
+    "translation": "The identifier of the related record. There is no picker for it yet."
   },
-  "forms.sketch.undone": {
+  "forms.field.note.list": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/control.go"
     ],
-    "translation": "Last change undone."
+    "translation": "Comma separated."
   },
-  "forms.sketch.cleared": {
+  "forms.form.fieldError": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/forms.go"
     ],
-    "translation": "Drawing cleared."
+    "translation": "%[1]s: %[2]s"
   },
-  "forms.sketch.stroke-limit": {
+  "forms.form.fieldsToCorrect": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/forms.go"
     ],
-    "translation": "A drawing can contain at most 400 strokes. Undo or clear some strokes and try again."
+    "translation": "Fields to correct"
   },
-  "forms.sketch.point-limit": {
+  "forms.form.cancel": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/forms.go"
     ],
-    "translation": "A drawing can contain at most 20,000 points. Undo or clear some strokes and try again."
+    "translation": "Cancel"
   },
-  "forms.sketch.time-limit": {
+  "forms.form.submit": {
     "references": [
-      "ui/forms/sketch.go"
+      "ui/forms/forms.go"
     ],
-    "translation": "Use elapsed milliseconds between 0 and 9007199254740991."
+    "translation": "Save"
+  },
+  "forms.form.failureTitle": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "That could not be saved"
+  },
+  "forms.step.progress": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Step %d of %d"
+  },
+  "forms.step.back": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Back"
+  },
+  "forms.step.cancel": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Cancel"
+  },
+  "forms.step.correct": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Check your answers"
+  },
+  "forms.step.details": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Details"
+  },
+  "forms.step.restart": {
+    "references": [
+      "ui/screens/form_steps.go"
+    ],
+    "translation": "Start again"
+  },
+  "forms.choice.order": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "New choices in this form are applied in list order; the oldest are replaced."
+  },
+  "forms.choice.exclusive": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "No preference clears the other choices on submit. Uncheck it to choose others."
+  },
+  "forms.choice.search": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Search choices"
+  },
+  "forms.choice.find": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Use your browser’s find function to find a choice."
+  },
+  "forms.choice.unavailable": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Unavailable choice"
+  },
+  "forms.choice.clear": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Clear selection"
+  },
+  "forms.choice.selected": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "selected"
+  },
+  "forms.choice.rendered": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Last rendered selection"
+  },
+  "forms.choice.removed": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Removed"
+  },
+  "forms.choice.matches": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "matching choices"
+  },
+  "forms.choice.noResults": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "No matching choices"
   }
 }

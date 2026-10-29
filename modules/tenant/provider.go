@@ -16,31 +16,20 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
-// Module is the control plane as the resolver sees it, for an application that
-// names it in Use: `Use(tenant.Module)`.
-//
-// Four contracts come out of it, and three of them are what other modules
-// already had to be handed across a composition file.
-//
-// Service is the control plane itself — kit/httpx resolves every request's host
-// through it, before the request is about anything. jobs.TenantLister is the
-// same service seen by a periodic sweep: five modules used to be handed
-// `tenant.Active{Service: tenants}` by the composition, and the ceremony left
-// when the module said what it hands out. HostLookup answers a mailed link's
-// host, so one customer's people are never sent to another's front door.
-// authcontracts.OIDCProviders answers which issuer the tenant this request's
-// Host resolved signs in against, per request, from the transaction the header
-// chose.
-//
-// What it cannot decide is who seeds a new tenant (every composed hook, in
-// order), who its first administrator is (the invitation port, which the user
-// module answers) and which languages a locale may be set to (the composition
-// read the files; this module names no tag).
+// Module declares the control plane, host resolution and identity-provider
+// readers over one service. Hooks, invitations and supported languages are composed inputs.
 var Module = pkit.NewModule("tenant", wire,
 	pkit.Needs[tenantcontracts.Inviter](),
 	pkit.Needs[[]tenantcontracts.Hook](),
 	pkit.Optional[tenantcontracts.Languages](),
 	pkit.Provides[tenantcontracts.Service](),
+	pkit.Provides[tenantcontracts.HostLookup](),
+	pkit.Provides[tenantcontracts.OIDCReader](),
+	pkit.Provides[tenantcontracts.SAMLReader](),
+	pkit.Provides[tenantcontracts.Lister](),
+	pkit.Provides[tenantcontracts.Bootstrapper](),
+	pkit.Provides[tenantcontracts.LocaleSetter](),
+
 	// Which host is which tenant is this module's rows and nobody else's: the
 	// kernel asks the question before a request is about anything, and the
 	// answer used to be put by a module apps/platformkit wrote for the purpose.
@@ -75,8 +64,15 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		App:       slug,
 	})
 	pkit.Put(w, svc)
+	pkit.Put[tenantcontracts.HostLookup](w, svc)
+	pkit.Put[tenantcontracts.OIDCReader](w, svc)
+	pkit.Put[tenantcontracts.SAMLReader](w, svc)
+	pkit.Put[tenantcontracts.Lister](w, svc)
+	pkit.Put[tenantcontracts.Bootstrapper](w, svc)
+	pkit.Put[tenantcontracts.LocaleSetter](w, svc)
+
 	pkit.Put[httpx.TenantLoader](w, svc)
-	pkit.Put[jobs.TenantLister](w, tenantcontracts.Active{Service: svc})
+	pkit.Put[jobs.TenantLister](w, tenantcontracts.ActiveTenants{Tenants: svc})
 	hosts := tenantHosts{tenants: svc, published: publishedPort(server.PublicHost)}
 	pkit.Put[notificationcontracts.HostLookup](w, hosts)
 	pkit.Put[authcontracts.OIDCProviders](w, tenantProviders{tenants: svc})
@@ -97,7 +93,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 // published is the port the installation is reached at, read once out of
 // server.public_host, and "" when that address names none: see publishedPort.
 type tenantHosts struct {
-	tenants   tenantcontracts.Service
+	tenants   tenantcontracts.HostLister
 	published string
 }
 
@@ -157,7 +153,7 @@ func publishedPort(declared string) string {
 // It is here rather than in the composition for the same reason the host lookup
 // is: the read is this module's own — OIDCOf is a method on its Service — and
 // auth names only the port it declares.
-type tenantProviders struct{ tenants tenantcontracts.Service }
+type tenantProviders struct{ tenants tenantcontracts.OIDCReader }
 
 func (p tenantProviders) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*authcontracts.OIDCProvider, bool, error) {
 	settings, ok, err := p.tenants.OIDCOf(ctx, tx)
@@ -178,7 +174,7 @@ func (p tenantProviders) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*
 // It is here rather than in the composition for tenantProviders' reason: the read is
 // this module's own — SAMLSettingsOf is a method on its Service — and auth names only
 // the port it declares.
-type samlProviders struct{ tenants tenantcontracts.Service }
+type samlProviders struct{ tenants tenantcontracts.SAMLReader }
 
 func (p samlProviders) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*authcontracts.SAMLProvider, bool, error) {
 	settings, ok, err := p.tenants.SAMLSettingsOf(ctx, tx)

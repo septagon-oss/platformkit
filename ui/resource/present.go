@@ -1,28 +1,7 @@
 package resource
 
-// present.go composes the read axis: a field says what its value *is* with
-// `ui:"present:…"` and this package decides what that looks like, through the
-// components that own the composition. The vocabulary is kit/entity's, the same
-// way the write axis's is, and for the same documented reason — a name no
-// renderer honours has to refuse to mount rather than print the value and look
-// like it worked.
-//
-// One composition existed until the pictures arrived, `person`. Every other
-// field on every screen in this repository renders exactly as it did before this
-// file existed, because returning nil from the cell slot is how the table is told
-// "the plain value" — see components.TableSlots.Cell. A picture field returns nil
-// too whenever there is no picture to draw: no value, no address for one, or a
-// column kept off the row.
-//
-// A picture is fetched, never embedded: the address comes from Options.Pictures
-// and the bytes come from the declared delivery door after its access checks.
-// The cell renders no inline document and makes no source access decision.
-//
-// What is *not* here: the detail screen. components.DetailItem.Value is a string,
-// so a description list cannot carry a disc or a photo, and changing it is a
-// change to an exported component contract that moves the exported vocabulary — a
-// decision for whoever needs a person's face on a record page, not a side effect
-// of this one.
+// Resolved media kinds select existing components. Delivery templates come
+// from the adapter; picture bytes and access checks remain at their declared door.
 
 import (
 	"strings"
@@ -35,24 +14,22 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
-// compose is the read axis answering one cell. It returns nil when the field names
-// nothing, which is how the table is told "draw the value yourself" — see
-// components.TableSlots.Cell — and every field on every screen that was written
-// before this file existed takes that path.
-//
-// `primary` is whether this column is the row's way into the record. It changes the
-// answer rather than being ignored by it: the identity column is already a link, and
-// a cell that grew a disc while losing its link would have quietly taken the mouse
-// away from the person using the screen. So the disc *is* the way in, named after the
-// person, and the name beside it stays plain text — said once, followed once.
-//
-// `name` is the row's own name, which is what a picture that is the row's only way
-// in is called by. Beside the name it is decorative: a picture read next to the words
-// it illustrates is the same information twice, and a list of thirty rows is thirty
-// repetitions of it.
-func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name string, words Words) g.Node {
+// compose renders a supplied media kind, returning nil for a plain value.
+// primary preserves record navigation; name labels a picture used as its link.
+// at is the list's record address — empty for a resource that mounted no record
+// route, which leaves every primary cell drawing its value unlinked.
+func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name, missing string) g.Node {
 	if f.Type == entity.TypeSketch {
-		return sketchReading(row.Cells[f.Name], words.FieldLabel(f), "thumbnail", words.text)
+		return sketchReading(row.Cells[f.Name], name, "thumbnail", o.Words(entity.Schema{Fields: []entity.Field{f}}).text)
+	}
+	// A declared choice answers through its resolved policy, which owns the
+	// appearance; a plain value leaves nil for the table to draw itself.
+	if f.Choices != nil {
+		node := (Resource{Schema: entity.Schema{Fields: []entity.Field{f}}}).choiceRead(o, f, row.Cells[f.Name])
+		if href := recordLink(at, row.ID); primary && href != "" {
+			return h.A(h.Href(href), node)
+		}
+		return node
 	}
 	if f.Present == "" {
 		return nil
@@ -61,7 +38,7 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 	// An empty field is a field nobody filled in, and every other empty field on
 	// this screen says so with a dash. A placeholder picture there would be the
 	// screen claiming it knows what is missing.
-	blank := text == "" || text == "—"
+	blank := text == ""
 	switch f.Present {
 	case "person":
 		if blank {
@@ -69,10 +46,10 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 		}
 		person := components.AvatarProps{Name: text, Label: text, Size: "sm"}
 		if primary {
-			person.Href = at + "/" + row.ID
+			person.Href = recordLink(at, row.ID)
 		}
 		return components.Avatar(person)
-	case "image", "images", "avatar":
+	case "picture", "image", "images", "avatar":
 		id := text
 		if f.Present == "images" {
 			id = firstID(text)
@@ -84,7 +61,7 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 				src = strings.ReplaceAll(o.ComposedSource, "{reference}", id)
 			}
 			if blank || src == "" {
-				return g.Text("—")
+				return g.Text(missing)
 			}
 		}
 		if blank || id == "" || src == "" {
@@ -92,7 +69,7 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 		}
 		href := ""
 		if primary {
-			href = at + "/" + row.ID
+			href = recordLink(at, row.ID)
 		}
 		if f.Present == "avatar" {
 			// A person's picture is the same disc `person` draws, with the prop it
@@ -127,6 +104,16 @@ func (o Options) pictureSource(id string) string {
 		return ""
 	}
 	return strings.ReplaceAll(o.PictureSource, "{id}", id)
+}
+
+// recordLink is one row's record page: the list's record address and the row's
+// id, or empty for a resource with no record route. Every primary cell below
+// draws the plain value rather than a link into the 404 of a place nothing serves.
+func recordLink(at, id string) string {
+	if at == "" {
+		return ""
+	}
+	return at + "/" + id
 }
 
 // firstID is the first id of a `present:images` cell, which is what a row draws: a

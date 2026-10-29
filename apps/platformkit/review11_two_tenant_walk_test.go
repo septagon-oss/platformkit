@@ -27,7 +27,7 @@ func TestTheRepairWalksActiveTenantsAndWritesOnlyWhatItsSeederWrote(t *testing.T
 	acme := bootstrappedTenant(t, c, conn)
 	var globex tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		created, e := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		created, e := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "globex", Name: "Globex", Host: globexHost,
 		})
 		if e == nil {

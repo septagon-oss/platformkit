@@ -26,7 +26,7 @@ func TestSeedRefusesAFileVisibilityChangeWithoutRowsKeysOrEvents(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	inTenant := func(fn func(context.Context, db.Tx[db.Tenant]) error) error {
 		return dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+			tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
 			}
@@ -47,14 +47,14 @@ records:
 				"seed/starter/assets/welcome.png": {Data: asset},
 			},
 			Root: "seed", Clock: seedClock{},
-			Writers: []seed.Writer{fileSeeder{svc: c.files}}, Authorize: seedGrants{auth: c.auth},
+			Writers: []seed.Writer{fileSeeder{svc: c.files}}, Authorize: seedGrants{auth: c.testAuth()},
 		})
 		if err != nil {
 			return seed.Plan{}, err
 		}
 		var plan seed.Plan
 		err = inTenant(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err := seedActor(ctx, c.users, tx, adminEmail)
+			ctx, err := seedActor(ctx, c.testUsers(), tx, adminEmail)
 			if err != nil {
 				return err
 			}

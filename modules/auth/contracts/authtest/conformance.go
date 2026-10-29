@@ -47,6 +47,12 @@ type Fixture struct {
 	// Sessions reports how many sessions this user has, which is how a case
 	// says "and the others ended" without knowing how they are stored.
 	Sessions func(user uuid.UUID) int
+	// Delivering moves this case's installation between a sender that attempts the
+	// message and one that only records it — false is the deployment with no mail
+	// host, where a door that would have to promise a person an email refuses.
+	// A harness wires it to whatever its own carrier answers; a case that never
+	// calls it leaves the installation as it found it.
+	Delivering func(delivers bool)
 }
 
 // Declared is the permission catalogue the cases hand to SetRole: two ordinary
@@ -95,6 +101,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 		"a session opened for somebody already recognised is a session":                        openRecognisedSession,
 		"changing a password needs the one in force, and ends the other sessions":              changePassword,
 		"asking to reset a password does the same work whoever asks":                           requestPasswordReset,
+		"where no mail is delivered a reset is refused and nothing is written":                 refuseResetWithoutMail,
 		"the worker looks the address up, and mails a link only to somebody who is here":       mailPasswordReset,
 		"one link per person per interval, however often somebody asks":                        rateLimitPasswordLinks,
 		"the link sets a password once, ends every session it found and signs this browser in": resetPassword,

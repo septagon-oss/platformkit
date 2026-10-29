@@ -41,6 +41,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -167,6 +168,12 @@ func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config
 		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
 		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
+	// A case that asked for the installation with a mail host gets one, pointed at
+	// the relay on loopback; every other case gets the recording carrier it always
+	// got, which is what a deployment that names no host actually runs.
+	if relay, ok := mailing.Load(t); ok {
+		body += mailSection(relay.(*gomailtest.Relay))
+	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
 	}
@@ -310,7 +317,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -719,8 +726,8 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
-		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
-		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
+		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
 		// The installation is where the control plane is served, and this is the
 		// composition's own answer to that: the same value boot passes.
 		Installation: cfg.Server.InstallationHost,
@@ -847,8 +854,8 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
-		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
-		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
+		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
 		Installation: cfg.Server.InstallationHost,
 	})
 	var entries []module.NavEntry
@@ -888,7 +895,7 @@ func TestWebPoolLeavesRoomForControlPlaneTransactions(t *testing.T) {
 	cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns = new(2), new(0)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transports: transports(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -919,12 +926,12 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 	// A second tenant, and one overdue task in each.
 	var tenants []tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		if _, err := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		if _, err := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "globex", Name: "Globex", Host: globexHost,
 		}); err != nil {
 			return err
 		}
-		all, err := c.tenants.List(ctx, tx)
+		all, err := c.testTenants().List(ctx, tx)
 		for _, one := range all {
 			tenants = append(tenants, one.Tenancy())
 		}
@@ -951,10 +958,10 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
 	mods := []module.Module{task.New(task.Deps{
-		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
+		Tenants: tenantcontracts.Active{Service: c.testTenants()}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Worker, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -1079,7 +1086,7 @@ func notify(t *testing.T, cfg config.Config, c composition, recipient uuid.UUID)
 
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	})
 	if err != nil {
@@ -1167,7 +1174,7 @@ func provision(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string
 	defer conn.Close()
 	c := compose(cfg)
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		_, err := c.users.Provision(ctx, tx, tenantID, email, "", adminPass, []string{authcontracts.RoleAdmin})
+		_, err := c.testUsers().Provision(ctx, tx, tenantID, email, "", adminPass, []string{authcontracts.RoleAdmin})
 		return err
 	})
 	if err != nil {
@@ -1717,7 +1724,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -1962,6 +1969,17 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
 // would fail on CREATE TABLE tasks — and the applied_at comparison proves the
 // rows were re-owned rather than replaced.
+// fileKey is one shipped migration's place in the ledger: the owner that ships it
+// and the version it names, which is exactly schema_migrations' PRIMARY KEY. It is
+// the pair rather than the version alone because the composition now holds two
+// owners at one version — modules/auth's 000035_passkeys beside modules/audit's
+// 000035_audit_context — and a count keyed on the version folds those two files
+// into one key, so a release that lost either row would still match the file count.
+// The query below renders the same pair in SQL.
+func fileKey(owner string, version int64) string {
+	return owner + "/" + strconv.FormatInt(version, 10)
+}
+
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
 	path, cfg := configureFresh(t)
 	sources := app.MigrationSources(compose(cfg).modules)
@@ -1975,8 +1993,8 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		t.Fatalf("the release before this one: %v", err)
 	}
 	admin := dbtest.Open(t, cfg.Database.MigrateURL)
-	before := map[int64]string{}
-	ledger := func(into map[int64]string, query string) {
+	before := map[string]string{}
+	ledger := func(into map[string]string, query string) {
 		t.Helper()
 		rows, err := admin.QueryContext(t.Context(), query)
 		if err != nil {
@@ -1984,18 +2002,18 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var version int64
+			var file string
 			var value string
-			if err := rows.Scan(&version, &value); err != nil {
+			if err := rows.Scan(&file, &value); err != nil {
 				t.Fatalf("read the ledger: %v", err)
 			}
-			into[version] = value
+			into[file] = value
 		}
 		if err := rows.Err(); err != nil {
 			t.Fatalf("read the ledger: %v", err)
 		}
 	}
-	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	ledger(before, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so the files the release holds have to
@@ -2014,7 +2032,12 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// Every version is one file across the composition, kernel and modules alike.
+	// Every version was one file across the composition, kernel and modules alike,
+	// until main took modules/auth's passkeys at 35 under modules/audit's
+	// 000035_audit_context: two owners naming one version, which kit/db allows — it
+	// refuses a repeated version inside one source, and the ledger's PRIMARY KEY is
+	// (owner, version) — and which is why the counts below ask the ledger for owner
+	// and version together, so that two files at one version are two rows to count.
 	// A new file continues past the highest number anywhere in the composition,
 	// whichever owner ships it: modules/file's retention hold and erasure proof is
 	// 000040 for that reason, and not the 30 it was written as when no owner held
@@ -2048,29 +2071,38 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// '*.up.sql' | wc -l` answers it, and the two counts that matter are asserted
 	// below rather than restated here — the old layout's ledger against the files at
 	// or beneath the adopted ceiling, and the upgraded ledger against every file the
-	// release ships. What the census used to enumerate is the part worth keeping: the
-	// release repeats six numbers, each above the ceiling so the flattening below
-	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
-	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
-	// field copy, 44 is modules/file's image dimensions beside modules/notification's
-	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
-	// beside that module's delivery log, 50 is the kernel's tenant demo marker beside
-	// modules/task's task_revision, and 54 is modules/file's image variants beside
-	// modules/site's default accent. Every file above the ceiling continues past the
-	// highest number anywhere in the composition at the time it was written, which is
-	// the rule this fixture exists to enforce — and it is a rule with teeth rather
-	// than tidiness, because
-	// kit/db reads a repeated version only inside one owner: the kernel's
-	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
-	// under two owners, and the only thing that says so is the one map below that
-	// counts every shipped file under one key. T-0231's four are this rule's newest
+	// release ships. What the census used to enumerate is the part worth keeping, and
+	// it is a rule rather than a list: every version more than one owner holds sits
+	// above the adopted ceiling, so the flattened fixture below never meets one. The
+	// repeats are worth naming for what they are — 35 is modules/audit's audit_context
+	// beside modules/auth's passkeys, 44 is modules/file's image dimensions beside
+	// modules/notification's mail ledger and modules/webhook's endpoint table, and 54
+	// and 55 are this delivery's two delivery marks beside modules/file's variants and
+	// unused-since, modules/notification's channel and sender tables and modules/site's
+	// default accent. Which versions are repeated moves with every release; that they
+	// sit above the ceiling is what the fixture enforces. Every file above the ceiling
+	// continues past the highest number anywhere in the composition at the time it was
+	// written, which is the rule this fixture exists to enforce — and it is a rule with
+	// teeth rather than tidiness, because kit/db reads a repeated version only inside
+	// one owner: the kernel's 000034_outbox_request and a modules/auth file numbered 34
+	// apply side by side under two owners, and the only thing that says so is the map
+	// below, which counts every shipped file under its owner and its version together,
+	// exactly as schema_migrations keys them. T-0231's four are this rule's newest
 	// customer: they arrived at 000044, 000045, 000046 and 000047, main took 000046 for
 	// its own SAML provider columns in between, and the flattened fixture below reads
 	// one version as one row whatever the owner, so they are 000058, 000059, 000060 and
 	// 000061. modules/audit's 48 and 49 are the customer before them: the append-only
 	// trail and its retention marks were numbered 41 and 42 while the branch was open,
 	// and main took 41 for the kernel's own outbox baggage and 42 for modules/content's
-	// body characters underneath it.
+	// body characters underneath it. This delivery's two marks are the same event one
+	// step earlier: they stood at 000050 and 000051 while the branch was open, and the
+	// first merge of main took 50, 51 and 52 for the kernel's demo marker, seed keys and
+	// outbox attribution and 53 for modules/audit's copy into the trail underneath
+	// them, so the verification mark went to 000054 and the password-reset mark, the
+	// same column one table further along, to 000055. Both numbers were already held by
+	// another owner, which kit/db allows because its ledger key is (owner, version),
+	// and which the map below still counts as two rows because it keys that pair — but
+	// the modules/auth test reads the file by name, so a renumber moves that name too.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded six times: this fixture
@@ -2124,10 +2156,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		t.Fatalf("the migration behind the drain: %v", err)
 	}
 
-	owners := map[int64]string{}
-	ledger(owners, "SELECT version, owner FROM schema_migrations")
-	after := map[int64]string{}
-	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
+	owners := map[string]string{}
+	ledger(owners, "SELECT owner || '/' || version::text, owner FROM schema_migrations")
+	after := map[string]string{}
+	ledger(after, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The upgrade re-owns the old rows and applies the files that postdate them,
 	// so the ledger grows by exactly the new files and by nothing else: a fixture
 	// that re-ran an old file would be caught below by applied_at, and one that
@@ -2135,16 +2167,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 
 	for version, when := range before {
 		if after[version] != when {
-			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
+			t.Errorf("version %s was applied again: %s became %s", version, when, after[version])
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the files above the adopted
-	// ceiling have to be accounted for. Both maps below are keyed by version, so a
-	// version two owners hold is one key in each of them: the comparison is between
-	// the ledger and the sources the composition names, never against a count carried
-	// in this comment.
-	want := map[int64]string{}
+	// release ships is in the ledger under the owner that ships it, which is where the
+	// files above the adopted ceiling have to be accounted for. Both maps below are
+	// keyed by owner and version together, exactly as schema_migrations is, so a
+	// version two owners hold is two rows in each of them and the comparison is
+	// between the ledger and the sources the composition names, never against a count
+	// carried in this comment.
+	want := map[string]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -2155,21 +2188,21 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			if err != nil {
 				t.Fatalf("%s is not <version>_<name>.up.sql", entry.Name())
 			}
-			want[version] = source.Owner
+			want[fileKey(source.Owner, version)] = source.Owner
 		}
 	}
 	if len(owners) != len(want) {
 		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
-	for version, owner := range want {
-		if owners[version] != owner {
-			t.Errorf("version %d reads as %q, want %q", version, owners[version], owner)
+	for file, owner := range want {
+		if owners[file] != owner {
+			t.Errorf("file %s reads as %q, want %q", file, owners[file], owner)
 		}
 	}
 	// And the application built on that schema serves.
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 	admins := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -2190,7 +2223,7 @@ func TestPinnedAddresses(t *testing.T) {
 	install(t, path)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -2253,7 +2286,7 @@ func TestAWriteOfAResourceWrittenOnTheControlPlaneIsTurnedTowardsItsDoor(t *test
 	install(t, path)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 

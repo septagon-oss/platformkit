@@ -2,7 +2,6 @@ package resource
 
 import (
 	"encoding/json"
-	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
@@ -44,22 +43,10 @@ func drawingCell(f entity.Field, value any, text string) any {
 	return text
 }
 
-func detailValue(fields []entity.Field, words Words, row map[string]any, instants map[string]components.TimeText, item components.DetailItem) g.Node {
-	for _, f := range fields {
-		if f.Type == entity.TypeSketch && words.FieldLabel(f) == item.Label {
-			return sketchReading(row[f.Name], item.Label, "full", words.text)
-		}
-	}
-	if when, ok := instants[item.Label]; ok {
-		return timeElement(when)
-	}
-	return nil
-}
-
 func formModules(r Resource) []string {
 	modules := richtextModules(r)
-	for _, f := range readable(r.Schema.Fields) {
-		if f.Type == entity.TypeSketch && !slices.Contains(r.Immutable, f.Name) {
+	for _, f := range r.Schema.Fields {
+		if f.Type == entity.TypeSketch && (r.field(f.Name).Editable.Create || r.field(f.Name).Editable.Update) {
 			return append(modules, "js/sketch.js")
 		}
 	}

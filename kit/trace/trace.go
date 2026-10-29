@@ -1,20 +1,17 @@
-// Package trace carries the W3C Distributed Tracing context of a request
-// through the process that handled it and into the events it caused.
+// Package trace carries the W3C Distributed Tracing context of a request through
+// the process that handled it and into the events it caused.
 //
-// It is a carrier, not a tracer: there is no span collection, no exporter and
-// no sampling decision here, because kit/telemetry names that vocabulary and
-// kit/app installs the one provider (decision 0052 §3 item 6). What this package
-// fixes is the format and the one question an event can answer — which request
-// caused me — so the outbox row and the envelope carry a W3C context in a process
-// that installed no provider at all, and a collector has something to join to.
-// The id is the same identifier the log line carries as request_id and
-// the problem body carries as its instance, which is what makes the join real
-// today: an event's traceparent names the request that caused it in the terms
-// every log of that request already uses. Where a request's id cannot be a trace
-// id — an opaque handle a proxy chose — the trace is minted and the join runs the
-// other way, through the request id the row, the envelope and the log all carry.
-// Every accepted request leaves a trace either way; only work nobody asked for
-// carries none.
+// It is a carrier, not a tracer: no span collection, no exporter and no sampling
+// decision, because kit/telemetry names that vocabulary and kit/app installs the
+// one provider. What this package fixes is the format and the one question an
+// event can answer — which request caused me — so the outbox row and the envelope
+// carry a W3C context even in a process that installed no provider, and a
+// collector has something to join to.
+//
+// The id is the one the log line carries as request_id and the problem body
+// carries as its instance, which is what makes the join real today. Where a
+// request's id cannot be a trace id — an opaque handle a proxy chose — the trace
+// is minted and the join runs the other way, through that request id.
 package trace
 
 import (

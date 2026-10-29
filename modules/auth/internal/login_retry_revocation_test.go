@@ -23,7 +23,7 @@ func TestLoginRetryAfterRevocationNeverAnswersWithAnUnusableSession(t *testing.T
 		Idempotency: idempotency.Postgres(httpx.ConnFrom),
 		Log:         slog.New(slog.DiscardHandler),
 	})
-	internal.RegisterRoutes(surfacesOf(api), svc, internal.NewCookies(false))
+	internal.RegisterRoutes(surfacesOf(api), internal.RouteServices{Login: svc, Logout: svc, Identity: svc, ChangePassword: svc, ForgotPassword: svc, ResetPassword: svc, ListSessions: svc, RevokeSession: svc, RevokeAllSessions: svc, ListRoles: svc, SetRole: svc}, internal.NewCookies(false))
 	body := `{"email":"ada@acme.localhost","password":"` + authtest.Password + `"}`
 	key := func(r *http.Request) { r.Header.Set(httpx.IdempotencyKeyHeader, "revoked-login") }
 	first := call(t, router, http.MethodPost, "/api/v1/auth/login", body, key)

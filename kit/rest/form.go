@@ -51,7 +51,8 @@ type formRead struct {
 	// holds, and the form may carry the row's condition.
 	update bool
 	// arguments says the fields are a command's arguments. See CommandValues.
-	arguments bool
+	arguments    bool
+	markerRefuse []string
 }
 
 // UpdateValues reads an edit form, retaining submitted blank text, empty lists
@@ -60,8 +61,11 @@ type formRead struct {
 // under entity.RevisionCondition, and conditional turns it into the tag the write
 // is made against.
 func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[string]any, error) {
-	values, err := readForm(body, fields, formRead{update: true})
-	return Writable(values, immutable), err
+	values, err := readForm(body, fields, formRead{update: true, markerRefuse: immutable})
+	if err != nil {
+		return nil, err
+	}
+	return Writable(values, immutable), nil
 }
 
 func readForm(body []byte, fields []crud.Field, o formRead) (map[string]any, error) {
@@ -73,6 +77,9 @@ func readForm(body []byte, fields []crud.Field, o formRead) (map[string]any, err
 	// onto a refused name is refused and not merely left out of the lookup.
 	if name := foldedName(form, o.refuse); name != "" {
 		return nil, invalid(name, "belongs to a route of its own, not to this form")
+	}
+	if err := choiceMarkers(form, fields, append(slices.Clone(o.refuse), o.markerRefuse...)); err != nil {
+		return nil, err
 	}
 	out := map[string]any{}
 	for _, f := range fields {
@@ -113,6 +120,9 @@ func readForm(body []byte, fields []crud.Field, o formRead) (map[string]any, err
 }
 
 func readFormField(form url.Values, f crud.Field, o formRead, out map[string]any) error {
+	if f.Choices != nil {
+		return readChoice(form, f, o.update, out)
+	}
 	if f.Type == crud.TypeMap {
 		keyed, err := formMap(form, f)
 		if err != nil {

@@ -35,7 +35,7 @@ func TestSeedCommandRefusesADeactivatedOperator(t *testing.T) {
 	// A second operator with the administrator's own roles and a password, then
 	// deactivated: the hash and the roles stay on the row, the status does not.
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
@@ -45,12 +45,12 @@ func TestSeedCommandRefusesADeactivatedOperator(t *testing.T) {
 		}
 		// Provisioned the way the bootstrap provisions the first administrator:
 		// active, with a password and the administrator's own roles.
-		former, err := c.users.Provision(ctx, system, tenant.ID, formerOperatorEmail, "Former operator", formerOperatorPassword, admin)
+		former, err := c.testUsers().Provision(ctx, system, tenant.ID, formerOperatorEmail, "Former operator", formerOperatorPassword, admin)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			gone, err := c.users.Deactivate(ctx, tx, former.ID)
+			gone, err := c.testUsers().Deactivate(ctx, tx, former.ID)
 			if err != nil {
 				return err
 			}
@@ -75,7 +75,7 @@ func TestSeedCommandRefusesADeactivatedOperator(t *testing.T) {
 	}
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
@@ -96,12 +96,12 @@ func TestSeedCommandRefusesADeactivatedOperator(t *testing.T) {
 
 func deactivatedOperatorRoles(ctx context.Context, c composition, system db.Tx[db.System]) ([]string, error) {
 	var roles []string
-	tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+	tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 	if err != nil {
 		return nil, err
 	}
 	err = db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		admin, err := c.users.ByEmail(ctx, tx, adminEmail)
+		admin, err := c.testUsers().ByEmail(ctx, tx, adminEmail)
 		if err != nil {
 			return err
 		}

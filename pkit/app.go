@@ -482,28 +482,20 @@ func (a *App) Validate(d Deployment) error {
 	return err
 }
 
-// Explain reads the resolved composition, not the declared one, for one
-// named environment: the build order, who provides what to whom, the
-// contributions, the choices, the implementations the deployment picked, the
-// permissions and events each built module describes to the kernel, what each
-// module describes about itself (decision 0074 rule 4), and the roles the app
-// recorded. Routes and tenant hosts are the two parts of rule 4 this cannot say
-// yet: a manifest registers its routes through a function rather than listing
-// them, and the server that would mount them is not composed here.
+// Explain reads the resolved composition, not the declared one, for one named
+// environment: the build order, who provides what to whom, the contributions, the
+// choices, the implementations the deployment picked, what each module describes
+// to the kernel and about itself, and the roles the app recorded. Routes and
+// tenant hosts are the two parts of the rule it cannot say yet: a manifest
+// registers its routes through a function rather than listing them, and the
+// server that would mount them is not composed here.
 //
-// Every sentence about the wiring is this file's rendering of the Description
-// Describe hands back — one projection, two encodings — so the composition file
-// a client commits and the machine-readable view a tool reads cannot be settled
-// about different compositions. Two lines are the text's own, because the view
-// does not carry what they name: what a module `describes` to the environment is
-// an arbitrary Go value rather than a name, and the note about a contract nobody
-// needs asks what the built module actually put, which is a build output and not
-// a resolution decision.
-//
-// The order of the sentences is the text's too: the view groups a module's
-// declarations by kind, and the composition file keeps them in the order the
-// module wrote them, so the reading below walks the declarations and takes each
-// answer from the projection in the order the projection appended it.
+// Every sentence is this file's rendering of the Describe value — one projection,
+// two encodings — so the composition file a client commits and the
+// machine-readable view a tool reads cannot answer about different compositions.
+// Two lines are the text's own, because the view carries no name for what they
+// name. The order of the sentences is the text's too: the view groups
+// declarations by kind, so the text walks them in the order it appended them.
 func (a *App) Explain(d Deployment) (string, error) {
 	p, _, puts, err := a.compose(d)
 	if err != nil {

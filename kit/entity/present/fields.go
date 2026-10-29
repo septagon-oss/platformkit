@@ -1,6 +1,7 @@
 package present
 
 import (
+	"cmp"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -23,9 +24,19 @@ func fields(in Input) []ResolvedField {
 		if h.Reference != nil {
 			rf.Reference = &ResolvedReference{Resource: h.Reference.Resource}
 		}
+		resolveChoice(f, &rf)
 		out = append(out, rf)
 	}
 	return out
+}
+
+// ControlKind is the effective form widget for a declared field. Unknown
+// declarations are refused by the schema gate; scalar/list fallbacks use text.
+func ControlKind(f entity.Field) string {
+	if f.Widget == "" && (f.Type == entity.TypeText || f.Type == entity.TypeUUID) && len(f.Enum) == 0 {
+		return "text"
+	}
+	return cmp.Or(control(f), "text")
 }
 
 func control(f entity.Field) string {
@@ -35,6 +46,8 @@ func control(f entity.Field) string {
 	switch {
 	case f.Type == entity.TypeSketch:
 		return "sketch"
+	case f.Choices != nil:
+		return "chips"
 	case len(f.Enum) > 0:
 		return "select"
 	case f.Type == entity.TypeText:
@@ -59,13 +72,15 @@ var kinds = map[entity.FieldType]string{
 	entity.TypeSketch: "sketch", entity.TypeUUID: "text", entity.TypeList: "list", entity.TypeMap: "map", entity.TypePicture: "picture",
 }
 
-// kind is how a read draws the field: the declared presentation, else the
-// declared format, else the word for the type.
+// kind is how a read draws the field: the declared presentation, else the word
+// for a choice's selection, else the declared format, else the word for the type.
 func kind(f entity.Field) string {
 	h := f.Presentation
 	switch {
 	case f.Present != "":
 		return f.Present
+	case f.Choices != nil:
+		return "choice"
 	case h.Format != "" && entity.ValidFormat(h.Format):
 		return h.Format
 	case h.Money != nil:

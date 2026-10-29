@@ -27,25 +27,61 @@ import (
 // nothing renders — the same pin components' own test runs on its own list,
 // with the attribution standing in for the package directory.
 //
-// What a module renders is not here. The kernel does not know which modules are
-// composed, and a name the product writes is the product's to refuse. An
-// attribute is that case: nothing hands the kernel a module's markup. A class is
+// What a module renders is otherwise not here: the kernel does not know which
+// modules are composed, and a name the product writes is the product's to refuse.
+// An attribute is that case: nothing hands the kernel a module's markup. A class is
 // the other case — a module hands its classes to Compose in Extra.Lists, which is
 // how they get a rule in @layer components — so composedClasses reads those off
-// the composition instead of off this list.
+// the composition instead of off this list. The two names a figure carries are the
+// exception, and they are attributed to the file of the owner that compiled the
+// drawing rather than to a kernel file: ui draws a figure's containing field and
+// styles its selected state, so a product sheet may not spend those names, and the
+// gate still reads the attributed source to check the name is really rendered.
 var renderedHooks = map[string]string{
-	"data-sketch":               "ui/forms/sketch.go",
-	"data-sketch-action":        "ui/forms/sketch.go",
-	"data-sketch-actions":       "ui/forms/sketch.go",
-	"data-sketch-coordinate":    "ui/forms/sketch.go",
-	"data-sketch-fallback":      "ui/forms/sketch.go",
-	"data-sketch-milliseconds":  "ui/forms/sketch.go",
-	"data-sketch-points":        "ui/forms/sketch.go",
-	"data-sketch-preview":       "ui/forms/sketch.go",
-	"data-sketch-status":        "ui/forms/sketch.go",
-	"data-sketch-strokes":       "ui/forms/sketch.go",
-	"data-sketch-value":         "ui/forms/sketch.go",
-	"data-sketch-size":          "ui/resource/sketch.go",
+	"data-sketch":              "ui/forms/sketch.go",
+	"data-sketch-action":       "ui/forms/sketch.go",
+	"data-sketch-actions":      "ui/forms/sketch.go",
+	"data-sketch-coordinate":   "ui/forms/sketch.go",
+	"data-sketch-fallback":     "ui/forms/sketch.go",
+	"data-sketch-milliseconds": "ui/forms/sketch.go",
+	"data-sketch-points":       "ui/forms/sketch.go",
+	"data-sketch-preview":      "ui/forms/sketch.go",
+	"data-sketch-status":       "ui/forms/sketch.go",
+	"data-sketch-strokes":      "ui/forms/sketch.go",
+	"data-sketch-value":        "ui/forms/sketch.go",
+	"data-sketch-size":         "ui/resource/sketch.go",
+	"data-form-steps":          "ui/forms/steps.go",
+	"data-step-heading":        "ui/forms/steps.go",
+	"data-step-errors":         "ui/forms/steps.go",
+	"data-answer-field":        "ui/forms/steps.go",
+	"data-answer-template":     "ui/forms/steps.go",
+	"data-answer-empty":        "ui/forms/steps.go",
+	"data-answer-labels":       "ui/forms/steps.go",
+	"data-screen-view":         "ui/resource/screens.go",
+	"data-choice":              "modules/picture/contracts/compile.go",
+	"data-selected":            "modules/picture/contracts/figure.go",
+	"data-choice-words":        "ui/forms/choice.go",
+	"data-choice-stale":        "ui/forms/choice.go",
+	"data-choice-colour":       "ui/forms/choice.go",
+	"data-choice-config":       "ui/forms/choice.go",
+	"data-choice-count":        "ui/forms/choice.go",
+	"data-choice-figure":       "ui/forms/choice.go",
+	"data-choice-group":        "ui/forms/choice.go",
+	"data-choice-initial":      "ui/forms/choice.go",
+	"data-choice-layout":       "ui/forms/choice.go",
+	"data-choice-names":        "ui/forms/choice.go",
+	"data-choice-options":      "ui/forms/choice.go",
+	"data-choice-order":        "ui/forms/choice.go",
+	"data-choice-picture":      "ui/forms/choice.go",
+	"data-choice-read":         "ui/forms/choice.go",
+	"data-choice-read-item":    "ui/forms/choice.go",
+	"data-choice-search":       "ui/forms/choice.go",
+	"data-choice-search-label": "ui/forms/choice.go",
+	"data-choice-stack":        "ui/forms/choice.go",
+	"data-choice-status":       "ui/forms/choice.go",
+	"data-choice-summary":      "ui/forms/choice.go",
+	"data-choice-surface":      "ui/forms/choice.go",
+
 	"data-confirm":              "ui/resource/resource.go",
 	"data-confirm-label":        "ui/resource/resource.go",
 	"data-gallery":              "ui/export/storybook.go",
@@ -123,6 +159,18 @@ var renderedHooks = map[string]string{
 	"data-richtext-word-saved":   "ui/forms/richtext.go",
 	"data-richtext-word-saving":  "ui/forms/richtext.go",
 	"data-richtext-words":        "ui/forms/richtext.go",
+	// The resolved time's vocabulary: drawn by ui/resource on a <time>, read by
+	// ui/assets/js/components.js, which re-says the instant where the person is
+	// and never invents a marker of its own.
+	"data-time-count":    "ui/resource/value.go",
+	"data-time-kind":     "ui/resource/value.go",
+	"data-time-language": "ui/resource/value.go",
+	"data-time-now":      "ui/resource/value.go",
+	"data-time-offset":   "ui/resource/value.go",
+	"data-time-policy":   "ui/resource/value.go",
+	"data-time-relative": "ui/resource/value.go",
+	"data-time-unit":     "ui/resource/value.go",
+	"data-time-zone":     "ui/resource/value.go",
 }
 
 // kernelHooks is the vocabulary refuseClientSheet compares a selector against,

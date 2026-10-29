@@ -107,6 +107,13 @@ func TestTheScreenVocabularyAndTheCatalogueAreOneList(t *testing.T) {
 		}
 	}
 	for _, key := range catalogued {
+		// This public key remains available to older clients; resolved success copy replaces its automatic sentence.
+		if key == "screens.command_saved" {
+			if slices.Contains(raised, key) {
+				t.Error("automatic success copy returned")
+			}
+			continue
+		}
 		if !slices.Contains(raised, key) {
 			t.Errorf("%q is carried by a catalogue no generated screen ever asks for", key)
 		}

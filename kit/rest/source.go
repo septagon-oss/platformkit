@@ -21,14 +21,14 @@ func (s Spec[T]) get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T,
 	if s.Source != nil {
 		return s.Source.Get(ctx, tx, id)
 	}
-	return crud.Get[T](tx, id)
+	return crud.GetCtx[T](ctx, tx, id)
 }
 
 func (s Spec[T]) list(ctx context.Context, tx db.Tx[db.Tenant], q crud.Query) ([]T, int64, error) {
 	if s.Source != nil {
 		return s.Source.List(ctx, tx, q)
 	}
-	return crud.List[T](tx, q)
+	return crud.ListCtx[T](ctx, tx, q)
 }
 
 func (s Spec[T]) count(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
@@ -36,5 +36,5 @@ func (s Spec[T]) count(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) 
 		_, total, err := s.Source.List(ctx, tx, crud.Query{Limit: 1})
 		return total, err
 	}
-	return crud.Count[T](tx)
+	return crud.CountCtx[T](ctx, tx)
 }

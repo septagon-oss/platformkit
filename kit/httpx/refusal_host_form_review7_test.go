@@ -1,6 +1,6 @@
 package httpx_test
 
-// A reviewer's case, T-0111 review round 7 (2026-09-30).
+// A host spelled another way is still the host that was asked.
 //
 // `refusal_tenant_test.go` (this round's own) pins that a refusal rendered as a page is handed
 // the tenant of its address. It asks with `httptest.NewRequest(..., "http://"+host+"/...")`, so
