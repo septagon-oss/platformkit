@@ -2,9 +2,12 @@ package internal
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,22 +17,33 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/tour"
 	"github.com/septagon-oss/platformkit/modules/tours/contracts"
 )
 
+const reservationDuration = 2 * time.Minute
+
 type Service struct {
-	Clock  contracts.Clock
-	Policy tenancy.Policy
-	App    appname.Name
+	Clock    contracts.Clock
+	Policy   tenancy.Policy
+	App      appname.Name
+	Tours    []tour.Tour
+	composed bool
 }
 
 var _ contracts.Service = (*Service)(nil)
 
-func NewService(clock contracts.Clock, policy tenancy.Policy, app appname.Name) *Service {
+func NewService(clock contracts.Clock, policy tenancy.Policy, app appname.Name, declarations ...[]tour.Tour) *Service {
 	if clock == nil || policy == nil {
 		panic("tours: clock and policy are required")
 	}
-	return &Service{Clock: clock, Policy: policy, App: app}
+	var tours []tour.Tour
+	if len(declarations) != 0 {
+		for _, group := range declarations {
+			tours = append(tours, group...)
+		}
+	}
+	return &Service{Clock: clock, Policy: policy, App: app, Tours: tours, composed: len(declarations) != 0}
 }
 
 func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Start) (*contracts.Run, error) {
@@ -37,8 +51,12 @@ func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.S
 	if err != nil {
 		return nil, err
 	}
-	if in.Source != "manual" && in.Source != "automatic" || in.TourID == "" || in.Edition == 0 || in.ContractHash == "" {
+	if in.Source != "manual" && in.Source != "automatic" || in.TourID == "" || in.Edition == 0 || (!s.composed && in.ContractHash == "") {
 		return nil, crud.ErrInvalid
+	}
+	stepIDs, contractHash, err := s.runContract(in)
+	if err != nil {
+		return nil, err
 	}
 	at := atTime(s.Clock)
 	if in.Source == "automatic" {
@@ -46,14 +64,14 @@ func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.S
 			return nil, err
 		}
 	}
-	steps := slices.Clone(in.StepIDs)
+	steps := slices.Clone(stepIDs)
 	if len(steps) == 0 {
 		return nil, crud.ErrInvalid
 	}
 	run := &contracts.Run{
 		Base: entity.Base{}, App: s.App.String(), PersonID: person,
 		TourID: in.TourID, Edition: in.Edition,
-		ContentRevision: in.ContractHash, ContractHash: in.ContractHash,
+		ContentRevision: contractHash, ContractHash: contractHash,
 		StepIDs: steps, Source: in.Source, Status: "reserved", CurrentStep: steps[0],
 		Done: []string{}, Skipped: []string{}, Revision: 1, StartedAt: at,
 	}
@@ -66,6 +84,72 @@ func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.S
 		}
 	}
 	return run, nil
+}
+
+func (s *Service) runContract(in contracts.Start) ([]string, string, error) {
+	for _, declaration := range s.Tours {
+		if string(declaration.Ref.ID) != in.TourID || declaration.Ref.Edition != in.Edition {
+			continue
+		}
+		steps := make([]string, 0, len(declaration.Steps))
+		for _, step := range declaration.Steps {
+			steps = append(steps, string(step.ID()))
+		}
+		if len(steps) == 0 {
+			return nil, "", crud.ErrInvalid
+		}
+		return steps, declarationHash(declaration), nil
+	}
+	if s.composed {
+		return nil, "", crud.ErrNotFound
+	}
+	// The internal constructor remains useful for isolated service fixtures that
+	// predate composed declarations. Production wiring always supplies the manifest.
+	steps := slices.Clone(in.StepIDs)
+	if len(steps) == 0 || !validTourID(in.TourID) {
+		return nil, "", crud.ErrNotFound
+	}
+	return steps, in.ContractHash, nil
+}
+
+func validTourID(id string) bool {
+	for _, part := range strings.Split(id, ".") {
+		if part == "" || part[0] < 'a' || part[0] > 'z' {
+			return false
+		}
+		for i := 1; i < len(part); i++ {
+			c := part[i]
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func declarationHash(declaration tour.Tour) string {
+	var shape strings.Builder
+	fmt.Fprintf(&shape, "%s@%d\n%s\n", declaration.Ref.ID, declaration.Ref.Edition, declaration.Title.Key)
+	fmt.Fprintf(&shape, "%s\n", declaration.Title.Fallback)
+	for _, prerequisite := range declaration.Prerequisites {
+		fmt.Fprintf(&shape, "requires:%s@%d\n", prerequisite.ID, prerequisite.Edition)
+	}
+	if declaration.Automatic != nil {
+		fmt.Fprintf(&shape, "automatic:%s|%s|%s\n", declaration.Automatic.Kind(), declaration.Automatic.View(), declaration.Automatic.Start())
+		for _, event := range declaration.Automatic.Retires() {
+			fmt.Fprintf(&shape, "retires:%s\n", event)
+		}
+	}
+	for _, step := range declaration.Steps {
+		advance := step.Advance()
+		content := step.Content()
+		fmt.Fprintf(&shape, "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+			step.ID(), step.Kind(), step.Anchor(), step.View(), content.Title.Key, content.Title.Fallback,
+			content.Body.Key, content.Body.Fallback, advance.Kind(), advance.Operation())
+		fmt.Fprintf(&shape, "%s|%s\n", advance.Interaction(), step.WhenMissing())
+	}
+	sum := sha256.Sum256([]byte(shape.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 func atTime(clock contracts.Clock) time.Time { return clock().UTC() }
@@ -98,7 +182,15 @@ func (s *Service) Resumable(ctx context.Context, tx db.Tx[db.Tenant]) ([]*contra
 	}
 	var rows []*contracts.Run
 	err = tx.DB().WithContext(ctx).
-		Where("app = ? AND person_id = ? AND status IN ?", s.App.String(), person, []string{"reserved", "active", "paused", "later"}).
+		Where(`app = ? AND person_id = ? AND (status <> ? OR EXISTS (
+			SELECT 1 FROM tours_reservations
+			WHERE tours_reservations.tenant_id = tours_runs.tenant_id
+			AND tours_reservations.run_id = tours_runs.id
+			AND tours_reservations.consumed_at IS NULL
+			AND tours_reservations.released_at IS NULL
+			AND tours_reservations.expires_at > ?
+		))`, s.App.String(), person, "reserved", atTime(s.Clock)).
+		Where("status IN ?", []string{"reserved", "active", "paused", "later"}).
 		Order("updated_at DESC, id").Limit(50).Find(&rows).Error
 	if err != nil {
 		return nil, crud.Classify(err)
@@ -200,7 +292,7 @@ func reserveOffer(ctx context.Context, tx db.Tx[db.Tenant], run *contracts.Run, 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, app, person_id)
 		WHERE consumed_at IS NULL AND released_at IS NULL DO NOTHING`,
-		tenantID, run.App, run.PersonID, run.TourID, run.Edition, run.ID, at, at.Add(2*time.Minute))
+		tenantID, run.App, run.PersonID, run.TourID, run.Edition, run.ID, at, at.Add(reservationDuration))
 	if result.Error != nil {
 		return result.Error
 	}
