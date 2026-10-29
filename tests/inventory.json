@@ -62504,6 +62504,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/notification/internal/mail_tenant_write_isolation_test.go",
+   "id": "modules/notification/internal/mail_tenant_write_isolation_test.go#TestAnotherTenantCannotWriteAnOwedMail",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnotherTenantCannotWriteAnOwedMail",
+   "needs_db": true,
+   "pkg": "modules/notification/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/notification/internal/mail_test.go",
    "id": "modules/notification/internal/mail_test.go#TestARolledBackMailDecisionOwesNothing",
    "kind": "go",
@@ -100304,7 +100323,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2826,
+  "files": 2827,
   "forge_runs": [
    408,
    413,
@@ -100338,7 +100357,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4401,
+   "behaviour": 4402,
    "composition": 560,
    "contract": 24,
    "journey": 123
@@ -100357,9 +100376,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5108,
+  "rows": 5109,
   "tiers": {
-   "merge": 3114,
+   "merge": 3115,
    "nightly": 123,
    "push": 1871
   },
@@ -100367,13 +100386,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2581,
+   "keep": 2582,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4722,
+   "keep": 4723,
    "keep-rewrite": 170,
    "merge": 216
   }
