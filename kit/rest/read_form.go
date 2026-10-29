@@ -178,5 +178,5 @@ func (s Spec[T]) readFormFault() string {
 }
 
 func (s Spec[T]) readFormHasStorage() bool {
-	return s.Source != nil || len(s.Operations) > 0 || s.Write != "" || s.WriteAuth.Declared() || s.OperatorWrite || s.SoftDelete || len(s.Immutable) > 0 || s.History || s.Versions != nil || s.Translations != nil || len(s.HookEvents) > 0 || s.Gate != nil || s.Create != nil || s.AfterCreate != nil || s.AfterDelete != nil || s.Audience != nil || s.FileUses != nil || s.RichTextFiles != nil
+	return s.Source != nil || len(s.Operations) > 0 || s.Write != "" || s.WriteAuth.Declared() || s.OperatorWrite || s.SoftDelete || len(s.Immutable) > 0 || s.History || s.Versions != nil || s.Translations != nil || len(s.HookEvents) > 0 || len(s.HookTopics) > 0 || s.Gate != nil || s.Create != nil || s.AfterCreate != nil || s.AfterDelete != nil || s.Audience != nil || s.FileUses != nil || s.RichTextFiles != nil
 }

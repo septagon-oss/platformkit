@@ -76,6 +76,34 @@ func ExamplePublish() {
 	// Output: example.noted Read the guide true
 }
 
+func ExamplePublishTo() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	err := dbtest.WithSchema(ctx, "typed event delivery", func(ctx context.Context, _ *sql.DB, conn *db.Conn) error {
+		type noted struct {
+			Message string `json:"message"`
+		}
+		topic := events.DeclareTopic[noted]("example.noted")
+		release, err := events.DeclareMore([]events.Declared{topic.Declaration()})
+		if err != nil {
+			return err
+		}
+		defer release()
+		tenant := tenancy.Tenant{ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), Slug: "example"}
+		if err := db.Run(tenancy.WithTenant(ctx, tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return events.PublishTo(ctx, tx, topic, noted{Message: "Read the guide"})
+		}); err != nil {
+			return err
+		}
+		fmt.Println(topic.Name())
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	// Output: example.noted
+}
+
 func TestDocumentedExamplesExecute(t *testing.T) {
-	exampletest.Execute(t, "ExamplePublish")
+	exampletest.Execute(t, "ExamplePublish", "ExamplePublishTo")
 }

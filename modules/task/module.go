@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -90,7 +91,7 @@ var Spec = rest.Spec[*contracts.Task]{
 	Immutable: contracts.CommandOwnedFields,
 	// What the creator publishes beyond task.task.created, so the create operation
 	// declares it and the boot gate can check it against Events below.
-	HookEvents: []string{contracts.EventSLABreached},
+	HookTopics: []events.Declared{contracts.TopicSLABreached.Declaration()},
 	// Present is how a task reads to the person holding one: the words, the icon,
 	// which field names a row and which say what waiting costs. Every word
 	// here is English written by the author of the entity, and the copy key it is
@@ -204,6 +205,12 @@ func New(deps Deps) module.Module {
 	if svc == nil {
 		svc = NewService()
 	}
+	createdTopic := Spec.Topics().Created
+	if configurable, ok := svc.(interface {
+		SetCreatedTopic(events.Topic[*contracts.Task])
+	}); ok {
+		configurable.SetCreatedTopic(createdTopic)
+	}
 	every := deps.SweepEvery
 	if every == 0 {
 		every = sweepEvery
@@ -215,6 +222,7 @@ func New(deps Deps) module.Module {
 	if !ok {
 		own := internal.NewService()
 		own.Policy, own.Lifecycle = deps.Policy, svc
+		own.SetCreatedTopic(createdTopic)
 		creator = own
 	}
 	mounted := Spec
@@ -233,7 +241,7 @@ func New(deps Deps) module.Module {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Roles:       roles,
-		Declared:    contracts.Events,
+		Declared:    taskEvents(),
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Screen: "task/tasks", Permission: contracts.PermissionTaskRead},
 		},
@@ -245,6 +253,14 @@ func New(deps Deps) module.Module {
 			mounted.Mount(s)
 			internal.RegisterRoutes(s, mounted, svc)
 		},
+	}
+}
+
+func taskEvents() []events.Declared {
+	topics := Spec.Topics()
+	return []events.Declared{
+		topics.Created.Declaration(), topics.Updated.Declaration(), topics.Deleted.Declaration(),
+		contracts.TopicAssigned.Declaration(), contracts.TopicResolved.Declaration(), contracts.TopicSLABreached.Declaration(),
 	}
 }
 

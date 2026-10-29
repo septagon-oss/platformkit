@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -114,6 +115,11 @@ func (s Spec[T]) op(verb, method, path string, status int, summary, description 
 		return op
 	}
 	names := append([]string{s.Event(published)}, s.HookEvents...)
+	for _, topic := range s.HookTopics {
+		if !slices.Contains(names, topic.Name) {
+			names = append(names, topic.Name)
+		}
+	}
 	if len(names) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: names}
 	}
