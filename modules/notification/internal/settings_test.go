@@ -357,25 +357,48 @@ func TestAConversationWithTheSenderCommands(t *testing.T) {
 	}
 }
 
-// TestARedeliveredSendWritesOneSentRow is why 000056 exists: the outbox
-// redelivers what it did not see acknowledged, and a provider that answered on
-// both attempts must leave one sent row and a worker that can acknowledge.
-func TestARedeliveredSendWritesOneSentRow(t *testing.T) {
+// TestARedeliveredMailRequestSendsOneMailAndWritesOneSentRow is why 000056 and 000076
+// both exist: the outbox redelivers what it did not see acknowledged, and a redelivered
+// request must add neither a second owed mail nor a second sent row.
+func TestARedeliveredMailRequestSendsOneMailAndWritesOneSentRow(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := settings()
-	send := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, nil, true)
+	box := notification.NewMailbox()
+	worker := internal.NewService(directory{}, internal.WithMailer(box))
+	var id uuid.UUID
+	ev := request(id, notificationtest.Ada)
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{Recipient: notificationtest.Ada, Title: "twice", Wants: contracts.WantsEmail})
 		if err != nil {
 			return err
 		}
+		id = row.ID
+		ev = request(id, row.RecipientID)
+		send := internal.SendMail(worker, hosts{}, true)
 		for i := 0; i < 2; i++ {
-			if err := send.Handler(ctx, tx, request(row.ID, row.RecipientID)); err != nil {
+			if err := send.Handler(ctx, tx, ev); err != nil {
 				t.Fatalf("delivery attempt %d: %v", i+1, err)
 			}
 		}
+		var owed int64
+		if err := tx.DB().Raw("SELECT count(*) FROM notification_mail_intents WHERE notification_id = ?", id).Scan(&owed).Error; err != nil {
+			return err
+		}
+		if owed != 1 {
+			t.Errorf("the same request wrote %d owed mails, want 1", owed)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("redelivery: %v", err)
+	}
+	drainMail(t, conn, worker)
+	if got := len(box.Sent()); got != 1 {
+		t.Errorf("a redelivered request sent %d messages, want 1", got)
+	}
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var sent int64
-		if err := tx.DB().Raw(`SELECT count(*) FROM notification_deliveries WHERE notification_id = ? AND outcome = 'sent' AND channel = 'email'`, row.ID).Scan(&sent).Error; err != nil {
+		if err := tx.DB().Raw(`SELECT count(*) FROM notification_deliveries WHERE notification_id = ? AND outcome = 'sent' AND channel = 'email'`, id).Scan(&sent).Error; err != nil {
 			return err
 		}
 		if sent != 1 {
@@ -384,10 +407,9 @@ func TestARedeliveredSendWritesOneSentRow(t *testing.T) {
 		if requested, terminal, err := internal.Coverage(tx); err != nil || requested != terminal {
 			t.Errorf("coverage is %d of %d after the redelivery, want the two equal (%v)", terminal, requested, err)
 		}
-		return errRollback
-	})
-	if err != nil && err != errRollback {
-		t.Fatalf("redelivery: %v", err)
+		return nil
+	}); err != nil {
+		t.Fatalf("read the ledger: %v", err)
 	}
 }
 

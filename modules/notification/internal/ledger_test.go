@@ -47,9 +47,9 @@ func request(id, recipient uuid.UUID) events.Event {
 // so "was Ada told" is a query and delivery_ledger_coverage is computable.
 func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{})
-	box := notification.NewMailbox()
-	send := internal.SendMail(box, directory{}, hosts{}, nil, true)
+	svc := internal.NewService(directory{}, internal.WithMailer(notification.NewMailbox()))
+	send := internal.SendMail(svc, hosts{}, true)
+	var adaMail uuid.UUID
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		// Ada has an address: in-app is delivered with the row, email when the worker sends.
@@ -63,9 +63,13 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 		if err := send.Handler(ctx, tx, request(ada.ID, ada.RecipientID)); err != nil {
 			return err
 		}
-		if got := ledger(t, tx, ada.ID); !slices.Equal(got[len(got)-1:], []string{"email sent"}) {
-			t.Errorf("after the send Ada's ledger is %v, want it to end in email sent", got)
+		// The decision is written, not sent: inside this transaction the mail is owed
+		// and the channel is still open, which is what makes a rollback of this step
+		// send nothing.
+		if got := ledger(t, tx, ada.ID); !slices.Equal(got[len(got)-1:], []string{"email requested"}) {
+			t.Errorf("after the mail request Ada's ledger is %v, want it to end in email requested", got)
 		}
+		adaMail = ada.ID
 
 		// Bob has no address: the channel is suppressed at once, with the reason.
 		bob, err := svc.Notify(ctx, tx, contracts.Notice{Recipient: notificationtest.Bob, Title: "for Bob", Wants: contracts.WantsEmail})
@@ -102,6 +106,22 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 	if !errors.Is(err, errRollback) {
 		t.Fatalf("the transaction: %v", err)
 	}
+	// The first notice's mail was rolled back with its transaction, so the worker
+	// has nothing to send: the row it would have claimed is not there.
+	drainMail(t, conn, svc)
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var owed int64
+		if err := tx.DB().Raw("SELECT count(*) FROM notification_mail_intents").Scan(&owed).Error; err != nil {
+			return err
+		}
+		if owed != 0 {
+			t.Errorf("a rolled-back decision left %d owed mails, want none", owed)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("after the drain: %v", err)
+	}
+	_ = adaMail
 }
 
 // TestADeletedNoticeIsSuppressedAndAFailedSendLeavesNoFalseRow covers the two other ends:
@@ -109,27 +129,26 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 // refuses leaves no terminal row at all — its transaction rolls back and the outbox retries,
 // so the ledger can never say "sent" for a message that was not, and the channel shows as
 // uncovered until it finishes.
-func TestADeletedNoticeIsSuppressedAndAFailedSendLeavesNoFalseRow(t *testing.T) {
+func TestARefusedSendLeavesNoTerminalRowUntilTheRelayAnswers(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{})
+	svc := internal.NewService(directory{}, internal.WithMailer(failing{}))
 	var id uuid.UUID
 
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{Recipient: notificationtest.Ada, Title: "doomed", Wants: contracts.WantsEmail})
 		id = row.ID
-		return err
-	})
-	if err != nil {
-		t.Fatalf("notify: %v", err)
+		if err != nil {
+			return err
+		}
+		return internal.SendMail(svc, hosts{}, true).Handler(ctx, tx, request(id, notificationtest.Ada))
+	}); err != nil {
+		t.Fatalf("queue the mail: %v", err)
 	}
-	// The relay refuses: the handler fails, its transaction rolls back.
-	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return internal.SendMail(failing{}, directory{}, hosts{}, nil, true).Handler(ctx, tx, request(id, notificationtest.Ada))
-	})
-	if err == nil {
-		t.Fatal("a refused send reported success")
-	}
-	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	// The relay refuses every message. The attempt is recorded on the intent and the
+	// channel stays open: nothing here may say "sent" for a message nobody took.
+	drainMail(t, conn, svc)
+
+	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if got := ledger(t, tx, id); slices.Contains(got, "email sent") {
 			t.Errorf("a refused send left %v", got)
 		}
@@ -140,19 +159,16 @@ func TestADeletedNoticeIsSuppressedAndAFailedSendLeavesNoFalseRow(t *testing.T) 
 		if requested != 2 || terminal != 1 {
 			t.Errorf("coverage after a refused send is %d of %d, want 1 of 2: the email is not accounted for yet", terminal, requested)
 		}
-		// Deleted before the retry: the worker suppresses it with the reason.
-		if err := tx.DB().Exec(`UPDATE notifications SET deleted_at = now() WHERE id = ?`, id).Error; err != nil {
+		var state string
+		var attempt int
+		if err := tx.DB().Raw("SELECT state, attempt FROM notification_mail_intents").Row().Scan(&state, &attempt); err != nil {
 			return err
 		}
-		if err := internal.SendMail(notification.NewMailbox(), directory{}, hosts{}, nil, true).Handler(ctx, tx, request(id, notificationtest.Ada)); err != nil {
-			return err
-		}
-		if got := ledger(t, tx, id); got[len(got)-1] != "email suppressed" {
-			t.Errorf("a deleted notice's ledger ends %v, want email suppressed", got)
+		if state != contracts.MailIntentQueued || attempt != 1 {
+			t.Errorf("a refused first attempt leaves the intent %s at attempt %d, want it re-queued after one socket", state, attempt)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("after the refusal: %v", err)
 	}
 }

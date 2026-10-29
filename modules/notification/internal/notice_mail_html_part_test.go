@@ -24,9 +24,8 @@ import (
 // markup. A notice with no link still has both parts and no anchor.
 func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{})
-	box := notification.NewMailbox()
-	sub := internal.SendMail(box, directory{}, hosts{}, nil, true)
+	svc := internal.NewService(directory{}, internal.WithMailer(notification.NewMailbox()))
+	sub := internal.SendMail(svc, hosts{}, true)
 
 	send := func(ctx context.Context, tx db.Tx[db.Tenant], notice contracts.Notice) contracts.Message {
 		t.Helper()
@@ -35,17 +34,20 @@ func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 			t.Fatalf("notify: %v", err)
 		}
 		payload := `{"notificationId":"` + row.ID.String() + `","recipientId":"` + row.RecipientID.String() + `"}`
-		before := len(box.Sent())
 		if err := sub.Handler(ctx, tx, events.Event{
 			ID: uuid.New(), Name: contracts.EventEmailRequested, Payload: []byte(payload),
 		}); err != nil {
-			t.Fatalf("send: %v", err)
+			t.Fatalf("queue the mail: %v", err)
 		}
-		sent := box.Sent()
-		if len(sent) != before+1 {
-			t.Fatalf("the mailbox holds %d messages, want %d", len(sent), before+1)
+		// The message is read back off the owed row rather than out of a mailbox:
+		// what this case checks is what the mail was frozen as, and the worker hands
+		// a relay exactly these parts.
+		var frozen contracts.Message
+		if err := tx.DB().Table("notification_mail_intents").Select("subject, body, html").
+			Order("seq DESC").First(&frozen).Error; err != nil {
+			t.Fatalf("read the owed mail: %v", err)
 		}
-		return sent[len(sent)-1]
+		return frozen
 	}
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

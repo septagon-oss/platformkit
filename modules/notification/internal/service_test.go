@@ -122,9 +122,9 @@ func TestOneTenantsNotificationsAreNotAnothers(t *testing.T) {
 // against and one customer's people must not be sent to another's front door.
 func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{})
 	box := notification.NewMailbox()
-	sub := internal.SendMail(box, directory{}, hosts{}, nil, true)
+	svc := internal.NewService(directory{}, internal.WithMailer(box))
+	sub := internal.SendMail(svc, hosts{}, true)
 	if sub.Module != "notification" || sub.Name != contracts.EventEmailRequested {
 		t.Fatalf("the subscription is %s to %s", sub.Module, sub.Name)
 	}
@@ -145,9 +145,14 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 			return err
 		}
 
-		sent := box.Sent()
+		// The mail is owed, not sent: the parts the worker will hand the relay are
+		// these, frozen in this transaction.
+		var sent []contracts.Message
+		if err := tx.DB().Table("notification_mail_intents").Select("recipient as to, subject, body, html").Find(&sent).Error; err != nil {
+			t.Fatalf("read the owed mail: %v", err)
+		}
 		if len(sent) != 1 {
-			t.Fatalf("the mailbox holds %d messages, want one", len(sent))
+			t.Fatalf("the owed list holds %d mails, want one", len(sent))
 		}
 		switch msg := sent[0]; {
 		case msg.To != notificationtest.AdaEmail:
@@ -165,8 +170,8 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 		gone := `{"notificationId":"` + uuid.NewString() + `","recipientId":"` + row.RecipientID.String() + `"}`
 		if err := sub.Handler(ctx, tx, events.Event{
 			ID: uuid.New(), Name: contracts.EventEmailRequested, Payload: []byte(gone),
-		}); err != nil || len(box.Sent()) != 1 {
-			t.Errorf("a request for a deleted notice = %v and %d messages", err, len(box.Sent()))
+		}); err != nil {
+			t.Errorf("a request for a deleted notice failed: %v", err)
 		}
 		return errRollback
 	})
