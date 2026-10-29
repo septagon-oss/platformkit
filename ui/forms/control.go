@@ -80,6 +80,9 @@ func Control(p ControlProps) g.Node {
 		// control that refused is the one that should hold the caret.
 		attrs["autofocus"] = "autofocus"
 	}
+	if f.Type == entity.TypeSketch || f.Widget == "sketch" {
+		return sketchControl(p)
+	}
 	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
 		return choiceControl(p, p.Field.Anchor)
 	}

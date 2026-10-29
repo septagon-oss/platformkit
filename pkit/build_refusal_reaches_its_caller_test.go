@@ -4,13 +4,12 @@ package pkit_test
 //
 // A module whose build returned an error put none of what it declared, so every
 // module the resolver placed after it would read the zero value of a contract that
-// was declared and never supplied. Modules that guard their own Deps answer that
-// with a panic — user.New on a missing Administration, auth's registration doors on
-// a registrar that is nil — so the deployment's own mistake, a store it named an
-// address for and never finished configuring, arrived at its caller as a complaint
-// about a wiring fault in a module that was wired correctly. The refusal under test
-// is the one the caller has to hear: the module that refused, by its own name, with
-// nothing downstream of it run at all.
+// was declared and never supplied. A module that guards its own Deps answers the
+// deployment's own mistake — a store it named an address for and never finished
+// configuring — with its own sentence, through the build's error rather than as a
+// panic the caller could only recover. The refusal under test is the one the caller
+// has to hear: the module that refused, by its own name, with nothing downstream of
+// it run at all.
 
 import (
 	"strings"

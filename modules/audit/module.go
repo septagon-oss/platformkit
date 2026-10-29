@@ -78,7 +78,21 @@ const retentionDays = 365
 var permissions = []module.Permission{{Key: contracts.PermissionAuditRead, Label: "read the audit trail"}}
 
 // Module is the manifest, and the service it is built on.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) module.Module {
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked builds the manifest and the retention job. A RetentionDays below
+// one keeps the default year and an empty RetainURL means this installation
+// never expires history, so nothing is refused and the error is nil for every
+// Deps today. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
 	svc := internal.NewService()
 	days := deps.RetentionDays
 	if days <= 0 {
@@ -118,5 +132,5 @@ func New(deps Deps) module.Module {
 		SubscribeAll:  true,
 		Subscriptions: []events.Subscription{{Module: "audit", Handler: svc.Record}},
 		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc, deps.Feature) },
-	}
+	}, nil
 }

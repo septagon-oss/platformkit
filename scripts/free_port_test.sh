@@ -155,6 +155,165 @@ case "$out" in
 *) echo "ok   the refusal happens before a database is created or a binary is built" ;;
 esac
 
+# 4b. The two ways the attribution probe refuses are two, because the faults are two
+#     machines' and not one. A socket table that names no process and a toolchain that
+#     starts no listener stop the run at the same line of scripts/e2e.sh, and the
+#     person fixing it goes to a different place for each, so the refusal has to say
+#     which was met. The listener here is modelled as a node that answers nothing and
+#     exits — a toolchain that will not hold a socket — and the socket table as the
+#     same silence case 6 models for the device journey's job.
+broken="$(mktemp -d)"
+mute="$(mktemp -d)"
+printf '#!/bin/sh\nexit 0\n' >"$broken/node"
+printf '#!/bin/sh\nexit 0\n' >"$mute/ss"
+printf '#!/bin/sh\nexit 1\n' >"$mute/lsof"
+chmod +x "$broken/node" "$mute/ss" "$mute/lsof"
+got=0
+( PATH="$broken:$PATH" port_attribution_works ) >/dev/null 2>&1 || got=$?
+check "a toolchain that starts no listener is refused as the toolchain's fault" 2 "$got"
+got=0
+( PATH="$mute:$PATH" port_attribution_works ) >/dev/null 2>&1 || got=$?
+check "a listener that is up and unattributed is refused as the socket table's" 1 "$got"
+out=""
+got=0
+out="$(cd "$root" && PATH="$broken:$PATH" PLATFORMKIT_TEST_ADMIN_URL="$url" PLATFORMKIT_TEST_DATABASE_URL="$url" ./scripts/e2e.sh 2>&1)" || got=$?
+check "gate 10 refuses a toolchain that starts no listener (exit $got)" 1 "$got"
+case "$out" in
+*"no listener could be started"*)
+	echo "ok   that refusal names the listener it could not start"
+	;;
+*)
+	echo "FAIL: gate 10 did not say a listener could not be started; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+esac
+case "$out" in
+*"cannot say which process is listening"*)
+	echo "FAIL: gate 10 blamed the socket table for a toolchain that never started a listener; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+*) echo "ok   the refusal does not blame ss or lsof for a toolchain that started no listener" ;;
+esac
+case "$out" in
+*"a database of its own"* | *"serving on"* | *"Listing tests:"*)
+	echo "FAIL: gate 10 went past the probe it could not answer; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+*) echo "ok   that refusal happens before a database is created or a binary is built" ;;
+esac
+# The refusal a socket table owes is asked for the same three things, because the pair
+# was split and only one of the two lines carried the statement of what the run did not
+# go on to do. A claim about both refusals is worth nothing until each has been asked on
+# its own.
+toolchain_refusal="$out"
+out=""
+got=0
+out="$(cd "$root" && PATH="$mute:$PATH" PLATFORMKIT_TEST_ADMIN_URL="$url" PLATFORMKIT_TEST_DATABASE_URL="$url" ./scripts/e2e.sh 2>&1)" || got=$?
+check "gate 10 refuses a socket table that names no process (exit $got)" 1 "$got"
+case "$out" in
+*"cannot say which process is listening"*)
+	echo "ok   that refusal names the socket table"
+	;;
+*)
+	echo "FAIL: gate 10 did not say the socket table was the fault; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+esac
+case "$out" in
+*"no listener could be started"*)
+	echo "FAIL: gate 10 blamed the toolchain for a socket table that was never able to answer; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+*) echo "ok   the refusal does not blame node for a socket table that names no process" ;;
+esac
+case "$out" in
+*"a database of its own"* | *"serving on"* | *"Listing tests:"*)
+	echo "FAIL: gate 10 went past the socket table it could not read; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+*) echo "ok   that refusal happens before a database is created or a binary is built" ;;
+esac
+# One statement per refusal, asked of both. A run that stops here has built no binary,
+# created no database and dispatched no browser, and the line a person reads is the last
+# thing they see before they go and fix the machine, so it has to carry that by itself.
+missing=0
+for refusal in "$toolchain_refusal" "$out"; do
+	case "$refusal" in
+	*"Nothing was built, no database was created and no browser was dispatched"*) : ;;
+	*)
+		missing=$((missing + 1))
+		echo "FAIL: a refusal named no part of the run it stopped; it said:"
+		printf '    %s\n' "$refusal"
+		failures=$((failures + 1))
+		;;
+	esac
+done
+if [ "$missing" -eq 0 ]; then
+	echo "ok   each refusal says the run built nothing, created no database and dispatched no browser"
+fi
+
+# The third machine that cannot answer is neither of those two: a TMPDIR with nowhere
+# private for the listener to write the port it was given. It reaches gate 10 through the
+# same exit as the broken toolchain, so it has to print its own reason, and print it
+# before node is started at all — a sentence about a directory arriving with a toolchain
+# nobody asked for sends the person to node. The node here counts its own starts instead
+# of failing them, so "never reached" is a count of zero rather than an inference from
+# silence. The sentence is judged on the line the script itself printed, because mktemp
+# reports the same directory in its own diagnostic and would answer the question for it.
+nowhere="$(mktemp -d)"
+starts="$nowhere/node-starts"
+printf '#!/bin/sh\nprintf 1 >>"${PK_NODE_STARTS:-/dev/null}"\nexit 0\n' >"$nowhere/node"
+chmod +x "$nowhere/node"
+out=""
+got=0
+out="$( (TMPDIR="$nowhere/no-such-place" PK_NODE_STARTS="$starts" PATH="$nowhere:$PATH" port_attribution_works) 2>&1)" || got=$?
+check "a TMPDIR that cannot be written is refused before the toolchain is asked for a listener (exit $got)" 2 "$got"
+if [ -e "$starts" ]; then
+	echo "FAIL: the probe started node with nowhere private to write its port; the refusal a person reads is about their directory and the run handed them a toolchain they did not ask for"
+	failures=$((failures + 1))
+fi
+refusal="$(printf '%s\n' "$out" | grep '^free port:' || true)"
+case "$refusal" in
+*"$nowhere/no-such-place"*) echo "ok   that refusal names the place it could not write" ;;
+*)
+	echo "FAIL: the refusal did not name the directory it could not write into; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+esac
+case "$refusal" in
+*TMPDIR*) echo "ok   it names the setting that has to change" ;;
+*)
+	echo "FAIL: the refusal named no step the person can take; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+esac
+out=""
+got=0
+out="$(cd "$root" && TMPDIR="$nowhere/no-such-place" PK_NODE_STARTS="$starts" PATH="$nowhere:$PATH" \
+	PLATFORMKIT_TEST_ADMIN_URL="$url" PLATFORMKIT_TEST_DATABASE_URL="$url" ./scripts/e2e.sh 2>&1)" || got=$?
+check "gate 10 refuses a TMPDIR it cannot write (exit $got)" 1 "$got"
+if [ -e "$starts" ]; then
+	echo "FAIL: gate 10 started node with no private place to write to; the fault is the directory and the run said toolchain"
+	failures=$((failures + 1))
+fi
+case "$out" in
+*"a database of its own"* | *"serving on"* | *"Listing tests:"*)
+	echo "FAIL: gate 10 got past the place it could not write; it said:"
+	printf '    %s\n' "$out"
+	failures=$((failures + 1))
+	;;
+*) echo "ok   that refusal happens before a database is created or a binary is built" ;;
+esac
+rm -rf "$broken" "$mute" "$nowhere"
+
 # 5. The browser run is told which port the application actually got. These two
 #    greps are the whole of that contract, and it is a contract and not a detail:
 #    e2e/session-recovery.spec.ts compares the URL's port against PLATFORMKIT_E2E_PORT

@@ -9,6 +9,7 @@ import (
 
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -55,7 +56,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: CommandForms(r, o, at, true, nil),
 	})}
-	return document.View{Title: title, Language: r.Resolved.Language, Body: r.viewBody("list", body)}
+	return document.View{Title: title, Language: r.Resolved.Language, Modules: sketchCommandModules(r), Body: r.viewBody("list", body)}
 }
 func listURL(at, sort string, filters map[string]string) string {
 	query := url.Values{}
@@ -156,7 +157,8 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		source[id] = row
 		cells := map[string]any{}
 		for _, name := range r.Resolved.Layout.Columns {
-			cells[name] = value(r.field(name), row, o).text
+			definition, _ := fieldFor(r.Schema.Fields, name)
+			cells[name] = drawingCell(definition, row[name], value(r.field(name), row, o).text)
 		}
 		out = append(out, components.DataRow{TableRow: components.TableRow{ID: id, Cells: cells}})
 	}
@@ -190,9 +192,12 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 	title := present.Title(r.Resolved.Titles.ListCandidates, row, display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
 	definition, _ := fieldFor(r.Schema.Fields, c.Key)
 	definition.Present = f.Kind
+	if definition.Type == entity.TypeSketch {
+		return sketchReading(row[c.Key], f.Label, "thumbnail", o.Words(r.Schema).text)
+	}
 	// A choice reads its selection whatever the value, an empty one included; a
 	// media kind is drawn only where the author left something to draw.
-	if raw := row[c.Key]; definition.Choices != nil || (raw != nil && display.Text(raw) != "") {
+	if raw := row[c.Key]; definition.Type == entity.TypeSketch || definition.Choices != nil || (raw != nil && display.Text(raw) != "") {
 		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.recordAddress(), o, title, f.Reading.Missing); node != nil {
 			return node
 		}
