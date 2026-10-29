@@ -10,9 +10,11 @@ package notification
 
 import (
 	"errors"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/push"
@@ -104,6 +106,33 @@ type Deps struct {
 	// guessed which chrome its list sits in would be a capability with a product in
 	// it, so the chrome arrives or the screen does not.
 	Page *Page
+
+	// Tenants is how the mail worker and the retention sweep reach every tenant:
+	// the same answer webhook, auth and file ask for, and the reason the drain runs
+	// as a transaction per tenant rather than as one statement over the whole
+	// installation. Without it there is no owed mail to send, and pkit refuses the
+	// plan that composes this module with nobody to answer the need.
+	Tenants jobs.TenantLister
+
+	// MailEvery is how often the worker looks for owed mail, and MailLease how long
+	// it may hold a row without recording an outcome. Zero takes the values beside
+	// them in internal/mail_deliver.go. They are Deps fields and not configuration
+	// keys because an interval is a deployment's fact: the module owns the ladder,
+	// the window and the two caps, and how often somebody checks is not its.
+	MailEvery time.Duration
+	MailLease time.Duration
+
+	// MailRetentionDays is how long a finished intent is kept; zero takes
+	// contracts.MailIntentRetentionDays. A row that is not finished is never
+	// forgotten, whatever this says.
+	MailRetentionDays int
+
+	// Now is the clock the worker schedules with: what writes available_at and what
+	// judges a row due, so the ladder's arithmetic and the drain agree. A composition
+	// leaves it alone; a test that wants to know what a day costs passes one. The
+	// rows' own created_at and updated_at stay the database's, as both delivery
+	// ledgers' do.
+	Now func() time.Time
 }
 
 // Page is the in-app list as a composition hands it: the page.Shell it is drawn in
@@ -167,8 +196,8 @@ func streamedTopics() []string {
 // contracts.Providers.Active over the same Deps value and cannot disagree. A
 // wired channel no worker is asked for answers as the refusal of the wiring, the
 // module's own or the carrier's, before any subscription is handed to the plan.
-func subscriptions(deps Deps) ([]events.Subscription, error) {
-	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
+func subscriptions(svc *internal.Service, deps Deps) ([]events.Subscription, error) {
+	subs := []events.Subscription{internal.SendMail(svc, deps.Hosts, deps.Secure)}
 	for _, c := range deps.Providers.Active() {
 		p := deps.Providers.Get(c)
 		if c == contracts.ChannelInApp || c == contracts.ChannelEmail {
@@ -204,15 +233,21 @@ func New(deps Deps) (contracts.Service, module.Module) {
 // one delivery. It opens nothing, runs no query and is safe to call twice.
 func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	deps = withDeviceCarriers(deps)
-	subs, err := subscriptions(deps)
+	svc := internal.NewService(deps.Recipients,
+		internal.WithPreferences(internal.Prefs{}),
+		internal.WithSenders(deps.Senders),
+		internal.WithProviders(deps.Providers),
+		internal.WithMailer(deps.Mailer),
+		internal.WithClock(deps.Now))
+	subs, err := subscriptions(svc, deps)
 	if err != nil {
 		return nil, module.Module{}, err
 	}
 	devices := internal.DeviceStore{Adapters: deps.Push}
-	svc := internal.NewService(deps.Recipients,
-		internal.WithPreferences(internal.Prefs{}),
-		internal.WithSenders(deps.Senders),
-		internal.WithProviders(deps.Providers))
+	days := deps.MailRetentionDays
+	if days <= 0 {
+		days = contracts.MailIntentRetentionDays
+	}
 	return svc, module.Module{
 		Name:       "notification",
 		Views:      contracts.Views(deps.Page != nil),
@@ -231,6 +266,13 @@ func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 			// text to scrub, and an erasure removes the rows outright. A token that
 			// outlived the person it reaches would still deliver to them.
 			personaldata.Table{Name: "notification_devices", Person: "recipient_id"},
+			// A owed mail holds the address it is owed to and the words it will say, and
+			// it reaches the person only through the notice it belongs to. An erasure
+			// scrubs both: the row keeps its state and its counters, so the audit of
+			// "were we owed a mail and what came back" survives the words.
+			personaldata.Table{Name: "notification_mail_intents", Person: "person_id",
+				Text:      []string{"recipient", "subject", "body", "html", "reason"},
+				NotPerson: []string{"notification_id"}},
 		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
@@ -241,9 +283,19 @@ func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 		// in the chrome the admin shell puts around every page (E4) rather than in
 		// the module list.
 		Nav: nil,
-		// No periodic work: a notification is caused by something happening,
-		// which is an event and not the clock (docs/adr/0004).
-		Jobs:          nil,
+		// Two jobs, both driven by a deadline arriving rather than by something having
+		// happened (docs/adr/0004): the mail this module owes goes out when it is due,
+		// and a finished intent is forgotten when its window ends. The first is why
+		// this line once read `nil`: a notice is caused by an event, and so it is — but
+		// the mail the notice asked for is now a row with a deadline of its own, and a
+		// row that must be sent by four o'clock cannot be delivered by a subscription.
+		//
+		// Neither job is Parallel: one replica drains at a time, so a second replica's
+		// tick is a no-op rather than a second copy of somebody's mail.
+		Jobs: []jobs.Job{
+			internal.Deliver(svc, deps.Tenants, deps.MailEvery, 0, deps.MailLease),
+			internal.MailRetention(deps.Tenants, days),
+		},
 		Subscriptions: subs,
 		// The live door onto the two events this module raises for one person,
 		// watched by the recipient each payload names. An event not listed here
