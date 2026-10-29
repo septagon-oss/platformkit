@@ -205,7 +205,8 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 
 // historyPanel reads the current row's version series under its existing guard.
 // Unavailable history leaves the record readable; restore requires an authorized
-// command and quotes the revision already displayed.
+// command and quotes the revision already displayed, as the text a count reaches
+// this page in whether or not its form answers as steps.
 func historyPanel(r httpx.Resource, v resource.Resource, ctx context.Context, o Options, at string, row map[string]any) *resource.HistoryPanel {
 	if r.History == nil || r.History.Versions == nil {
 		return nil

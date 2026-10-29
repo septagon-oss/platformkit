@@ -79,11 +79,12 @@ type Resource struct {
 	// cannot bypass the operator boundary. See docs/adr/0008.
 	OperatorWrite bool
 	// ReadBy and WriteBy are the declarations this resource's reads and writes
-	// answer to. The zero value means "derive them from Read and Write and the
-	// two operator flags", which is every resource written so far; a resource
-	// whose guard is not a plain permission — httpx.SignedIn(), a permission that
-	// also needs a plan feature — states it here, and kit/rest refuses a Spec
-	// that spells the same guard both ways.
+	// answer to, and they are the only place that answer is kept. A value built
+	// by hand may leave them zero and say its guard with Read, Write and the two
+	// operator flags instead — ReadAuth and WriteAuth answer for both spellings —
+	// and RegisterResource writes the derived answer back here, so the resource
+	// a module reads out of the API carries one guard per side and never derives
+	// it again. kit/rest refuses a Spec that states one guard in two ways.
 	ReadBy, WriteBy Auth
 	// Operations is which of the five routes kit/rest actually mounted. Empty
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
@@ -131,6 +132,14 @@ type Resource struct {
 	// See rest.Singleton.
 	Singleton bool
 
+	// InputRun answers a typed query whose inputs are the generated form and
+	// whose result has no CRUD routes: the three fields below are what its pages
+	// are built from, and Registration guards the closure with Read, as it guards
+	// every other read. A resource that names none of them is an ordinary CRUD
+	// resource, which is nearly every one.
+	InputRun    func(ctx context.Context, values map[string]any) (any, error) `json:"-"`
+	InputOutput []entity.Field
+	InputList   bool
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
 	Count func(ctx context.Context) (int64, error)
@@ -286,12 +295,14 @@ func (r Resource) Writable(ctx context.Context) bool { return r.mayUse(ctx, r.Wr
 
 // ReadAuth carries the same read declaration as the guarded resource closures.
 //
-// A declared ReadBy is the whole answer; otherwise the permission and the two
-// operator flags say it, which is what every resource written so far meant. A
+// It is this package's one derivation of a guard: a declared ReadBy is the whole
+// answer, otherwise the permission and the two operator flags say it, and a
 // resource with neither — a value written by hand, no guard at all — answers the
 // zero Auth rather than panicking on an empty permission, because the zero Auth
 // means "undeclared", which is what ValidateDeclarations refuses and what
-// mayUse, and so every door in front of it, answers "nobody" to.
+// mayUse, and so every door in front of it, answers "nobody" to. Registration
+// asks it once per side and stores the answer in ReadBy, so what a caller reads
+// back out of the API is the guard the routes were mounted under.
 func (r Resource) ReadAuth() Auth {
 	if r.ReadBy.Declared() {
 		return r.ReadBy
@@ -340,13 +351,22 @@ func (a *API) RegisterResource(r Resource) {
 }
 
 // guard returns r with its closures behind the two declarations it
-// carries: the read guard for count/list/get, the write guard for the three
-// writes. The same pairing the routes declare, read through the same methods a
-// page and the catalogue ask, so a resource cannot guard its routes one way and
-// its closures another.
+// carries: the read guard for the typed query and for count/list/get, the write
+// guard for the three writes. The same pairing the routes declare, read through
+// the same methods a page and the catalogue ask, so a resource cannot guard its
+// routes one way and its closures another. The two narrowed counts ask what the
+// total asks, wrapped here for Count's own reason: a Resource built anywhere else
+// is unguarded until it is registered.
+//
+// The pair is computed here and stored in the value's own ReadBy and WriteBy,
+// rather than recomputed by every later reader of Read and Write and the two
+// flags: guard runs on the caller's value copy before the API's lock, so nothing
+// else can observe the write, and after it the canonical field is the only
+// spelling a reader of a registered resource has to know.
 func (a *API) guard(r Resource) Resource {
 	list, get, create, update, remove := r.List, r.Get, r.Create, r.Update, r.Delete
 	read, write := r.ReadAuth(), r.WriteAuth()
+	r.ReadBy, r.WriteBy = read, write
 	r.mayDeclare = a.mayDeclare
 	count := r.Count
 	if count == nil && list != nil {
@@ -371,9 +391,6 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
-	// The two narrowed counts ask the same question the total asks, and are
-	// wrapped here rather than at their caller for the same reason Count is: a
-	// Resource built anywhere else is unguarded until it is registered.
 	if narrowed := r.CountFiltered; narrowed != nil {
 		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
@@ -396,6 +413,14 @@ func (a *API) guard(r Resource) Resource {
 				return nil, err
 			}
 			return get(ctx, id)
+		}
+	}
+	if input := r.InputRun; input != nil {
+		r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return input(ctx, values)
 		}
 	}
 	if create != nil {

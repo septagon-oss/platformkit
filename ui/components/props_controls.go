@@ -28,25 +28,29 @@ type InputProps struct {
 	Type string `json:"type,omitempty"` // text, email, password, number, tel, url, search, date, time, file, hidden
 	// Value is what the control starts with. A file input never carries one:
 	// no browser lets a page choose a file for somebody.
-	Value        string `json:"value,omitempty"`
-	Placeholder  string `json:"placeholder,omitempty"`
-	Label        string `json:"label,omitempty"`
-	HelpText     string `json:"helpText,omitempty"`
-	Error        string `json:"error,omitempty"`
-	Invalid      bool   `json:"invalid,omitempty"`
-	Required     bool   `json:"required,omitempty"`
-	ReadOnly     bool   `json:"readOnly,omitempty"`
-	AutoFocus    bool   `json:"autoFocus,omitempty"`
-	Min          string `json:"min,omitempty"`
-	Max          string `json:"max,omitempty"`
-	Step         string `json:"step,omitempty"`
-	MinLength    int    `json:"minLength,omitempty"`
-	MaxLength    int    `json:"maxLength,omitempty"`
-	Pattern      string `json:"pattern,omitempty"`
-	Autocomplete string `json:"autocomplete,omitempty"`
-	Size         string `json:"size,omitempty"` // sm, md, lg
-	Tone         string `json:"tone,omitempty"` // neutral, success, warning, danger
-	FullWidth    bool   `json:"fullWidth,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Label       string `json:"label,omitempty"`
+	HelpText    string `json:"helpText,omitempty"`
+	// HelpNotes are the sentences a form says about the control it chose, as
+	// distinct from HelpText, which is what the field's author says about the
+	// field. Each is drawn in its own span in the same help paragraph.
+	HelpNotes    []string `json:"helpNotes,omitempty"`
+	Error        string   `json:"error,omitempty"`
+	Invalid      bool     `json:"invalid,omitempty"`
+	Required     bool     `json:"required,omitempty"`
+	ReadOnly     bool     `json:"readOnly,omitempty"`
+	AutoFocus    bool     `json:"autoFocus,omitempty"`
+	Min          string   `json:"min,omitempty"`
+	Max          string   `json:"max,omitempty"`
+	Step         string   `json:"step,omitempty"`
+	MinLength    int      `json:"minLength,omitempty"`
+	MaxLength    int      `json:"maxLength,omitempty"`
+	Pattern      string   `json:"pattern,omitempty"`
+	Autocomplete string   `json:"autocomplete,omitempty"`
+	Size         string   `json:"size,omitempty"` // sm, md, lg
+	Tone         string   `json:"tone,omitempty"` // neutral, success, warning, danger
+	FullWidth    bool     `json:"fullWidth,omitempty"`
 
 	// Accept and Multiple belong to Type "file" and are ignored elsewhere.
 	// Accept is the browser's filter — "image/*", or a comma-separated list of
@@ -78,7 +82,11 @@ type SelectProps struct {
 	VisibleRows int            `json:"visibleRows,omitempty"`
 	FullWidth   bool           `json:"fullWidth,omitempty"`
 	HelpText    string         `json:"helpText,omitempty"`
-	Error       string         `json:"error,omitempty"`
+	// HelpNotes are the sentences a form says about the control it chose, as
+	// distinct from HelpText, which is what the field's author says about the
+	// field. Each is drawn in its own span in the same help paragraph.
+	HelpNotes []string `json:"helpNotes,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // SelectOption is one choice in a Select.
@@ -95,19 +103,23 @@ type TextareaProps struct {
 	ComponentProps
 	HTMXProps
 
-	Name         string `json:"name"`
-	Placeholder  string `json:"placeholder,omitempty"`
-	Value        string `json:"value,omitempty"`
-	Label        string `json:"label,omitempty"`
-	HelperText   string `json:"helperText,omitempty"`
-	ErrorMessage string `json:"errorMessage,omitempty"`
-	Required     bool   `json:"required,omitempty"`
-	ReadOnly     bool   `json:"readOnly,omitempty"`
-	Rows         int    `json:"rows,omitempty"`
-	MinRows      int    `json:"minRows,omitempty"`
-	MaxRows      int    `json:"maxRows,omitempty"`
-	MinLength    int    `json:"minLength,omitempty"`
-	MaxLength    int    `json:"maxLength,omitempty"`
+	Name        string `json:"name"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Label       string `json:"label,omitempty"`
+	HelperText  string `json:"helperText,omitempty"`
+	// HelperNotes are the sentences a form says about the control it chose, as
+	// distinct from HelperText, which is what the field's author says about the
+	// field. Each is drawn in its own span in the same helper paragraph.
+	HelperNotes  []string `json:"helperNotes,omitempty"`
+	ErrorMessage string   `json:"errorMessage,omitempty"`
+	Required     bool     `json:"required,omitempty"`
+	ReadOnly     bool     `json:"readOnly,omitempty"`
+	Rows         int      `json:"rows,omitempty"`
+	MinRows      int      `json:"minRows,omitempty"`
+	MaxRows      int      `json:"maxRows,omitempty"`
+	MinLength    int      `json:"minLength,omitempty"`
+	MaxLength    int      `json:"maxLength,omitempty"`
 	// CharacterLimitOnly shows the limit without HTML's UTF-16 maxlength gate.
 	CharacterLimitOnly bool `json:"characterLimitOnly,omitempty"`
 	ShowCount          bool `json:"showCount,omitempty"`
@@ -126,7 +138,11 @@ type CheckboxProps struct {
 	Value         string `json:"value,omitempty"`
 	Required      bool   `json:"required,omitempty"`
 	HelpText      string `json:"helpText,omitempty"`
-	Error         string `json:"error,omitempty"`
+	// HelpNotes are the sentences a form says about the control it chose, as
+	// distinct from HelpText, which is what the field's author says about the
+	// field. Each is drawn in its own span in the same help paragraph.
+	HelpNotes []string `json:"helpNotes,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // LabelProps defines properties for form labels.

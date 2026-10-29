@@ -210,7 +210,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -280,9 +279,7 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
@@ -310,7 +307,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": true,
                 "value": "none",
@@ -318,8 +314,7 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           }
         ],
         "list": {
@@ -370,9 +365,7 @@
                   "missing": "—",
                   "true": "",
                   "false": "",
-                  "precision": null,
-                  "time": null,
-                  "money": null
+                  "precision": null
                 },
                 "options": [
                   {
@@ -400,7 +393,6 @@
                     "done": false
                   },
                   {
-                    "picture": null,
                     "group": "",
                     "noPreference": true,
                     "value": "none",
@@ -408,8 +400,7 @@
                     "tone": "neutral",
                     "done": false
                   }
-                ],
-                "reference": null
+                ]
               }
             ],
             "verb": "choose",
@@ -418,13 +409,10 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },
@@ -697,7 +685,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -767,9 +754,7 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
@@ -797,7 +782,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": true,
                 "value": "none",
@@ -805,8 +789,7 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           }
         ],
         "list": {
@@ -857,9 +840,7 @@
                   "missing": "—",
                   "true": "",
                   "false": "",
-                  "precision": null,
-                  "time": null,
-                  "money": null
+                  "precision": null
                 },
                 "options": [
                   {
@@ -887,7 +868,6 @@
                     "done": false
                   },
                   {
-                    "picture": null,
                     "group": "",
                     "noPreference": true,
                     "value": "none",
@@ -895,8 +875,7 @@
                     "tone": "neutral",
                     "done": false
                   }
-                ],
-                "reference": null
+                ]
               }
             ],
             "verb": "choose",
@@ -905,13 +884,10 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },
@@ -1184,7 +1160,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -1254,9 +1229,7 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
@@ -1284,7 +1257,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": true,
                 "value": "none",
@@ -1292,8 +1264,7 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           }
         ],
         "list": {
@@ -1344,9 +1315,7 @@
                   "missing": "—",
                   "true": "",
                   "false": "",
-                  "precision": null,
-                  "time": null,
-                  "money": null
+                  "precision": null
                 },
                 "options": [
                   {
@@ -1374,7 +1343,6 @@
                     "done": false
                   },
                   {
-                    "picture": null,
                     "group": "",
                     "noPreference": true,
                     "value": "none",
@@ -1382,8 +1350,7 @@
                     "tone": "neutral",
                     "done": false
                   }
-                ],
-                "reference": null
+                ]
               }
             ],
             "verb": "choose",
@@ -1392,13 +1359,10 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },
@@ -1681,7 +1645,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -1758,9 +1721,7 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
@@ -1788,7 +1749,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": true,
                 "value": "none",
@@ -1796,8 +1756,7 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           }
         ],
         "list": {
@@ -1855,9 +1814,7 @@
                   "missing": "—",
                   "true": "",
                   "false": "",
-                  "precision": null,
-                  "time": null,
-                  "money": null
+                  "precision": null
                 },
                 "options": [
                   {
@@ -1885,7 +1842,6 @@
                     "done": false
                   },
                   {
-                    "picture": null,
                     "group": "",
                     "noPreference": true,
                     "value": "none",
@@ -1893,8 +1849,7 @@
                     "tone": "neutral",
                     "done": false
                   }
-                ],
-                "reference": null
+                ]
               }
             ],
             "verb": "choose",
@@ -1903,13 +1858,10 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
-        "deck": null,
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },

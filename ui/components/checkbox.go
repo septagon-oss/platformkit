@@ -62,15 +62,16 @@ func Checkbox(p CheckboxProps) g.Node {
 		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
 	}
 	control := h.Label(root...)
-	if p.HelpText == "" && p.Error == "" {
+	if !hasHelp(p.HelpText, p.HelpNotes) && p.Error == "" {
 		return control
 	}
 	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
 	if p.Error != "" {
 		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
 	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
 	}
 	return h.Div(field...)
 }
@@ -111,7 +112,7 @@ func checkboxInputAttrs(p CheckboxProps, id string) []g.Node {
 		box = append(box, g.Attr("aria-invalid", "true"))
 		describedBy = append(describedBy, id+"-error")
 	}
-	if p.HelpText != "" {
+	if hasHelp(p.HelpText, p.HelpNotes) {
 		describedBy = append(describedBy, id+"-help")
 	}
 	if len(describedBy) > 0 {

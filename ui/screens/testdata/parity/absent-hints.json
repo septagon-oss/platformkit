@@ -2,9 +2,9 @@
  "name": "absent-hints",
  "provenance": {
   "author": "João Rufino",
-  "date": "2026-10-23",
+  "date": "2026-10-25",
   "inputHash": "sha256:a4aff6f0f1ba3a0dd6bcfce986475b972132bd82addb2e9ff37241fd9ab25bca",
-  "expectedHash": "sha256:e2d15ef536f8411f6dbe9d4100086020cb76002f9e20bc46644c5f6cf771b13c"
+  "expectedHash": "sha256:ac1d4614bf9518f50972b7632b7cd52de4ecf73c9611da7bafdd65a1531a92f6"
  },
  "input": {
   "language": "en",
@@ -46,7 +46,6 @@
     "singular": "note",
     "plural": "notes",
     "icon": "",
-    "group": null,
     "order": 0
    },
    "titles": {
@@ -125,8 +124,7 @@
      }
     ]
    },
-   "commands": [],
-   "deck": null
+   "commands": []
   },
   "rows": {
    "r1": {

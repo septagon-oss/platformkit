@@ -196,7 +196,14 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # configuration. Nothing in the kernel imports this package, which is why
         # admitting the format dependency here adds no dependency to kit/app.
         check("kit/designconfig", p "design", "gopkg.in/yaml.v3")
-        check("ui/forms", policy " " uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
+        # The chrome of a form is copy a person reads, so ui/forms asks the kernel
+        # for a formatter and the caller composes one: ui/resource hands it the
+        # provider it already holds. kit/locale is measured above with nothing
+        # admitted at all, so its closure is the standard library and this line
+        # links one interface and the locale value around it — no provider, no
+        # catalogue file, no language, none of them named by ui/forms. ui/document
+        # and ui/resource are held to it already.
+        check("ui/forms", policy " " uuid " " p "kit/entity " p "kit/locale " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
         check("ui/resource", uuid " " p "kit/entity " p "kit/entity/present " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")

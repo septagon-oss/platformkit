@@ -476,8 +476,15 @@ jobs:
 
       - name: make check
         if: github.event_name != 'pull_request'
+        # `make check` runs check-screen-render, which is scripts/e2e.sh on one spec, and
+        # scripts/e2e.sh refuses to boot without the catcher `Start the mail catcher` put on
+        # this job's network. Main's run 83884 (job 86011) ended there: "e2e: no Mailpit API
+        # at http://localhost:8025". The same three names as `make e2e` below.
         env:
           COMPLEXITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
         run: make check
 
       # The push tier (decision 0088): the contracts, and the behaviour of the
