@@ -98,7 +98,7 @@ func (s *Service) Resumable(ctx context.Context, tx db.Tx[db.Tenant]) ([]*contra
 	}
 	var rows []*contracts.Run
 	err = tx.DB().WithContext(ctx).
-		Where("person_id = ? AND status IN ?", person, []string{"reserved", "active", "paused", "later"}).
+		Where("app = ? AND person_id = ? AND status IN ?", s.App.String(), person, []string{"reserved", "active", "paused", "later"}).
 		Order("updated_at DESC, id").Limit(50).Find(&rows).Error
 	if err != nil {
 		return nil, crud.Classify(err)
