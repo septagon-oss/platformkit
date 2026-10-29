@@ -75,6 +75,8 @@ func DisplayWord(f entity.Field, v any, word func(entity.Field, string) string) 
 		word = EnumWord
 	}
 	switch {
+	case f.Type == entity.TypeSketch:
+		return "—"
 	case f.Type == entity.TypeBool:
 		if b, ok := v.(bool); ok && b {
 			return "Yes"

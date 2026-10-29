@@ -19,6 +19,9 @@ import (
 // at is the list's record address — empty for a resource that mounted no record
 // route, which leaves every primary cell drawing its value unlinked.
 func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name, missing string) g.Node {
+	if f.Type == entity.TypeSketch {
+		return sketchReading(row.Cells[f.Name], name, "thumbnail", o.Words(entity.Schema{Fields: []entity.Field{f}}).text)
+	}
 	// A declared choice answers through its resolved policy, which owns the
 	// appearance; a plain value leaves nil for the table to draw itself.
 	if f.Choices != nil {

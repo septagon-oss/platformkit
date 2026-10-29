@@ -192,3 +192,34 @@ external directory containing `@playwright/test` and `@axe-core/playwright`, wit
 `go test ./ui/screens -run '^TestSteppedFormBrowserJourneys$' -count=1 -v`.
 Set `PLATFORMKIT_DESIGN_GATE` to the design gate script to check each served step
 and both error pages at 390 and 1440 pixels during the same run.
+
+## Drawing fields
+
+An `entity.Sketch` field uses the central `sketch` control and reading policy.
+`Control` renders a labeled square canvas, Undo and Clear, one JSON successful
+control and a static SVG fallback. Generated forms load `js/sketch.js` through
+`document.View.Modules`; custom pages using `Control` must name that module too.
+Serve it from the same `ui.Assets` tree as the stylesheet.
+
+Pointer and keyboard input share one stroke value. Arrow keys move the cursor by
+10 units, Shift+Arrow by one; Space/Enter starts or finishes, Escape/Tab cancels.
+Undo removes the last stroke. Clear keeps one backup for Undo until another stroke
+commits. Reset restores the originally rendered value. Canceled pointers and
+removed fields discard tentative input. Submitting finishes the active stroke.
+No action autosaves or writes browser storage.
+
+Invalid drafts remain in the successful control until Clear deliberately replaces
+them. Missing JavaScript/canvas preserves the saved drawing and explains the
+limitation. Read-only fields show the shared `components.Sketch` reader. Its
+required label is the accessible SVG name; layout supplies its display size.
+Generated list thumbnails and record drawings use the same validated geometry.
+The reader accepts `components.SketchValue`, implemented by `entity.Sketch`.
+`Control` uses its supplied field label, then the declared label or field name;
+generated screens supply the localized label through the existing form adapter.
+
+**Reused** — field namespaces, native action buttons, shared design tokens, the
+forms message catalogues and document asset lifecycle.
+**Added** — stroke recording/history and SVG geometry; existing text and image
+controls cannot edit or display this semantic value.
+**Made reusable** — keyboard and pointer drawing through the same generated or
+custom form control, with an SVG reader that needs no JavaScript.

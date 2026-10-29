@@ -58,3 +58,8 @@ The tests compare titles, membership, field and option order, command copy/flags
 query values, pill tones and picture references. Supplemental value, mounted-query
 and browser tests cover clocks, exact numbers, authorization and rejected input;
 the original 17 fixtures are not claimed to cover those cases by themselves.
+
+`sketch-en` and `sketch-pt-pt` pin the sketch control/kind and localized label.
+Their plain-text cell is a dash; SVG geometry is checked in the component suite.
+The catalogue golden's reflected drawing fields land before the phone parser and
+its fixture/provenance refresh. An older parser rejecting `sketch` is incompatible.

@@ -6,10 +6,10 @@ package main
 //
 // It runs its own PostgreSQL — downloaded once into the user's cache, its data
 // under ./data — creates the application role, migrates, bootstraps the first
-// tenant and administrator when there is none, and serves on :8080. Nothing has
-// to be installed but Go, and nothing has to be written down: the configuration
-// is the development one config.example.yaml documents, with the database's
-// port filled in.
+// tenant and administrator when there is none, and serves on 127.0.0.1:8080:
+// nothing outside this machine reaches it unless --addr says otherwise. Nothing
+// has to be installed but Go and nothing has to be written down: the
+// configuration is the development one config.example.yaml documents.
 //
 // NATS is not needed: the combined role carries events in memory, which is
 // what kit/app does for it anyway. A deployment never runs this; a deployment
@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -38,6 +39,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/modules/admin"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -48,6 +50,14 @@ const (
 	startTenant = "platformkit"
 	startHost   = "platformkit.localhost"
 	startAdmin  = "admin@platformkit.localhost"
+
+	// defaultAddr names a host on purpose. A bare ":port" binds every interface
+	// the machine has, and this command hands out an administrator's password to
+	// whoever reads the terminal next — so the address it answers with when
+	// nobody names one is the loopback, and a run that means to serve a network
+	// says so in --addr. README.md states the same fact; the case in this
+	// directory refuses the two disagreeing.
+	defaultAddr = "127.0.0.1:8080"
 )
 
 // postgresInit is the SQL that makes the application role: NOSUPERUSER and
@@ -57,13 +67,22 @@ const (
 //go:embed postgres-init.sql
 var postgresInit string
 
-func startApp(args []string) error {
+func startApp(args []string, d startDeps) error {
+	d = d.withDefaults()
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	data := fs.String("data", "data", "Directory for the database and uploaded files")
-	addr := fs.String("addr", ":8080", "Address to listen on")
+	addr := fs.String("addr", defaultAddr, "Address to listen on; the default answers this machine only")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// The preflight first: the machine, the address and the two directories are
+	// answered before anything is downloaded or written, so a run that cannot
+	// work costs the seconds it took to find that out and leaves nothing behind.
+	run, err := d.preflight(*data, *addr)
+	if err != nil {
+		return err
+	}
+	defer run.release()
 	logger("info")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -72,14 +91,17 @@ func startApp(args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg := startConfig(*data, *addr, port)
-	pg, err := startPostgres(*data, port)
+	cfg := startConfig(run.data, *addr, port)
+	pending := run.launch
+	pending.port = port
+	pg, err := d.launchDB(pending)
 	if err != nil {
-		return err
+		return startFailure(err, run)
 	}
 	defer func() {
 		if err := pg.Stop(); err != nil {
-			fmt.Fprintln(os.Stderr, "platformkit: stop postgres:", err)
+			fmt.Fprintf(os.Stderr, "platformkit: stop postgres: %s\n  if a server still holds %s, stop it with: %s stop -D %s\n",
+				err, run.cluster(), pgCtl(run.cache), run.cluster())
 		}
 	}()
 	if err := ensureRole(ctx, cfg.Database.MigrateURL); err != nil {
@@ -96,20 +118,127 @@ func startApp(args []string) error {
 			Slug: startTenant, Name: "PlatformKit", Host: startHost,
 		}, startAdmin, password, nil)
 	})
+	use := firstUse{
+		reference: admin.Build(),
+		data:      run.data,
+		cluster:   run.cluster(),
+		cache:     run.cache,
+		public:    cfg.Server.PublicHost,
+	}
 	switch {
 	case err == nil:
-		fmt.Fprintf(os.Stderr, "\n  tenant %s at %s, administrator %s\n  password: %s\n  It is not stored and will not be shown again.\n\n",
-			startTenant, startHost, startAdmin, password)
+		// The first run: the administrator is new, so this is the only time
+		// the password exists in a form a person can read.
+		use.password = password
 	case errors.Is(err, crud.ErrConflict):
-		// The second run: the tenant is there, and so is the password from
-		// the first one. Migrations ran on the way past, which is the point.
-		fmt.Fprintf(os.Stderr, "  tenant %s exists; sign in as %s with the password from the first run\n", startTenant, startAdmin)
+		// The second run: the tenant is there, and so is the password from the
+		// first one. Migrations ran on the way past, which is the point, and the
+		// banner says as much rather than printing a password nobody can use.
 	default:
 		return err
 	}
+	use.write(os.Stderr)
+	// The address goes to the application now: the preflight held it so that
+	// nothing could take it on the way here, and the kernel's own bind is the
+	// authority from here on.
+	run.release()
+	if err := c.app.Run(ctx, c.once, app.All); err != nil {
+		return lostBind(err, run)
+	}
+	return nil
+}
 
-	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/app/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
-	return c.app.Run(ctx, c.once, app.All)
+// lostBind is the bind the preflight won losing the race after the run handed the
+// address back: the application's own bind is the authority, so its refusal is
+// what a person sees. It is the occupied-address sentence restated for a run that
+// had already built the installation by then — the database, the role and the
+// tenant exist and stand untouched — and nothing else, because every other failure
+// of Run needs the error the kernel wrote.
+func lostBind(err error, run startup) error {
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return err
+	}
+	return fmt.Errorf("start: %s was free when this command checked it and is answered by something else now: %w\n"+
+		"       nothing was written by this refusal: the installation under %s is complete and untouched,\n"+
+		"       so stop whatever answers %s and rerun this command, which reuses it, or choose\n"+
+		"       another address with --addr, for example --addr 127.0.0.1:8081",
+		run.addr, err, run.data, run.addr)
+}
+
+// startFailure is the launcher's failure with the next step attached. The
+// library reports what it was doing; what a person can do about it depends on
+// which of its three external dependencies refused, so the sentence is chosen
+// from the error rather than left to the log.
+func startFailure(err error, run startup) error {
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "unable to connect"):
+		return fmt.Errorf("start: the first start downloads PostgreSQL %s from %s and this machine could not reach it: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
+			"       rerunning this command retries it; the binaries stay under %s once one has arrived",
+			embeddedVersion, downloadRepository, err, run.cache)
+	case strings.Contains(text, "no version found matching"):
+		return fmt.Errorf("start: no PostgreSQL %s build is published for this machine: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
+			"       this command asks %s for it; the machine it is running on is %s/%s",
+			embeddedVersion, err, downloadRepository, runtime.GOOS, runtime.GOARCH)
+	case strings.Contains(text, "postmaster.pid"), strings.Contains(text, "another server might be running"):
+		return fmt.Errorf("start: a server this run did not start holds %s: %w\n"+
+			"       nothing was deleted and no server was stopped;\n"+
+			"       stop it with: %s stop -D %s, then rerun — this command never stops a server it did not start",
+			run.cluster(), err, pgCtl(run.cache), run.cluster())
+	default:
+		return fmt.Errorf("start: postgres: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
+			"       the launcher writes its own log under %s, which names the reason",
+			err, filepath.Join(run.cache, "runtime"))
+	}
+}
+
+// downloadRepository is where the embedded launcher fetches its binaries from.
+// It is the library's own default, named here so a refusal can say which host a
+// person is being asked to let through the firewall; this repository pins the
+// version, not a digest, and signs nothing.
+const downloadRepository = "https://repo1.maven.org/maven2"
+
+// firstUse is the banner: what is running, where it writes, where to go, and
+// what rerunning this command will do. Every field is read from the run, so the
+// banner cannot advertise an address the run is not on.
+type firstUse struct {
+	reference string
+	data      string
+	cluster   string
+	cache     string
+	public    string
+
+	// password is printed by the run that created the administrator and by no
+	// other: an installation that already has one has no new secret to hand out.
+	password string
+}
+
+func (f firstUse) write(w io.Writer) {
+	say := func(format string, args ...any) { fmt.Fprintf(w, format+"\n", args...) }
+	say("  reference %s", f.reference)
+	say("  data      %s  (uploads under %s/files)", f.data, f.data)
+	say("  database  %s  (binaries under %s)", f.cluster, filepath.Join(f.cache, "runtime"))
+	say("  tenant    %s, administrator %s", startTenant, startAdmin)
+	switch {
+	case f.password != "":
+		say("  password: %s", f.password)
+		say("            It is not stored and will not be shown again.")
+	default:
+		say("            the tenant already exists: sign in with the password the first run printed.")
+	}
+	say("  site      http://%s/", f.public)
+	say("  admin     http://%s/app/admin/login", f.public)
+	say("  api       http://%s/docs", f.public)
+	say("  next      sign in at the admin address, or from a shell:")
+	say("            curl -c cookies.txt -H 'content-type: application/json' \\")
+	say("              -d '{\"email\":\"%s\",\"password\":\"<the password above>\"}' http://%s/api/v1/auth/login", startAdmin, f.public)
+	say("            curl -b cookies.txt -H 'content-type: application/json' \\")
+	say("              -d '{\"title\":\"first task\"}' http://%s/api/v1/task/tasks", f.public)
+	say("  stop      Ctrl-C; rerunning this command reuses %s, creates nothing new and starts no second server", f.data)
+	say("")
 }
 
 // startConfig is the development configuration with the database's port in
@@ -151,27 +280,36 @@ func startConfig(data, addr string, pgPort int) config.Config {
 // config.yaml of its own, its key in PLATFORMKIT_WEBHOOK_SECRET_KEY.
 const startWebhookKey = "0123456789abcdef0123456789abcdef"
 
-// startPostgres runs PostgreSQL 16 — the version the Compose stack runs — with
-// its binaries cached per user and its data under the data directory, so a
-// second start finds both. Its own logging goes nowhere: a database that starts
-// has nothing to say, and one that does not is an error this returns.
-func startPostgres(data string, port int) (*embeddedpostgres.EmbeddedPostgres, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return nil, fmt.Errorf("start: no cache directory for the database binaries: %w", err)
-	}
-	cache = filepath.Join(cache, "platformkit", "postgres")
+// embeddedVersion is the PostgreSQL this command runs — the version the Compose
+// stack runs — and the major version a data directory has to name to be reused.
+const embeddedVersion = embeddedpostgres.V16
+
+// pgCtl is the server-control binary the launcher extracted into the cache. A
+// refusal prints it, so a person can stop a server this command refuses to stop.
+func pgCtl(cache string) string {
+	return filepath.Join(cache, "runtime", "bin", "pg_ctl")
+}
+
+// cluster is the database directory inside the data directory.
+// startPostgres is the launcher: PostgreSQL with its binaries under the cache the
+// preflight settled and its data under the data directory, so a second start finds
+// both. Its own logging goes nowhere: a database that starts has nothing to say,
+// and one that does not is the error this returns for startFailure to classify.
+//
+// The first start on a machine downloads the binaries for that machine, and an
+// interruption leaves no partial archive behind: rerunning this command retries it.
+func startPostgres(l launch) (database, error) {
 	pg := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
-		Version(embeddedpostgres.V16).
-		Port(uint32(port)).
+		Version(embeddedVersion).
+		Port(uint32(l.port)).
 		Username("postgres").Password("platformkit").Database("platformkit").
-		CachePath(filepath.Join(cache, "archive")).
-		RuntimePath(filepath.Join(cache, "runtime")).
-		DataPath(filepath.Join(data, "postgres")).
+		CachePath(filepath.Join(l.cache, "archive")).
+		RuntimePath(filepath.Join(l.cache, "runtime")).
+		DataPath(l.cluster()).
 		Logger(io.Discard).
 		StartTimeout(90 * time.Second))
 	if err := pg.Start(); err != nil {
-		return nil, fmt.Errorf("start: postgres: %w", err)
+		return nil, err
 	}
 	return pg, nil
 }

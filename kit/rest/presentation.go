@@ -25,6 +25,9 @@ import (
 // like a decision.
 func presentationFault(fields []crud.Field) string {
 	for _, f := range fields {
+		if bad := f.SketchFault(); bad != "" {
+			return bad
+		}
 		if err := entity.ValidateChoices(f); err != nil {
 			return fmt.Sprintf("field %q: %s", f.Name, err)
 		}
