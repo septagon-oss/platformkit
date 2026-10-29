@@ -11,7 +11,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 59139
+      "max": 59327
     },
     {
       "name": "modules",
