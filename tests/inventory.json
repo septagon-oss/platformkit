@@ -53117,6 +53117,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/the_receipts_a_tenant_is_answered_with_carry_no_digest_that_tenant_never_wrote_test.go",
+   "id": "modules/file/the_receipts_a_tenant_is_answered_with_carry_no_digest_that_tenant_never_wrote_test.go#TestTheReceiptsATenantIsAnsweredWithCarryNoDigestThatTenantNeverWrote",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheReceiptsATenantIsAnsweredWithCarryNoDigestThatTenantNeverWrote",
+   "needs_db": true,
+   "pkg": "modules/file",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/the_receipts_a_tenant_is_answered_with_speak_only_of_the_files_that_tenant_filed_test.go",
    "id": "modules/file/the_receipts_a_tenant_is_answered_with_speak_only_of_the_files_that_tenant_filed_test.go#TestTheReceiptsATenantIsAnsweredWithSpeakOnlyOfTheFilesThatTenantFiled",
    "kind": "go",
@@ -85658,7 +85677,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2346,
+  "files": 2347,
   "forge_runs": [
    408,
    413,
@@ -85692,7 +85711,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3719,
+   "behaviour": 3720,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -85711,9 +85730,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4345,
+  "rows": 4346,
   "tiers": {
-   "merge": 2670,
+   "merge": 2671,
    "nightly": 110,
    "push": 1565
   },
@@ -85721,13 +85740,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2101,
+   "keep": 2102,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3959,
+   "keep": 3960,
    "keep-rewrite": 170,
    "merge": 216
   }
