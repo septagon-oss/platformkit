@@ -154,11 +154,9 @@ type MailIntent struct {
 // MailIntents is the durable half of sending mail: the decision, written where a
 // crash can find it, and the send that happens after the decision commits.
 //
-// It is a capability beside Mailer, MailDelivery and MailLedger and not a method
-// on any of them: Mailer.Send keeps sending immediately for whoever composes it,
-// and a mail that must survive a rollback needs a transaction rather than a
-// socket. A caller that has decided to mail somebody and cannot afford to lose
-// the decision writes an intent; a worker sends it.
+// It is a capability beside Mailer, MailDelivery and MailLedger and not a method on
+// any of them: Mailer.Send keeps sending immediately for whoever composes it, and a
+// mail that must survive a rollback needs a transaction rather than a socket.
 //
 // It is not the door a credential-bearing message goes through. The message an
 // intent holds is stored verbatim in the tenant's database, which is exactly what

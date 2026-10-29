@@ -42,21 +42,14 @@ var (
 // intent, in the transaction the kernel opened for the event. It never opens a
 // socket.
 //
-// It is a subscriber and not part of Notify for the reason the event exists: the
-// request that raised the notice commits its row and returns. What changed is where
-// the sending happens. A relay dialled inside this transaction was a mail a rollback
+// The sending moved. A relay dialled inside this transaction was a mail a rollback
 // could undo after it had left, and a relay whose answer was never written left no
-// row at all — so the outbox redelivered the event, the person was mailed twice and
-// nothing said so. The intent row closes both halves: the decision commits before
-// anything is dialled, and a mail that is already written is never written twice.
-//
-// What it is handed is two identifiers. The row, the address and the host are all
-// read here, inside the transaction the kernel opened in the event's own tenant —
-// see contracts.EmailRequested for why the payload is that thin, and for the two
-// consequences: a notice deleted in the meantime is a skip, and an address changed
-// in the meantime is the one the mail goes to. The worker asks both again before the
-// socket opens (see internal/mail_deliver.go), because a queue is exactly where the
-// gap between a decision and its send lives.
+// row at all, so the outbox redelivered the event, the person was mailed twice and
+// nothing said so. The intent row closes both halves. The row, the address and the
+// host are all read here, in the event's own tenant — see contracts.EmailRequested
+// for why the payload is that thin — and the worker asks both again before the
+// socket opens, because a queue is where the gap between a decision and its send
+// lives.
 func SendMail(svc *Service, hosts contracts.HostLookup, secure bool) events.Subscription {
 	return events.Subscription{
 		Module: "notification", Name: contracts.EventEmailRequested,
