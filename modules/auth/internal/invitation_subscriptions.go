@@ -75,7 +75,7 @@ func (s *Service) offerLegacyInvitation(ctx context.Context, tx db.Tx[db.Tenant]
 		return err
 	}
 	if u.Invitation.Phase == "" {
-		return s.Offer(ctx, tx, id)
+		return s.offerUser(ctx, tx, id)
 	}
 	if u.Invitation.Generation != 0 || u.Status != user.StatusInvited {
 		return nil

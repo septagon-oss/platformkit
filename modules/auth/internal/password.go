@@ -101,6 +101,13 @@ func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string
 // the bootstrap's Provision as well as by Invite, and the first administrator
 // of an installation has a password already, printed on the terminal.
 func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error {
+	if s.invitationUsers != nil {
+		return s.offerLegacyInvitation(ctx, tx, userID)
+	}
+	return s.offerUser(ctx, tx, userID)
+}
+
+func (s *Service) offerUser(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error {
 	user, err := s.users.Get(ctx, tx, userID)
 	if errors.Is(err, crud.ErrNotFound) {
 		return nil
