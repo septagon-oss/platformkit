@@ -227,7 +227,7 @@ cp "$scripts/check_packages.sh" "$packages_repo/scripts/"
 printf 'module github.com/septagon-oss/platformkit\n\n' > "$packages_repo/go.mod"
 sed -n '/^go[[:space:]]/p' "$scripts/../go.mod" >> "$packages_repo/go.mod"
 printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
-for path in apps/platformkit kit/screen kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
+for path in apps/platformkit kit/screen kit/tour kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
