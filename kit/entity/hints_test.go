@@ -64,7 +64,7 @@ func TestTheVocabulariesRefuseWhatTheyDoNotList(t *testing.T) {
 	if !entity.ValidVisibility("") || !entity.ValidFormat("") || !entity.ValidIcon("") {
 		t.Error("the empty string means \"nobody declared this\" on the other three axes")
 	}
-	for _, list := range [][]string{entity.Icons, entity.Tones, entity.Formats, entity.Visibilities} {
+	for _, list := range [][]string{entity.IconNames(), entity.ToneNames(), entity.FormatNames(), entity.VisibilityNames()} {
 		for _, name := range list {
 			if !entity.ValidIcon(name) && !entity.ValidTone(name) && !entity.ValidFormat(name) && !entity.ValidVisibility(name) {
 				t.Errorf("%q is listed and no predicate admits it", name)
