@@ -12,17 +12,13 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 func TestTheKeptListTellsTwoModulesOfOneKindApart(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	const title = "Number the loading bay notices"
 	oneKeptCopy(t, cfg, keeper, title)

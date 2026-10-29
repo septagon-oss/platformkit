@@ -15,9 +15,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 // TestTheKeepFormLandsOnThisInstallationsOwnKeptList presses the keep control as the
@@ -29,8 +26,7 @@ func TestTheKeepFormLandsOnThisInstallationsOwnKeptList(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	id := newTask(t, cfg, keeper, "Repaint the loading bay", "normal")
 

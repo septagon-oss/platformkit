@@ -96,11 +96,27 @@ secret the process has not needed yet and a rotation reaches the next send.
   *is* symlinks — every data file points through `..data` — so refusing links would
   refuse the deployment this adapter exists for; what is refused is a resolved path
   outside the store, which is the property that mattered.
-- **No event, no metric, no cache, no transaction.** Each is reasoned in the package's
-  `doc.go`; the short form is that a read has no domain state to commit an event with,
-  the runtime's three numbers do not include "how many secrets", a cached secret is a
-  secret whose rotation nobody sees, and a lookup happens before there is a transaction
-  to join.
+- **No event, no metric, no cache, no transaction.** A read has no domain state, so an
+  event would be a claim about something that already happened, committed in a
+  transaction of its own — the pair that can disagree. The audit trail is event-fed and
+  commits its row beside the domain state the event describes; and this package imports
+  no module — `modules/audit` is above it, not beside it — so it could not write that
+  row itself even if the row made sense. The sealed event therefore belongs to the
+  command that seals a value and stores the ciphertext, in its own transaction, beside
+  the row that holds the bytes. A metric is none of the runtime's three numbers — slow,
+  behind, refused — and the per-call trail already answers "how many" with the tenant
+  and the request attached. A cached secret is a secret whose rotation nobody sees, so
+  every read reaches the store and `Version` is the signal a caller with a real
+  invalidation path may build a memo on. A lookup happens before there is a transaction
+  to join, and a read that joined the caller's would hold a secret's lifetime open
+  across a commit. The package's `doc.go` states the same four in the short form a
+  reader at the source sees.
+- **One name grammar, refused in one place.** `Of` and `Shared` refuse the name in this
+  package rather than in an adapter, so no adapter can be wrong about it. The subset is
+  the intersection of what a file name, a URL path segment and an environment variable
+  can all spell, which is what lets `env`, `file` and OpenBao address one name; and it
+  is the one place traversal is refused, so an adapter that joins a name into a path has
+  nothing left to escape from.
 - **One name is the port's: `mail.password`.** `auth.factor_key`,
   `webhook.secret_key`, `bootstrap.password`, `nats.password`, `cache.password` and a
   DKIM key still arrive through `kit/config`, and `modules/auth`'s

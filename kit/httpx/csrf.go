@@ -18,29 +18,19 @@ func unsafeMethod(m string) bool {
 	return true
 }
 
-// csrf refuses a state-changing request that a cookie session authorised and
-// another site sent.
+// csrf refuses a state-changing request that a cookie session authorised and another site
+// sent.
 //
-// A cookie is attached by the browser whichever page made the request, so a
-// session cookie is a credential the caller did not choose to present. The check
-// is the browser's own account of where the request came from: Sec-Fetch-Site,
-// which a page cannot forge, and an Origin whose host is this one for the older
-// clients that do not send it. A request carrying no session cookie is not
-// guarded, because nothing was attached on its behalf — a bearer token is
-// presented deliberately and a cross-site page cannot read one to present.
+// A cookie is attached by the browser whichever page made the request, so a session cookie
+// is a credential the caller did not choose to present. The check is the browser's own
+// account of where the request came from: Sec-Fetch-Site, which a page cannot forge, and an
+// Origin whose host is this one for the older clients that do not send it. A request with no
+// session cookie is not guarded, because nothing was attached on its behalf.
 //
-// # What this accepts
-//
-// One case is let through that a per-form token would not, and it is named here
-// rather than implied: a state-changing request with a session cookie, no
-// Sec-Fetch-Site and no Origin. No browser in support produces it — every
-// current engine sends the first, and the ones before it sent the second on a
-// cross-origin POST, and a page that could suppress both could suppress a token
-// header too. What does produce it is a script or a mobile client, which
-// attached the cookie because somebody wrote the code that attaches it. That is
-// the deliberate presentation this check exists to tell from the automatic one.
-// If a client that suppresses both headers and can be driven cross-site ever
-// exists, this is the line that changes, and it is one line.
+// One case is let through that a per-form token would not, and it is named here rather than
+// implied: a state-changing request with a session cookie, no Sec-Fetch-Site and no Origin.
+// No browser in support produces it; a script or a mobile client does, and it attached the
+// cookie because somebody wrote the code that attaches it — the deliberate presentation.
 func (a *API) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := SessionCookieOf(r); !ok || !unsafeMethod(r.Method) || SameSite(r) {

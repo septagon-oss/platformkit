@@ -408,7 +408,7 @@ func TestTheBrokerIsAskedOfTheRoleThatNeedsIt(t *testing.T) {
 	// package's schema — but kit/db's own cases still hold pg_advisory_lock(7240101)
 	// from a second session to watch a run queue behind theirs, and what every boot in
 	// this suite shares beside its own namespace is the machine. At 5s this assertion
-	// was a stopwatch on that queue: in `make check` on 2026-09-30 it failed with
+	// was a stopwatch on that queue: under `make check` it failed with
 	// "worker Run = db: migrate: lock: timeout: context deadline exceeded" — a wait cut
 	// short, not a refusal arriving. It now stands where this package's two drain cases
 	// already stand for a boot, and what watches for a listener that must not exist is

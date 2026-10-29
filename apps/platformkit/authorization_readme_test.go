@@ -52,6 +52,7 @@ var declaredElsewhere = map[string]string{
 	"workspace":         "README.md",
 	"access":            "README.md",
 	"media":             "README.md",
+	"authgrants":        filepath.Join("..", "..", "modules", "auth", "README.md"),
 	"emailregistration": filepath.Join("..", "..", "modules", "auth", "README.md"),
 	"seed":              filepath.Join("..", "..", "kit", "seed", "README.md"),
 }

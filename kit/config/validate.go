@@ -65,7 +65,10 @@ func (c *Config) validate(path string) error {
 
 func (c *Config) validateRequired(path string) error {
 	for _, k := range keys {
-		if k.required && *k.field(c) == "" {
+		// Only a key that holds a string can be missing: a port that arrived as 0
+		// is a port that was not written down at all, and Mail.validate says so in
+		// the all-or-none terms the mail block is checked in.
+		if k.required && k.field != nil && *k.field(c) == "" {
 			return fmt.Errorf("config %s: %s is empty", path, k.name)
 		}
 	}

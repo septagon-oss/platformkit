@@ -15,9 +15,6 @@ package main
 import (
 	"net/http"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 // TestTheReferenceCompositionTellsAPersonWhichOfItsRecordsTheyMayKeep reads the
@@ -27,8 +24,7 @@ func TestTheReferenceCompositionTellsAPersonWhichOfItsRecordsTheyMayKeep(t *test
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	acmeID := installationTenantID(t, cfg, admin, "acme")
 	declareLocale(t, cfg, admin, acmeID, `{"default":"en","supported":["en","pt-PT"]}`)

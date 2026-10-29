@@ -17,9 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 // TestAGiveBackQuotingARevisionTheCopyNeverCarriedKeepsTheCopy posts one keeper's
@@ -30,8 +27,7 @@ func TestAGiveBackQuotingARevisionTheCopyNeverCarriedKeepsTheCopy(t *testing.T) 
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	title := "Reletter the returns shelf"
 	id := newTask(t, cfg, keeper, title, "normal")

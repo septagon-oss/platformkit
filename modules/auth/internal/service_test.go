@@ -93,9 +93,10 @@ func TestServiceConforms(t *testing.T) {
 		fixture := func(ctx context.Context, tx db.Tx[db.Tenant]) authtest.Fixture {
 			return authtest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
-				Published: func() []string { return outbox(t, tx) },
-				Sent:      notices.Sent,
-				Mailed:    box.Sent,
+				Published:  func() []string { return outbox(t, tx) },
+				Sent:       notices.Sent,
+				Mailed:     box.Sent,
+				Delivering: func(delivers bool) { box.Undeliverable = !delivers },
 				Sessions: func(user uuid.UUID) int {
 					var n int64
 					if err := tx.DB().Table("sessions").Where("user_id = ?", user).Count(&n).Error; err != nil {
@@ -175,7 +176,7 @@ func TestServiceConforms(t *testing.T) {
 // wants no mail at all passes internal.Delivery{}, and then no token is issued
 // either — see internal.Service.offer.
 func delivery(box *authtest.Mailbox) internal.Delivery {
-	return internal.Delivery{Mailer: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
+	return internal.Delivery{Mailer: box, MailDelivery: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
 }
 
 // seed installs the two roles a tenant is created with, in a cross-tenant
@@ -610,7 +611,11 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Reissue: %v", err)
 		}
-		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes'`)
+		// The cooldown counts the links that went out, so this is the write
+		// that moves an offer outside the five minutes: sent_at is the column
+		// modules/auth/000051 added for exactly this question.
+		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes',`+
+			` sent_at = sent_at - interval '10 minutes'`)
 	}
 	sent := box.Sent()
 	if len(sent) != 3 {

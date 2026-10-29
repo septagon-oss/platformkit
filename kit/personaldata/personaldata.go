@@ -1,21 +1,17 @@
-// Package personaldata is the one contract by which this application answers for a
-// natural person: which of its own tables name them, what of theirs it would hand
-// back, and what it does to those rows when asked to stop holding them.
+// Package personaldata is the one contract by which this application answers for
+// a natural person: which of its own tables name them, what of theirs it would
+// hand back, and what it does to those rows when asked to stop holding them.
 //
-// It is in the kernel and not in a module because the manifest speaks to it before
-// any module is built — the same reason kit/module names kernel types (ADR 0013). A
-// person's rows sit in eight owners' tables and house rule 3 forbids any one of them
-// reading another's, so the only thing that can answer "this person, everywhere" is a
-// contract each owner implements for its own rows and one module that composes them.
+// It is in the kernel and not a module because the manifest speaks to it before
+// any module is built (ADR 0013). A person's rows sit in eight owners' tables and
+// house rule 3 forbids one reading another's, so "this person, everywhere" is
+// answered by a contract each owner implements for its own rows and one module
+// that composes them.
 //
-// The two operations are not symmetric, and the asymmetry is the point:
-//
-//   - Export is a read. It publishes nothing, writes nothing, and answers with the
-//     rows this module holds about one person, in whatever shape that module's
-//     contracts already use.
-//   - Erase removes what the rows *say* and keeps the rows wherever the audit trail
-//     has to keep a row (ADR 0020). It runs inside the caller's transaction: a
-//     half-erased person is not a person who is erased.
+// The operations are not symmetric: Export is a read that publishes nothing, in
+// whatever shape the module's contracts already use, and Erase removes what the
+// rows *say* while keeping the rows the audit trail must keep (ADR 0020), inside
+// the caller's transaction — a half-erased person is not an erased person.
 package personaldata
 
 import (

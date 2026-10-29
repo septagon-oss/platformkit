@@ -1,4 +1,5 @@
 # Suite kind and exact foreign constructors, followed by the composition reason.
+modules/admin@internal github.com/septagon-oss/platformkit/modules/user Migrates User's real schema so the shell's caller read and tenant switcher are proven inside a tenant-scoped transaction rather than a fake one.
 modules/auth@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Composes notification and user migrations for public Auth repair and seed behavior.
 modules/auth/contracts@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Builds the real schema used by the verification limiter contract tests.
 modules/auth/internal@internal github.com/septagon-oss/platformkit/modules/user Migrates and constructs User to check session cleanup against real users.
@@ -9,4 +10,5 @@ modules/scim/internal@external github.com/septagon-oss/platformkit/modules/user 
 modules/subject/internal@external github.com/septagon-oss/platformkit/modules/user Composes User and Subject schemas for command authorization, erasure and export behavior.
 modules/task@external github.com/septagon-oss/platformkit/modules/audit Composes Task and Audit to check normalized title history at the mutation boundary.
 modules/tenant/internal@external github.com/septagon-oss/platformkit/modules/auth,github.com/septagon-oss/platformkit/modules/user Composes Auth and User migrations for the real Tenant service and tenant isolation conformance.
+modules/user@internal github.com/septagon-oss/platformkit/modules/auth Migrates Auth's real schema beside User's, so a provisioning that fails partway is proven to take the invited row, the session and the outbox entry back with it.
 modules/web@external github.com/septagon-oss/platformkit/modules/content,github.com/septagon-oss/platformkit/modules/site Composes Content and Site schemas for Web's public module behavior.

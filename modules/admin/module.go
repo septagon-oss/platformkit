@@ -77,6 +77,8 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+	// SignInOperationID must name SignIn's mounted operation; empty values panic in New.
+	SignInOperationID string
 
 	// PictureSource is the address template a generated `present:image` cell
 	// fetches its bytes from, `{id}` standing for the file id the field holds —
@@ -87,14 +89,6 @@ type Deps struct {
 	PictureSource string
 	// ComposedSource is the composed-picture address with a {reference} placeholder.
 	ComposedSource string
-
-	// Saving is this installation's saving capability, read off the composition
-	// that built one: the generated record screen draws its keep-a-copy control from
-	// it, and nil — every composition that wired none — draws the record it drew
-	// before a copy could be kept. This module names no saving service and mounts no
-	// page of its own; it hands the value to the screens it mounts, which is the
-	// same reason it hands them the picture door.
-	Saving resource.SavingReader
 
 	// Registration is the composition saying that a person with no account may
 	// make one. Nil — the default — means the sign-in page shows the password
@@ -113,7 +107,11 @@ type Deps struct {
 
 	// Tenants is the control plane, for the switcher. It is the one cross-tenant
 	// read in this module, and it needs the token Routes is handed.
+	// Deprecated: use TenantList.
 	Tenants tenantcontracts.Service
+
+	// TenantList lists control-plane tenants; when present it takes precedence over Tenants.
+	TenantList tenantcontracts.Lister
 
 	// Roles is the auth module's role administration, for the screen that
 	// module's nav entry names. It is the same value main hands the kernel as
@@ -139,6 +137,8 @@ type Deps struct {
 	// asks no permission and takes no tenant argument. Unlike Roles it mounts no
 	// screen, so nothing is reported unserved when a composition has no user module.
 	People People
+	// Saving reads the caller's standing for declared savable resources.
+	Saving resource.SavingReader
 
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
@@ -177,17 +177,21 @@ const PermissionGalleryRead = "gallery:read"
 func New(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
+		Views:         screenViews(deps),
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},
 		Declared:      nil,
 		Nav:           nil,
 		Jobs:          nil,
 		Subscriptions: nil,
+		// The switcher lists every tenant, which is a question no tenant's own
+		// transaction can answer. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "list every tenant for the workspace's tenant switcher"},
 		Routes: func(s httpx.Surfaces) {
 			internal.Mount(s, internal.Shell{
 				Nav:       navigation(deps.Modules),
 				Primary:   deps.Primary,
 				Authorize: deps.Authorize,
-				Tenants:   deps.Tenants,
+				Tenants:   tenantList(deps),
 				Roles:     deps.Roles,
 				Sessions:  deps.Sessions,
 				People:    deps.People,
@@ -197,13 +201,14 @@ func New(deps Deps) module.Module {
 				Locale:    deps.Locale,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
-				// tenant switcher lists. See docs/adr/0006.
-				Token:          s.SystemToken(),
-				SignIn:         deps.SignIn,
-				PictureSource:  deps.PictureSource,
-				ComposedSource: deps.ComposedSource,
-				Saving:         deps.Saving,
-				Registration:   deps.Registration,
+				// tenant switcher lists.
+				Token:             s.SystemToken(),
+				SignIn:            deps.SignIn,
+				SignInOperationID: deps.SignInOperationID,
+				PictureSource:     deps.PictureSource,
+				ComposedSource:    deps.ComposedSource,
+				Saving:            deps.Saving,
+				Registration:      deps.Registration,
 			})
 		},
 	}

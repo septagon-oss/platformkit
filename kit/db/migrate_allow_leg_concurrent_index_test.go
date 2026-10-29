@@ -53,7 +53,7 @@ import (
 // The wait itself is read out of the server instead of measured around the run. It
 // used to be: hold the reader in `pg_sleep(8)`, and refuse a migration that finished in
 // under five seconds. That second shape fails on the schedule of the test process, not
-// on the product — measured on 2026-10-04, the same correct migration applied in 1.953s
+// on the product — measured here, the same correct migration applied in 1.953s
 // and 2.021s twice, once with the case's own process held at a breakpoint for six of
 // the reader's eight seconds (kit/db/concurrent_index_reader_schedule_test.py), which is
 // a deschedule, not a defect, and is exactly the class this task exists to remove. Both

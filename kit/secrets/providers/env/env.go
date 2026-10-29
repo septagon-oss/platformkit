@@ -3,21 +3,15 @@
 //
 // It is the adapter a laptop and a one-container deployment run on, and it opens
 // nothing — no file handle, no socket, no credential to bootstrap — which is why
-// an unset secrets.adapter means this one. It is also the adapter that reaches the
-// operator's existing habit rather than replacing it: PLATFORMKIT_MAIL_PASSWORD is
-// both the variable kit/config read until this package existed and the name a
-// Shared("mail.password") maps to, so a deployment that moves onto the port does
-// not change its environment.
+// an unset secrets.adapter means this one. It reaches the operator's existing
+// habit rather than replacing it: PLATFORMKIT_MAIL_PASSWORD is both the variable
+// kit/config read until this package existed and the name a
+// Shared("mail.password") maps to, so moving onto the port changes no
+// environment.
 //
-// Two limits follow from the shape of an environment and are stated rather than
-// worked around. There is no version: an environment variable has no token for
-// which bytes it holds, and inventing one would be either a digest of a
-// low-entropy secret or a number that moves when nothing relevant did. And there
-// are no tenants: a flat process environment cannot answer a different value per
-// customer, so a tenant's address is refused with ErrNotSupported rather than
-// answered with somebody else's secret. The fix belongs to the deployment — mount
-// file, or set secrets.adapter openbao — and the conformance suite's tenant cases
-// run against the adapters that answer them.
+// An environment variable carries no version and no value per customer, so a
+// tenant address is refused with ErrNotSupported rather than answered with
+// somebody else's secret; kit/secrets/README.md's Limits name where the fix is.
 package env
 
 import (

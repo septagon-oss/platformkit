@@ -31,8 +31,9 @@ func named(entityName string) resource.Resource {
 
 func TestASetTheCatalogueAlreadyNamedKeepsItsOwnName(t *testing.T) {
 	t.Parallel()
-	// The heading humanises the entity and the empty state says it as the schema
-	// wrote it: "settings" is a set in both, and neither line adds a second s.
+	// The heading shows the resolved noun as a label and the empty state says it as
+	// the schema wrote it: "settings" is a set in both, and neither line adds a
+	// second s.
 	for _, c := range []struct{ entity, want, empty, mustNot string }{
 		{"settings", "Settings", "No settings yet.", "Settingss"},
 		{"content", "Content", "No content yet.", "Contents"},

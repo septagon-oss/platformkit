@@ -29,7 +29,10 @@ type Deps struct {
 	// of the users table and locks a person's row only to decide what their roles
 	// become, because the rules about who may become what — and who may take the
 	// last administrator away — live behind those commands.
+	// Deprecated: use Provisioning.
 	Users usercontracts.Service
+	// Provisioning owns account lifecycle commands and takes precedence over Users.
+	Provisioning usercontracts.Provisioning
 
 	// Roles answers whether this tenant knows a role name at all, which is the
 	// question a group→role binding has to be able to ask. Role definitions are
@@ -67,7 +70,11 @@ var permissions = []module.Permission{
 // a role grant it never asked anybody about, and all three answers look like
 // success until a customer's directory is half-imported.
 func New(deps Deps) (contracts.Service, module.Module) {
-	if deps.Users == nil {
+	people := deps.Provisioning
+	if people == nil {
+		people = deps.Users
+	}
+	if people == nil {
 		panic("scim.Module: Deps.Users is required; the people this module provisions are modules/user's rows and only its commands may write them")
 	}
 	if deps.Roles == nil {
@@ -76,7 +83,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Authority == nil {
 		panic("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or a command's recheck of who is asking has nothing to ask")
 	}
-	svc := internal.NewService(deps.Users, deps.Roles, deps.Authority)
+	svc := internal.NewService(people, deps.Roles, deps.Authority)
 	return svc, module.Module{
 		Name:       "scim",
 		Migrations: Migrations.Files,

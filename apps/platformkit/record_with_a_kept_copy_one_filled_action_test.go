@@ -20,9 +20,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 // openTag matches a control's opening tag, so its class attribute and its label can be
@@ -82,8 +79,7 @@ func TestTheRecordWithAKeptCopyDrawsOneFilledAction(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	id := newTask(t, cfg, keeper, "Repaint the loading bay", "normal")
 	at := "/app/task/tasks/" + id

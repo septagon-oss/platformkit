@@ -38,6 +38,14 @@ import (
 // styles its selected state, so a product sheet may not spend those names, and the
 // gate still reads the attributed source to check the name is really rendered.
 var renderedHooks = map[string]string{
+	"data-form-steps":          "ui/forms/steps.go",
+	"data-step-heading":        "ui/forms/steps.go",
+	"data-step-errors":         "ui/forms/steps.go",
+	"data-answer-field":        "ui/forms/steps.go",
+	"data-answer-template":     "ui/forms/steps.go",
+	"data-answer-empty":        "ui/forms/steps.go",
+	"data-answer-labels":       "ui/forms/steps.go",
+	"data-screen-view":         "ui/resource/screens.go",
 	"data-choice":              "modules/picture/contracts/compile.go",
 	"data-selected":            "modules/picture/contracts/figure.go",
 	"data-choice-words":        "ui/forms/choice.go",
@@ -139,6 +147,18 @@ var renderedHooks = map[string]string{
 	"data-richtext-word-saved":   "ui/forms/richtext.go",
 	"data-richtext-word-saving":  "ui/forms/richtext.go",
 	"data-richtext-words":        "ui/forms/richtext.go",
+	// The resolved time's vocabulary: drawn by ui/resource on a <time>, read by
+	// ui/assets/js/components.js, which re-says the instant where the person is
+	// and never invents a marker of its own.
+	"data-time-count":    "ui/resource/value.go",
+	"data-time-kind":     "ui/resource/value.go",
+	"data-time-language": "ui/resource/value.go",
+	"data-time-now":      "ui/resource/value.go",
+	"data-time-offset":   "ui/resource/value.go",
+	"data-time-policy":   "ui/resource/value.go",
+	"data-time-relative": "ui/resource/value.go",
+	"data-time-unit":     "ui/resource/value.go",
+	"data-time-zone":     "ui/resource/value.go",
 }
 
 // kernelHooks is the vocabulary refuseClientSheet compares a selector against,

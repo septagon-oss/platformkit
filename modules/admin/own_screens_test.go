@@ -32,8 +32,9 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
-		Cache:      cache.Memory("pkit"),
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"),
+		PublicHost:   host, Tenants: caller{}, Conn: app, Authorize: caller{},
 		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}, true, nil
@@ -61,7 +62,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		Declared:    plans.Declared(),
 		Routes:      func(s httpx.Surfaces) { plans.Mount(s) },
 	}
-	shell := admin.New(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
+	shell := admin.New(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login", SignInOperationID: "auth-login"})
 	var declared []tenancy.Grant
 	for _, m := range []module.Module{notes, catalogue, shell} {
 		for _, p := range m.Permissions {

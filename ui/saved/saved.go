@@ -23,6 +23,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -137,12 +138,14 @@ type Options struct {
 // screen its control's targets needs the ones this mount actually created and not the
 // ones it happened to guess.
 func Mount(r *httpx.Router, s page.Shell, q Keeping, o Options) At {
+	view := screen.MustView(screen.ViewSpec{Ref: "app/keeping/custom/saved-list", Cardinality: screen.Many})
+	r = r.WithViews(view)
 	perPage := o.PerPage
 	if perPage <= 0 {
 		perPage = defaultPerPage
 	}
 	at := mounts(r)
-	page.Serve(r, s, page.Route{ID: "app-saved", Method: http.MethodGet, Path: relList,
+	page.Serve(r, s, page.Route{View: view.Ref(), ID: "app-saved", Method: http.MethodGet, Path: relList,
 		Summary: "List the copies you kept",
 		Errors:  []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, httpx.SignedIn(), func(ctx context.Context, req page.Request, in *filters) (page.View, error) {
@@ -156,7 +159,7 @@ func Mount(r *httpx.Router, s page.Shell, q Keeping, o Options) At {
 		return grid(req, s, o, at, got, *in, perPage), nil
 	})
 
-	page.Serve(r, s, page.Route{ID: "app-saved-remove", Method: http.MethodPost, Path: relList + "/{id}/remove",
+	page.Serve(r, s, page.Route{Exception: "redirect", Reason: "Giving a copy back redirects to the kept list.", ID: "app-saved-remove", Method: http.MethodPost, Path: relList + "/{id}/remove",
 		Summary: "Give one kept copy back",
 		Errors:  []int{http.StatusUnprocessableEntity, http.StatusConflict, http.StatusServiceUnavailable},
 	}, httpx.SignedIn(), func(ctx context.Context, _ page.Request, in *removal) (page.View, error) {
@@ -177,7 +180,7 @@ func Mount(r *httpx.Router, s page.Shell, q Keeping, o Options) At {
 		return page.View{}, httpx.SeeOther(gridAt(at, form.Get("module"), form.Get("kind"), 0))
 	})
 
-	page.Serve(r, s, page.Route{ID: "app-saved-save", Method: http.MethodPost, Path: relList + "/save",
+	page.Serve(r, s, page.Route{Exception: "redirect", Reason: "Keeping a copy redirects to the kept list.", ID: "app-saved-save", Method: http.MethodPost, Path: relList + "/save",
 		Summary: "Keep a copy of a record",
 		Errors:  []int{http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
 	}, httpx.SignedIn(), func(ctx context.Context, _ page.Request, in *keeping) (page.View, error) {

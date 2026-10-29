@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-26T04:57:32Z",
+  "measured_utc": "2026-10-27T12:43:37Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -59,128 +59,124 @@
       "readable": 16
     },
     "GET /app/billing/plans": {
-      "wrapped": 35,
-      "readable": 78
+      "wrapped": 39,
+      "readable": 86
     },
     "GET /app/billing/plans/new": {
-      "wrapped": 36,
-      "readable": 89
+      "wrapped": 40,
+      "readable": 90
     },
     "GET /app/billing/plans/{id}": {
-      "wrapped": 34,
-      "readable": 82
+      "wrapped": 36,
+      "readable": 81
     },
     "GET /app/billing/plans/{id}/edit": {
-      "wrapped": 36,
-      "readable": 89
+      "wrapped": 40,
+      "readable": 90
     },
     "GET /app/change/proposals": {
       "wrapped": 0,
       "readable": 5
     },
     "GET /app/content/contents": {
-      "wrapped": 40,
-      "readable": 90
+      "wrapped": 46,
+      "readable": 103
     },
     "GET /app/content/contents/new": {
-      "wrapped": 101,
+      "wrapped": 113,
       "readable": 160
     },
     "GET /app/content/contents/{id}": {
-      "wrapped": 43,
-      "readable": 127
+      "wrapped": 49,
+      "readable": 135
     },
     "GET /app/content/contents/{id}/edit": {
-      "wrapped": 102,
-      "readable": 172
+      "wrapped": 118,
+      "readable": 176
     },
     "GET /app/file/files": {
       "wrapped": 0,
       "readable": 30
-    },
-    "GET /app/keeping/saved": {
-      "wrapped": 5,
-      "readable": 6
     },
     "GET /app/notification/notifications": {
       "wrapped": 0,
       "readable": 5
     },
     "GET /app/site/settings": {
-      "wrapped": 33,
+      "wrapped": 34,
       "readable": 78
     },
     "GET /app/site/settings/edit": {
-      "wrapped": 37,
+      "wrapped": 39,
       "readable": 88
     },
     "GET /app/task/tasks": {
-      "wrapped": 37,
-      "readable": 84
+      "wrapped": 43,
+      "readable": 101
     },
     "GET /app/task/tasks/new": {
-      "wrapped": 33,
+      "wrapped": 35,
       "readable": 95
     },
     "GET /app/task/tasks/{id}": {
-      "wrapped": 41,
-      "readable": 97
+      "wrapped": 47,
+      "readable": 100
     },
     "GET /app/task/tasks/{id}/edit": {
-      "wrapped": 36,
-      "readable": 105
+      "wrapped": 43,
+      "readable": 110
     },
     "GET /app/tenant/tenants": {
       "wrapped": 25,
       "readable": 72
     },
     "GET /app/user/users": {
-      "wrapped": 35,
-      "readable": 78
+      "wrapped": 39,
+      "readable": 89
     },
     "GET /app/user/users/new": {
-      "wrapped": 32,
+      "wrapped": 34,
       "readable": 76
     },
     "GET /app/user/users/{id}": {
-      "wrapped": 41,
-      "readable": 96
+      "wrapped": 46,
+      "readable": 101
     },
     "GET /app/user/users/{id}/edit": {
-      "wrapped": 33,
-      "readable": 88
+      "wrapped": 40,
+      "readable": 92
     },
     "GET /app/webhook/deliveries": {
       "wrapped": 27,
-      "readable": 80
+      "readable": 112
     },
     "GET /app/webhook/endpoints": {
       "wrapped": 27,
-      "readable": 76
+      "readable": 94
     },
     "GET /{slug}": {
       "wrapped": 0,
       "readable": 7
     },
     "POST /app/billing/plans": {
-      "wrapped": 36,
-      "readable": 92
+      "wrapped": 41,
+      "readable": 93
     },
     "POST /app/content/contents": {
-      "wrapped": 101,
+      "wrapped": 114,
       "readable": 163
     },
     "POST /app/task/tasks": {
-      "wrapped": 33,
+      "wrapped": 36,
       "readable": 98
     },
     "POST /app/user/users": {
-      "wrapped": 32,
+      "wrapped": 35,
       "readable": 79
     },
     "PUBLIC 404": {
-      "wrapped": 3,
-      "readable": 4
+      "wrapped": 4,
+      "readable": 5
     }
   },
   "untranslated": 0

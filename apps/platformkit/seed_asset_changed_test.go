@@ -58,18 +58,18 @@ records:
 	apply := func(t *testing.T, files fs.FS) (seed.Plan, error) {
 		t.Helper()
 		service, err := seed.New(seed.Deps{Files: files, Root: "seed", Clock: seedClock{},
-			Writers: []seed.Writer{fileSeeder{svc: c.files}}, Authorize: seedGrants{auth: c.auth}})
+			Writers: []seed.Writer{fileSeeder{svc: c.files}}, Authorize: seedGrants{auth: c.testAuth()}})
 		if err != nil {
 			return seed.Plan{}, err
 		}
 		var plan seed.Plan
 		err = dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+			tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
 			}
 			return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				ctx, err = seedActor(ctx, c.users, tx, adminEmail)
+				ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail)
 				if err != nil {
 					return err
 				}
@@ -97,7 +97,7 @@ records:
 		t.Errorf("rerun plan does not name the record it left alone:\n%s", rerun)
 	}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}

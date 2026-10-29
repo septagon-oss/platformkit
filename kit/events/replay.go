@@ -1,22 +1,15 @@
 package events
 
-// replay.go is the operator's verb: an event whose delivery ended in a dead
-// letter is given another run.
-//
-// The relay cannot do this, and nothing else can. A terminal failure writes a
-// claim and a dead letter in one statement (deadLetter), and every later
-// delivery finds the claim taken and skips the handler — that is the guarantee
-// that makes at-least-once delivery safe to run at all. So re-running an action
-// means removing the claim, and removing a claim is removing the record that a
-// consequential action already happened. That is an operator's decision, made
-// under a name, with a reason, and it is the one write in this package that is
-// not a machine repeating itself. Hence: a capability of its own
-// (docs/adr/0006), the actor required of the request's context, a reason that has
-// to say itself, and the act recorded as an event in its own right.
-//
-// What is re-stamped rather than rewritten: published_at goes back to NULL, so
-// the relay carries the same row — the same id, the same payload, the same
-// tenant and the same trace — again under the same at-least-once rules. Nothing
+// replay.go is the operator's verb: an event whose delivery ended in a dead letter is given
+// another run.
+// The relay cannot do this. A terminal failure writes a claim and a dead letter in one
+// statement, and every later delivery finds the claim taken and skips the handler — the
+// guarantee that makes at-least-once delivery safe to run at all. So re-running an action
+// means removing the claim, which is removing the record that a consequential action
+// already happened: an operator's decision, made under a name, with a reason
+// (docs/adr/0006), and recorded as an event in its own right.
+// published_at goes back to NULL rather than the row being rewritten, so the relay carries
+// the same id, payload, tenant and trace again under the same at-least-once rules; nothing
 // is duplicated, because nothing new was published.
 
 import (
@@ -87,49 +80,18 @@ type replayRow struct {
 // could correct this asked the wrong process, not the wrong question.
 var ErrEventOwnedByAnotherApp = errors.New("events: the event belongs to another app's tenant")
 
-// Replay gives one event another run and records the act.
-//
-// The caller names no app, so this form asks nothing about whose event it is: it is
-// the verb for a process that consumes whatever reaches it, which is the state an
-// app-less deployment is in. A deployment that names itself calls ReplayForApp, and
-// gets the row's tenant asked before anything is cleared.
-//
-// durable names one subscription's claim, or empty for every subscription that
-// claimed this event — the honest default, since an operator replaying a
-// business action usually means all of its consequences, and each subscription
-// still decides for itself whether its own work is already done.
-//
-// Everything is one system transaction. The outbox row is locked and checked
-// first, so a relay carrying the same row and a replay of it cannot both get
-// half their way; then the claims go, then the dead letters, then the stamp,
-// then the record is written. A refusal writes nothing at all, and the sentinel
-// names which refusal it was.
-//
-// An actor is required of the context, beside the reason and for the same
-// reason: removing a claim is removing the record that a consequential action
-// already happened, and a decision nobody is named on is not a decision anyone
-// can read afterwards. ADR 0006 says the capability is not the authorization —
-// the system token says this process may cross tenants, and only the actor says
-// a person asked. kit/tenancy names the actor and kit/httpx puts it there, so a
-// context that carries none is a call with nobody behind it. Reading the actor
-// is not requiring it; this requires it, before the transaction opens, so the
-// refusal writes nothing, emits nothing, and leaves every claim and dead letter
-// where they were. The record it refuses to write is the answer to "actor,
-// tenant, what": an actor column left NULL by a verb this consequential answers
-// "nobody" while the write still happened.
-//
-// It is unconditional. A dead letter is reviewed late, so the row a replay
-// relays is usually old, and age invites the thought that an old enough one
-// needs no name. It does not: whether a person has to be named for deleting the
-// record of a finished delivery cannot turn on how many days ago that delivery
-// finished — that would waive the audit exactly where it is worth most. Who
-// asked, and why, are the only questions this verb asks.
-//
-// Asked, not granted. Permission is held behind kit/httpx's per-route authorizer
-// and this verb has no route, so what it can require is that a person be named,
-// not that they hold a grant. Reaching for an authorizer through a package-level
-// variable would be discovering a dependency rather than naming one, so the
-// product mounts the surface, declares the permission, and asks the question there.
+// Replay gives one event another run and records the act. The caller names no app, so this
+// form asks nothing about whose event it is — the verb for a process that consumes whatever
+// reaches it; a deployment that names itself calls ReplayForApp and has the row's tenant
+// asked before anything is cleared. durable names one subscription's claim, or empty for
+// every subscription that claimed this event.
+// Everything is one system transaction: the outbox row is locked and checked first, so a
+// relay carrying the same row and a replay of it cannot both get half their way; then the
+// claims go, then the dead letters, then the stamp, then the record. A refusal writes
+// nothing at all, and the sentinel names which refusal it was.
+// An actor is required of the context, not merely read, before the transaction opens, and
+// unconditionally however old the row is. Permission is another matter and is not this
+// verb's to ask: README.md, "Replaying one event".
 func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
 	return replay(ctx, conn, appname.Name(""), eventID, durable, reason)
 }

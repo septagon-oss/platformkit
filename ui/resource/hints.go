@@ -2,51 +2,14 @@ package resource
 
 import (
 	"maps"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
-	"github.com/septagon-oss/platformkit/kit/entity/display"
 )
 
-// hints.go is the one place a *declared* reading string — a field label, an
-// entry's singular, a command's confirmation — is put through the copy seam.
-//
-// The rule behind the whole file is that an author writes words once, in their
-// own English, in the declaration itself: `Present:` on a Spec, a `ui:"…"` tag on
-// a field. No second table of keys sits beside it, because a key spelled beside a
-// string that is already written is a second copy of that string and a typo that
-// nothing checks. So the key is *derived* from the declaration's own address:
-//
-//	hints.<module>/<entity>.<aspect>
-//
-// where `<module>/<entity>` is the resource address `rest.resourceAddress` keys
-// the registry by (and `reference:` spells a target), and `<aspect>` names the
-// declaration: `singular`, `plural`, `description`, `emptyDescription`,
-// `group.<key>`, `section.<key>`, `highlight.label`, `field.<name>.label`,
-// `field.<name>.help`, `enum.<field>.<value>`, `command.<verb>.label`,
-// `command.<verb>.confirmation.<title|body|confirmLabel>`,
-// `command.<verb>.successMessage`, and a command argument's
-// `command.<verb>.field.<name>.label` / `.help`, and `deck.<direction>.label`.
-//
-// What is *not* resolved is the rest of the vocabulary, and the reason is one
-// sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
-// `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
-// `format`, `money`, `reference`, `enumTones`, `system`, `primary`,
-// `destructive`, `verb`, `trendField` and a highlight's `filter` are names a
-// screen draws, not words a person reads — translating `warning` or `detail` would
-// be a bug, not a localisation, and a translated predicate would count a different
-// set of rows than the one its author asked about.
-//
-// The declared literal is always the fallback, which is why no `en.json` exists
-// anywhere: the sentence the code author wrote is the English (decision 0012 rule
-// 2, the same rule `ui/page`'s fault copy and every module's permission label
-// follow). A translation is therefore only ever written for the second language.
-// What refuses a declaration shipped without that half is not the loader: an
-// `xtext` parity gate compares the locales one source file carries, and a module
-// that ships one translated file has no second locale to be compared with. Here
-// the completeness check belongs to the composition that reads the table —
-// `TestEveryDeclaredHintStringIsAnsweredInPortuguese` in `apps/platformkit`
-// resolves every key this scheme can derive against `pt-PT` — so a missing answer
-// fails that test rather than arriving as a screen drawn in two languages.
+// Declared words are localized before policy resolution. Keys use
+// hints.<module>/<entity>.<aspect>; machine names and values stay unchanged.
+// See README.md for the vocabulary and fallback contract.
 
 // Text is the seam a declared string is resolved through: the same shape
 // Options.Text already is, seen from the side that has a schema and no
@@ -98,16 +61,15 @@ func (w Words) Section(sec entity.EntitySection) entity.EntitySection {
 }
 
 // say is the fallback rule in one place, so two call sites cannot write it
-// differently: the translation, unless it comes back empty, in which case the
-// declared word. `xtext` cannot answer empty (its loader refuses a copy whose
-// translation is blank), so this guard is against a foreign Formatter, and the
-// cost of not having it is a label that reads as nothing.
+// differently: the translation, unless a person could read no words in it, in
+// which case the declared word. `xtext` refuses a blank or all-space copy when
+// it loads, so this guard is against a foreign Formatter, and the cost of not
+// having it is copy that reads as nothing wherever a label decides a page.
 func (w Words) say(aspect, declared string) string {
-	if declared == "" || w.text == nil {
-		return declared
-	}
-	if out := w.text(w.Key(aspect), declared); out != "" {
-		return out
+	if declared != "" && w.text != nil {
+		if out := w.text(w.Key(aspect), declared); strings.TrimSpace(out) != "" {
+			return out
+		}
 	}
 	return declared
 }
@@ -117,6 +79,7 @@ func (w Words) say(aspect, declared string) string {
 // always copied so callers may safely narrow them to authorized commands.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	out := p
+	out.Forms = w.forms(p.Forms)
 	out.Deck = p.Deck.Clone()
 	if out.Deck != nil {
 		for key, d := range out.Deck.Directions {
@@ -232,50 +195,38 @@ func (w Words) Command(verb string, p entity.CommandHints) entity.CommandHints {
 	return out
 }
 
-// FieldLabel is what a control, a header and a term call this field, in this
-// request's language: the declared label translated, and the words
-// display.FieldLabel computes (Humanize of the name) left alone, because nobody
-// wrote a string here to translate.
-func (w Words) FieldLabel(f entity.Field) string {
-	if f.Presentation.Label == "" {
-		return display.FieldLabel(f)
-	}
-	return w.say("field."+f.Name+".label", f.Presentation.Label)
-}
+// FieldLabel returns the resolved label for one field.
+//
+// Deprecated: pass Resource.Resolved to the screen renderer.
+func (w Words) FieldLabel(f entity.Field) string { return w.field(f).Label }
 
-// FieldHelp is the line under a control, in this request's language. An
-// undeclared help line is the field's own Doc, which is a developer sentence no
-// copy table holds until its author declares a `help:` of their own.
-func (w Words) FieldHelp(f entity.Field) string {
-	if f.Presentation.Help == "" {
-		return display.FieldHelp(f)
-	}
-	return w.say("field."+f.Name+".help", f.Presentation.Help)
-}
+// FieldHelp returns the resolved help for one field.
+//
+// Deprecated: pass Resource.Resolved to the screen renderer.
+func (w Words) FieldHelp(f entity.Field) string { return w.field(f).Help }
 
-// EnumWord is one enum value as its field's author named it, in this request's
-// language. The tone of that value is not a word and is never translated.
+// EnumWord returns a resolved option label, or the unknown raw value.
+//
+// Deprecated: pass Resource.Resolved to the screen renderer.
 func (w Words) EnumWord(f entity.Field, value string) string {
-	word := f.Presentation.EnumLabels[value]
-	if word == "" {
-		return display.EnumWord(f, value)
+	for _, option := range w.field(f).Options {
+		if option.Value == value {
+			return option.Label
+		}
 	}
-	return w.say("enum."+f.Name+"."+value, word)
+	return value
 }
 
-// Value is a field's value as a screen shows it, with this request's enum
-// words: display.Display in every respect except the one a declared
-// `enumLabels` map reaches.
+// Value renders one scalar without sibling values or a clock.
+//
+// Deprecated: use resource.Value with a resolved field, row and Options.
 func (w Words) Value(f entity.Field, v any) string {
-	if w.text == nil || len(f.Presentation.EnumLabels) == 0 {
-		return display.Display(f, v)
-	}
-	return display.DisplayWord(f, v, w.EnumWord)
+	return value(w.field(f), map[string]any{f.Name: v}, Options{}).text
 }
 
-// CommandLabel is the word on this command's button, in this request's
-// language; undeclared, the route's own Summary, which is what ui/screens
-// reads today because nothing else existed.
+// CommandLabel localizes an explicitly declared label, returning empty otherwise.
+//
+// Deprecated: read the command's label from Resource.Resolved.
 func (w Words) CommandLabel(verb string, p entity.CommandHints) string {
 	if p.Label == "" {
 		return ""

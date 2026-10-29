@@ -171,31 +171,17 @@ type Transport interface {
 	// transaction in whatever tenant the message's body claimed.
 	Subscribe(ctx context.Context, durable, name string, sink Sink) error
 
-	// Observe watches one tenant's one event from now on. It claims nothing, retries
-	// nothing and answers nothing: fn runs at most once per publish, on a goroutine
-	// the transport owns, and a delivery that cannot be handed over is lost. The
-	// outbox stays the durable path; this is the notice that something happened, and
-	// a transport never waits for fn — it shares the transport's delivery path with
-	// every other observation of the same address.
-	//
-	// Delivery is limited to the exact address this transport would publish an event
-	// of that name and tenant at — AppSubject when the transport names an app,
-	// Subject when it does not — and no wildcard is used, which is what makes the
-	// tenant segment the boundary rather than a filter over the payload. Every
-	// delivery still runs the address check a subscription runs (AddressMismatch)
-	// before fn: the address the broker routed by decides whose tenant a delivery is
-	// in, and the document does not get to decide that alone.
-	//
-	// There is no history: an observation started after a publish cannot see it, and
-	// a notice that was dropped in flight is not owed. stop withdraws the
-	// observation; it is idempotent, safe to call concurrently and never blocks on a
-	// delivery, though a delivery already in flight may still begin. stop is the only
-	// withdrawal a caller may rely on: a provider may end an observation early once
-	// the context it was given is done, so a caller that shares one observation over
-	// several of its own callers passes a context of the shared life rather than of
-	// whichever one asked first, and ends the observation with stop. A non-nil error
-	// means nothing will ever be delivered — a broker that would not take the
-	// consumer, a context already cancelled.
+	// Observe watches one tenant's one event from now on. It claims nothing, retries nothing
+	// and answers nothing: fn runs at most once per publish, on a goroutine the transport
+	// owns, and a delivery that cannot be handed over is lost. The outbox stays the durable
+	// path; this is the notice that something happened.
+	// Delivery is limited to the exact address this transport would publish an event of that
+	// name and tenant at — AppSubject when it names an app, Subject when it does not — no
+	// wildcard, which is what makes the tenant segment the boundary rather than a filter over
+	// the payload. Every delivery runs AddressMismatch before fn.
+	// There is no history, and a notice dropped in flight is not owed. stop withdraws the
+	// observation, idempotently and concurrently safe; a non-nil error means nothing will ever
+	// be delivered.
 	Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(Event)) (stop func(), err error)
 }
 

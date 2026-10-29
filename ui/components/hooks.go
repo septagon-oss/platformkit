@@ -110,6 +110,7 @@ var Hooks = []string{
 	"data-quantity-invalid",
 	"data-quantity-value",
 	"data-result-key",
+	"data-screen-anchor",
 	"data-selection-clear",
 	"data-selection-count",
 	"data-selection-labels",

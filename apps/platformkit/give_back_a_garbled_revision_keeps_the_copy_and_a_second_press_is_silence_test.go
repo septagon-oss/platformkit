@@ -22,17 +22,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 func TestAGiveBackQuotingANumberThatIsNoNumberKeepsTheCopy(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	kept, giveBack, title, revision := oneKeptCopy(t, cfg, keeper, "Reletter the returns shelf")
 
@@ -59,8 +56,7 @@ func TestAGiveBackPressedAgainAfterItTookTheCopyIsSilence(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	kept, giveBack, title, revision := oneKeptCopy(t, cfg, keeper, "Reletter the returns shelf")
 	form := "expectedRevision=" + revision + "&module=task&kind=task"

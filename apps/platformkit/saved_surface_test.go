@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 // The saved surface is one capability read in two places: the control on the record a
@@ -28,8 +26,7 @@ func TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	// The tenant's own administrator keeps the copy: no persona this application
 	// seeds is granted the two doors of a person's copies, and the administrator's
 	// role is the one that holds every tenant-scoped grant the composition defines,

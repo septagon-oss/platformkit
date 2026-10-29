@@ -1,0 +1,4677 @@
+{
+  "app": "platformkit",
+  "hash": "sha256:8c5fabb646cc45149e0878aab4e887b526fb9867f06853e7f2f6bb9a315e9a34",
+  "operations": [
+    {
+      "guard": "signed_in",
+      "id": "admin-dashboard",
+      "method": "GET",
+      "path": "/app",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "admin-forgot",
+      "method": "GET",
+      "path": "/app/admin/login/forgot",
+      "surface": "app"
+    },
+    {
+      "guard": "permission gallery:read",
+      "id": "admin-gallery",
+      "method": "GET",
+      "path": "/app/admin/_gallery",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "admin-health",
+      "method": "GET",
+      "path": "/app/admin/health",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "admin-login",
+      "method": "GET",
+      "path": "/app/admin/login",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "admin-register",
+      "method": "GET",
+      "path": "/app/admin/register",
+      "surface": "app"
+    },
+    {
+      "guard": "permission role:manage",
+      "id": "admin-role-set",
+      "method": "POST",
+      "path": "/app/auth/roles",
+      "surface": "app"
+    },
+    {
+      "guard": "permission role:manage",
+      "id": "admin-roles",
+      "method": "GET",
+      "path": "/app/auth/roles",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "admin-sessions",
+      "method": "GET",
+      "path": "/app/auth/sessions",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "admin-sessions-revoke-rest",
+      "method": "POST",
+      "path": "/app/auth/sessions/revoke-rest",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "admin-set-password",
+      "method": "GET",
+      "path": "/app/auth/reset",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission tenant:manage",
+      "id": "admin-tenants",
+      "method": "GET",
+      "path": "/app/tenant/tenants",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "admin-verify-email",
+      "method": "GET",
+      "path": "/app/auth/verify-email",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "app-access-request-sent",
+      "method": "GET",
+      "path": "/app/access-request/sent",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "app-saved",
+      "method": "GET",
+      "path": "/app/keeping/saved",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "auth-login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "auth-password-forgot",
+      "method": "POST",
+      "path": "/api/v1/public/auth/password/forgot",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-password-reset",
+      "method": "POST",
+      "path": "/api/v1/auth/password/reset",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "auth-register",
+      "method": "POST",
+      "path": "/api/v1/public/auth/register",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-verify-email",
+      "method": "POST",
+      "path": "/api/v1/public/auth/verify-email",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-verify-email-confirm",
+      "method": "POST",
+      "path": "/auth/verify-email",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-verify-email-page",
+      "method": "GET",
+      "path": "/auth/verify-email",
+      "surface": "public"
+    },
+    {
+      "guard": "permission change:read",
+      "id": "change-proposal-queue",
+      "method": "GET",
+      "path": "/app/change/proposals",
+      "surface": "app"
+    },
+    {
+      "guard": "permission file:read",
+      "id": "file-library",
+      "method": "GET",
+      "path": "/app/file/files",
+      "surface": "app"
+    },
+    {
+      "guard": "permission file:manage",
+      "id": "file-library-alt",
+      "method": "POST",
+      "path": "/app/file/files/{id}/alt",
+      "surface": "app"
+    },
+    {
+      "guard": "permission file:manage",
+      "id": "file-library-delete",
+      "method": "POST",
+      "path": "/app/file/files/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "permission file:read",
+      "id": "file-library-pick",
+      "method": "GET",
+      "path": "/app/file/files/pick",
+      "surface": "app"
+    },
+    {
+      "guard": "permission file:manage",
+      "id": "file-library-upload",
+      "method": "POST",
+      "path": "/app/file/files/upload",
+      "surface": "app"
+    },
+    {
+      "guard": "signed_in",
+      "id": "notification-inbox",
+      "method": "GET",
+      "path": "/app/notification/notifications",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission billing:catalog",
+      "id": "screen-billing-plan-create",
+      "method": "POST",
+      "path": "/app/billing/plans",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission billing:catalog",
+      "id": "screen-billing-plan-delete",
+      "method": "POST",
+      "path": "/app/billing/plans/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission billing:catalog",
+      "id": "screen-billing-plan-edit",
+      "method": "GET",
+      "path": "/app/billing/plans/{id}/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission billing:read",
+      "id": "screen-billing-plan-list",
+      "method": "GET",
+      "path": "/app/billing/plans",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission billing:catalog",
+      "id": "screen-billing-plan-new",
+      "method": "GET",
+      "path": "/app/billing/plans/new",
+      "surface": "app"
+    },
+    {
+      "guard": "permission billing:read",
+      "id": "screen-billing-plan-read",
+      "method": "GET",
+      "path": "/app/billing/plans/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "operator_permission billing:catalog",
+      "id": "screen-billing-plan-update",
+      "method": "POST",
+      "path": "/app/billing/plans/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission change:decide",
+      "id": "screen-change-proposal-apply",
+      "method": "POST",
+      "path": "/app/change/proposals/{id}/apply",
+      "surface": "app"
+    },
+    {
+      "guard": "permission change:read",
+      "id": "screen-change-proposal-read",
+      "method": "GET",
+      "path": "/app/change/proposals/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission change:decide",
+      "id": "screen-change-proposal-review",
+      "method": "POST",
+      "path": "/app/change/proposals/{id}/review",
+      "surface": "app"
+    },
+    {
+      "guard": "permission change:propose",
+      "id": "screen-change-proposal-withdraw",
+      "method": "POST",
+      "path": "/app/change/proposals/{id}/withdraw",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-archive",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/archive",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-create",
+      "method": "POST",
+      "path": "/app/content/contents",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-delete",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-edit",
+      "method": "GET",
+      "path": "/app/content/contents/{id}/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:read",
+      "id": "screen-content-content-list",
+      "method": "GET",
+      "path": "/app/content/contents",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-new",
+      "method": "GET",
+      "path": "/app/content/contents/new",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-publish",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/publish",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:read",
+      "id": "screen-content-content-read",
+      "method": "GET",
+      "path": "/app/content/contents/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-restore",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/restore",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-review-translation",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/review-translation",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-suggest-translation",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/suggest-translation",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-translate",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/translate",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-unpublish",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/unpublish",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-untranslate",
+      "method": "POST",
+      "path": "/app/content/contents/{id}/untranslate",
+      "surface": "app"
+    },
+    {
+      "guard": "permission content:manage",
+      "id": "screen-content-content-update",
+      "method": "POST",
+      "path": "/app/content/contents/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission site:manage",
+      "id": "screen-site-settings-edit",
+      "method": "GET",
+      "path": "/app/site/settings/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission site:manage",
+      "id": "screen-site-settings-read",
+      "method": "GET",
+      "path": "/app/site/settings",
+      "surface": "app"
+    },
+    {
+      "guard": "permission site:manage",
+      "id": "screen-site-settings-update",
+      "method": "POST",
+      "path": "/app/site/settings",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-assign",
+      "method": "POST",
+      "path": "/app/task/tasks/{id}/assign",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-create",
+      "method": "POST",
+      "path": "/app/task/tasks",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-delete",
+      "method": "POST",
+      "path": "/app/task/tasks/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-edit",
+      "method": "GET",
+      "path": "/app/task/tasks/{id}/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:read",
+      "id": "screen-task-task-list",
+      "method": "GET",
+      "path": "/app/task/tasks",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-new",
+      "method": "GET",
+      "path": "/app/task/tasks/new",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:read",
+      "id": "screen-task-task-read",
+      "method": "GET",
+      "path": "/app/task/tasks/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-resolve",
+      "method": "POST",
+      "path": "/app/task/tasks/{id}/resolve",
+      "surface": "app"
+    },
+    {
+      "guard": "permission task:update",
+      "id": "screen-task-task-update",
+      "method": "POST",
+      "path": "/app/task/tasks/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:approve",
+      "id": "screen-user-user-approve-registration",
+      "method": "POST",
+      "path": "/app/user/users/{id}/approve-registration",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-create",
+      "method": "POST",
+      "path": "/app/user/users",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-deactivate",
+      "method": "POST",
+      "path": "/app/user/users/{id}/deactivate",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-delete",
+      "method": "POST",
+      "path": "/app/user/users/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-edit",
+      "method": "GET",
+      "path": "/app/user/users/{id}/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-handle",
+      "method": "POST",
+      "path": "/app/user/users/{id}/handle",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:read",
+      "id": "screen-user-user-list",
+      "method": "GET",
+      "path": "/app/user/users",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-new",
+      "method": "GET",
+      "path": "/app/user/users/new",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:read",
+      "id": "screen-user-user-read",
+      "method": "GET",
+      "path": "/app/user/users/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-roles",
+      "method": "POST",
+      "path": "/app/user/users/{id}/roles",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-set-password",
+      "method": "POST",
+      "path": "/app/user/users/{id}/set-password",
+      "surface": "app"
+    },
+    {
+      "guard": "permission user:manage",
+      "id": "screen-user-user-update",
+      "method": "POST",
+      "path": "/app/user/users/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:read",
+      "id": "screen-webhook-delivery-list",
+      "method": "GET",
+      "path": "/app/webhook/deliveries",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:read",
+      "id": "screen-webhook-delivery-read",
+      "method": "GET",
+      "path": "/app/webhook/deliveries/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-delivery-replay",
+      "method": "POST",
+      "path": "/app/webhook/deliveries/{id}/replay",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-delete",
+      "method": "POST",
+      "path": "/app/webhook/endpoints/{id}/delete",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-disable",
+      "method": "POST",
+      "path": "/app/webhook/endpoints/{id}/disable",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-edit",
+      "method": "GET",
+      "path": "/app/webhook/endpoints/{id}/edit",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-enable",
+      "method": "POST",
+      "path": "/app/webhook/endpoints/{id}/enable",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:read",
+      "id": "screen-webhook-endpoint-list",
+      "method": "GET",
+      "path": "/app/webhook/endpoints",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:read",
+      "id": "screen-webhook-endpoint-read",
+      "method": "GET",
+      "path": "/app/webhook/endpoints/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-target",
+      "method": "POST",
+      "path": "/app/webhook/endpoints/{id}/target",
+      "surface": "app"
+    },
+    {
+      "guard": "permission webhook:update",
+      "id": "screen-webhook-endpoint-update",
+      "method": "POST",
+      "path": "/app/webhook/endpoints/{id}",
+      "surface": "app"
+    },
+    {
+      "guard": "public",
+      "id": "web-home",
+      "method": "GET",
+      "path": "/",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "web-page",
+      "method": "GET",
+      "path": "/{slug}",
+      "surface": "public"
+    }
+  ],
+  "policyVersion": 1,
+  "schemaVersion": 1,
+  "views": [
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/health"
+          },
+          "control": "link",
+          "identityHash": "sha256:931709a658e2722c1d55eeb17cb45a8ecf3e83c4d8f3dae70304383028282873",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.health"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/dashboard",
+      "identityHash": "sha256:0bf1b9db0d0474cc99dbfaa162c9e5a4cc475c8fe6e1fa111c1ceea78a92d9b4",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "admin-dashboard",
+          "path": "/app",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/login"
+          },
+          "control": "link",
+          "identityHash": "sha256:a6c8ddd1ef9c692c70a358dc516147b85853f5e3c903a7808034ed6480465d6a",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.back"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-password-forgot"
+          },
+          "control": "button",
+          "identityHash": "sha256:045d674aa8419bcd8a91d06642693ea9be1f5581623b689dde40bd1d144e31c8",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "email"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-password-forgot"
+          },
+          "control": "email",
+          "identityHash": "sha256:9f8d2dc68e2106d152bc6200c31d364124b9c65f96a636f3745f88be2a13c717",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.email"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/forgot",
+      "identityHash": "sha256:8860083d3aa1a2297c0d4717ecd8b2491440510277450858b4c4c616e48c6cae",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "admin-forgot",
+          "path": "/app/admin/login/forgot",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/gallery",
+      "identityHash": "sha256:8f477722317b387200e103cdd7d2008d905d4b0cc728b80121a899b6f0efb37f",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "permission gallery:read",
+          "method": "GET",
+          "operationId": "admin-gallery",
+          "path": "/app/admin/_gallery",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/health",
+      "identityHash": "sha256:37428acbd82067cc197676c6ec38c8c17e90b628d02863cbcdb5b9dee147e442",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "admin-health",
+          "path": "/app/admin/health",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/forgot"
+          },
+          "control": "link",
+          "identityHash": "sha256:4dff89d2e50302145e24efc224af9ad3aaecaf399864c63d18b7016e2460f5fe",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.forgot"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/register"
+          },
+          "control": "link",
+          "identityHash": "sha256:1f16730b0973e2a27aed9a6da4d104e87ef728a955de62578b0fb106077e3ca8",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.register"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-login"
+          },
+          "control": "button",
+          "identityHash": "sha256:0b4d8f88412c02e60aea17e85355d095ad15310f8541e8bc6b46abde48e5ea46",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "email"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-login"
+          },
+          "control": "email",
+          "identityHash": "sha256:7614bc4319a143a03f070be5b24d335d49cd20d58ce845409f8c77731329b8ef",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.email"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "password"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-login"
+          },
+          "control": "password",
+          "identityHash": "sha256:f06dc26a2d9c823fa41e2aadc42efc157312116084dcaaa7a9b11d28b75b0b72",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.password"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/login",
+      "identityHash": "sha256:cab471c060e101297e3f25685f5d77cae1d5fd6ffecb90660caa53d6fb87ee0e",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "admin-login",
+          "path": "/app/admin/login",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/login"
+          },
+          "control": "link",
+          "identityHash": "sha256:16e1614d6bce90fbb1b17d289b6e815941522e6f6a7ad27cd5bd3cc86c8db751",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.back"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-register"
+          },
+          "control": "button",
+          "identityHash": "sha256:f5c0252ba217920e241301a1167698002e7fe218a3f9d10d7992ffc1136ae082",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "confirmation"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-register"
+          },
+          "control": "password",
+          "identityHash": "sha256:54b68144d8c24e90c64d735c0b633a519b554a33177aef250230cb1e1345bc58",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.confirmation"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "displayName"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-register"
+          },
+          "control": "text",
+          "identityHash": "sha256:baba1b716bd514e724df87305e692971865a8cd8e4b55e4641c7d055ba595c49",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.displayName"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "email"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-register"
+          },
+          "control": "email",
+          "identityHash": "sha256:8a592e909a49f52693bf2b5a41405009f7cb48945dfc3f0743f2075f7bc6c514",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.email"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "password"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-register"
+          },
+          "control": "password",
+          "identityHash": "sha256:64bdd0f6da6e6b4c773bbfa614a0de03002504e23021040d55ecc7e814625d1e",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.password"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "termsAccepted"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-register"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:cd871d22b3c8c2f116b4aa56e7cf8dcec50c42f3c8685f266a31ee01b69f74d9",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.termsAccepted"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/register",
+      "identityHash": "sha256:062df73ae65c8830111ffc18468148df17435583c1b999d0e2fdad89622936df",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "admin-register",
+          "path": "/app/admin/register",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "admin-role-set"
+          },
+          "control": "button",
+          "identityHash": "sha256:04022c1a16013633f817ac5a3c0250309855ddcdd2d009626e993485e58e56b1",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.create"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "name"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "admin-role-set"
+          },
+          "control": "text",
+          "identityHash": "sha256:772f49f38e4e11321f0ec78b84f49dc1684a6a0db851021ceaa1c6155ff0c1e3",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.name"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/roles",
+      "identityHash": "sha256:3208bfdd4d4360b4ec98b859c4e9888137ace80a0f71fd0cca5d4d89117b2485",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "permission role:manage",
+          "method": "GET",
+          "operationId": "admin-roles",
+          "path": "/app/auth/roles",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission role:manage",
+          "method": "POST",
+          "operationId": "admin-role-set",
+          "path": "/app/auth/roles",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "admin-sessions-revoke-rest"
+          },
+          "control": "button",
+          "identityHash": "sha256:87e89662ddd119521d556730850004eb0aeb361fece32974a5a243ed4ccc61ac",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.revoke-rest"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/sessions",
+      "identityHash": "sha256:f72a5e6b0b48388431da8deed4e80a462199473b725e75848bfb40c46aa9a24d",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "admin-sessions",
+          "path": "/app/auth/sessions",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/login"
+          },
+          "control": "link",
+          "identityHash": "sha256:ad95c8d36a21da199499c8986b3049540380e364e04961a7cd5f98f586d84ad4",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.back"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-password-reset"
+          },
+          "control": "button",
+          "identityHash": "sha256:3c07462afdd73f196f169aebc220d0ecf5f22a53beb339a403b46479aafe01c9",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "new"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "auth-password-reset"
+          },
+          "control": "password",
+          "identityHash": "sha256:605833a1ac384a6afae9aa5d0b4a64bdf5ba2fbb177e59a01c29d6f48ae9c505",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.new"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/set-password",
+      "identityHash": "sha256:39f08a78a3cf6d7a2ba22a0240b05f4f09304dc5f01f665292ae65604f4a278d",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "admin-set-password",
+          "path": "/app/auth/reset",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/tenants",
+      "identityHash": "sha256:4a0f5a529356df5ffbfe53cd29c0e3a1aa0ce3d233a4afd1ece5a4499a66af95",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "operator_permission tenant:manage",
+          "method": "GET",
+          "operationId": "admin-tenants",
+          "path": "/app/tenant/tenants",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/admin/custom/login"
+          },
+          "control": "link",
+          "identityHash": "sha256:5a097e3250bd4bb7cb04ee2720c4ce4ae41ba4513bec56688b6f6fde9849f989",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.back"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-verify-email"
+          },
+          "control": "button",
+          "identityHash": "sha256:6ebc95d9d1638582377a6c9b6b230ad67fa38ccaaae3e7908d3f14fac035731c",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/admin/custom/verify-email",
+      "identityHash": "sha256:167730434d7c48c8043168b95cb749d53ee1c6bf438e7e5d4932e91a74811777",
+      "kind": "custom",
+      "owner": "admin",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "admin-verify-email",
+          "path": "/app/auth/verify-email",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/billing/resource/plan/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:da212de325a4c8c066ef2043f9ee38be26ef61430367e6d3550bc20d5e8bcebc",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "button",
+          "identityHash": "sha256:42c2e2b9791277f72e7a9f2838333f3f51861db21a1d777d2296257525b75de4",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "active"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:7a4c73230029e937022895468dc8e2b6afd067a2071a3b4005c18a8aac5415f5",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.active"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "code"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:012d3e0fbe6c53824d6cb8b57ae359bc61540773984f6645794eaaf3928dfcf5",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.code"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "currency"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:a5a59562f50d66930f72059e5cc664cb0a8a6080641f3cd9dfc4502612205bd5",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.currency"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "features"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:5b43dd76a352004d7d0e3a4a27f43d4ce9d001bc3b84831b8cb31d22966a10bb",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.features"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "interval"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "select",
+          "identityHash": "sha256:31f0dac17fdd1787a7e7ad04c32179bda57f88344233dfd4957cfcd1983da79b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.interval"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "name"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:551037983c26e3c9a020d1ba72f90b50e1ef384970def9c9c9ab13b6d731113a",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.name"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "priceCents"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-create"
+          },
+          "control": "number",
+          "identityHash": "sha256:0d3c70026cad246b4d187c33c04c78c836cca8095a074bb2b791d574875f180b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.priceCents"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/billing/resource/plan/create",
+      "identityHash": "sha256:a559c0183b4b85ebaadf2645b54940f7b22884249d380ef801ec6778783b454e",
+      "kind": "create",
+      "owner": "billing",
+      "routes": [
+        {
+          "guard": "operator_permission billing:catalog",
+          "method": "GET",
+          "operationId": "screen-billing-plan-new",
+          "path": "/app/billing/plans/new",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "operator_permission billing:catalog",
+          "method": "POST",
+          "operationId": "screen-billing-plan-create",
+          "path": "/app/billing/plans",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-billing-plan-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:a9d7c3eacf26f9302ccced322bc8bbfa35990a3fee82b442a106a5144d0feb9e",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/billing/resource/plan/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:3f5d83ba9d449f1cd66769835bfa0ab90b3e0ae6d1d4e842d53915dc5f16b24b",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/billing/resource/plan/detail",
+      "identityHash": "sha256:45041a879f52b31b05024ed2805890e1d4310d62c920223eececb21cc6cebe8c",
+      "kind": "detail",
+      "owner": "billing",
+      "routes": [
+        {
+          "guard": "permission billing:read",
+          "method": "GET",
+          "operationId": "screen-billing-plan-read",
+          "path": "/app/billing/plans/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/billing/resource/plan/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:34333062a061ff1717c8cbbc442a8e2a7d67d878713441f22a193369936cdf22",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:b90f919396edc2a82e6d5340d13a4258475019319f7d343a0da852e8ffdd6b58",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "active"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:855409b3eaa59425f246503edf38bdabb812446455880e2fbe39a804d9bb2cc8",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.active"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "code"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:ffdeb7466915639e66c4c4ab4f501c4c27cbba964665f1056fa30fdb395546a0",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.code"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "currency"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:171a58b11b345edb9b04ed79151222c999fbf74367dca751b3e17106f1998b5e",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.currency"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "features"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:9cf85fba2e910fd5b1d4cc4a414d227535f002e2fa6570ceeac09c750730e1ec",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.features"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "interval"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "select",
+          "identityHash": "sha256:5a1e9414133dcf41751db7972c0315d2a37301659134748ce50f17540c3a3781",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.interval"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "name"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:ca6ecf3f9cf29467ee915b1e7b69287f222de53496f23d9b1473bff1a4ade6c2",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.name"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "priceCents"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-billing-plan-update"
+          },
+          "control": "number",
+          "identityHash": "sha256:4f0c9302dd4875e589f5c2c06f49477dac6a65c7f28cb54daf5e0f2f3d597a3f",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.priceCents"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/billing/resource/plan/edit",
+      "identityHash": "sha256:2edade557600c399c8909bffc914530ad81f145f75f7a72b900987d833a46c62",
+      "kind": "edit",
+      "owner": "billing",
+      "routes": [
+        {
+          "guard": "operator_permission billing:catalog",
+          "method": "GET",
+          "operationId": "screen-billing-plan-edit",
+          "path": "/app/billing/plans/{id}/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "operator_permission billing:catalog",
+          "method": "POST",
+          "operationId": "screen-billing-plan-update",
+          "path": "/app/billing/plans/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/billing/resource/plan/create"
+          },
+          "control": "link",
+          "identityHash": "sha256:7e1c1770070b9d6d4569bb0b4a3d0e5e34b5e43f4b2fc2c5aae743d31dee05c8",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.create"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/billing/resource/plan/list",
+      "identityHash": "sha256:d77bb65b3112a1a43fb4b55a01087a95c362d320cc2827b33c225a38aadaa4e5",
+      "kind": "list",
+      "owner": "billing",
+      "routes": [
+        {
+          "guard": "permission billing:read",
+          "method": "GET",
+          "operationId": "screen-billing-plan-list",
+          "path": "/app/billing/plans",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-change-proposal-apply"
+          },
+          "control": "button",
+          "identityHash": "sha256:65732e2a53edcd31c10ee02c2d127c210eca33dae99c73e426ab923c22e6db27",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.apply"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [
+              {
+                "fieldPath": [
+                  "verdict"
+                ],
+                "location": "form",
+                "value": "approved"
+              }
+            ],
+            "kind": "submission",
+            "target": "screen-change-proposal-review"
+          },
+          "control": "button",
+          "identityHash": "sha256:a7e34a2e5a4409f9a784dfe4da1c26e2d0f3590f880bb44103df120b3c4a7e8b",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.approve"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [
+              {
+                "fieldPath": [
+                  "verdict"
+                ],
+                "location": "form",
+                "value": "declined"
+              }
+            ],
+            "kind": "submission",
+            "target": "screen-change-proposal-review"
+          },
+          "control": "button",
+          "identityHash": "sha256:d257657684c25b44185e2f94c81a8c3a5430e154bd953bc971350a269a811dc6",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.decline"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-change-proposal-withdraw"
+          },
+          "control": "button",
+          "identityHash": "sha256:45c2571c4f92ff673a22a397e9bf4083d9a65b70ca6af0a2b91d351abe76f669",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.withdraw"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "comment"
+            ],
+            "fixed": [
+              {
+                "fieldPath": [
+                  "verdict"
+                ],
+                "location": "form",
+                "value": "declined"
+              }
+            ],
+            "kind": "value",
+            "target": "screen-change-proposal-review"
+          },
+          "control": "text",
+          "identityHash": "sha256:79fe4c5226e5e3ea6fd83edd922a56c995d4723f61444a1914ff581baf1eaace",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.comment"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/change/custom/proposal",
+      "identityHash": "sha256:a07d3e7ef9470e91c75c7a8a039748f50f052c7460311621dca23afa6b0d46eb",
+      "kind": "custom",
+      "owner": "change",
+      "routes": [
+        {
+          "guard": "permission change:read",
+          "method": "GET",
+          "operationId": "screen-change-proposal-read",
+          "path": "/app/change/proposals/{id}",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission change:decide",
+          "method": "POST",
+          "operationId": "screen-change-proposal-apply",
+          "path": "/app/change/proposals/{id}/apply",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission change:decide",
+          "method": "POST",
+          "operationId": "screen-change-proposal-review",
+          "path": "/app/change/proposals/{id}/review",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission change:propose",
+          "method": "POST",
+          "operationId": "screen-change-proposal-withdraw",
+          "path": "/app/change/proposals/{id}/withdraw",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/change/custom/queue",
+      "identityHash": "sha256:35df090fe14850707d376319ddfa3ad5ab48c5020af10a7b3a30b4782ae5c552",
+      "kind": "custom",
+      "owner": "change",
+      "routes": [
+        {
+          "guard": "permission change:read",
+          "method": "GET",
+          "operationId": "change-proposal-queue",
+          "path": "/app/change/proposals",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-archive"
+          },
+          "control": "button",
+          "identityHash": "sha256:cf9b51247cb9d387340c4ae895596308b699dd9e26944e621829c303b26a30a8",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.archive"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/archive",
+      "identityHash": "sha256:c5c63e876d089bf5bc9ea7390a5a84f0b9fa0ea1b98b646655389a847a52cf50",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-archive",
+          "path": "/app/content/contents/{id}/archive",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-publish"
+          },
+          "control": "button",
+          "identityHash": "sha256:99800ce784383a8090afa885b337a3c643df3ee8dd18fe0325fce50964e8f5c3",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.publish"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/publish",
+      "identityHash": "sha256:566d512e069543fe782136c2d7ec39bb8d4dee791bcecc0fd2b1caf9b0192dcb",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-publish",
+          "path": "/app/content/contents/{id}/publish",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "many",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/restore",
+      "identityHash": "sha256:66a061cb288aebda240d6a50ac6dc5d5b72d5073c5becc6bbf966e8a74ca82b3",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-restore",
+          "path": "/app/content/contents/{id}/restore",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-review-translation"
+          },
+          "control": "button",
+          "identityHash": "sha256:77af58a4aeaa1632d0f0d7c5e5d3023365596fdaa850cfa23fe61c24158b01d7",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.review-translation"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "fields"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-review-translation"
+          },
+          "control": "text",
+          "identityHash": "sha256:a0498f9b5547a00a2f516ad5e6b4425c0c4dd559a95da708b0e7adc83e76634b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.fields"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "lang"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-review-translation"
+          },
+          "control": "text",
+          "identityHash": "sha256:1c8f6f97f29cf2df9888f6037260efc7950e6ca4eb00bd547837b8c35d17155a",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.lang"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/review-translation",
+      "identityHash": "sha256:3df7ee0fa8c3b2109b3a361af8f44f9afcb7aba4a65f2e57141016447330f790",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-review-translation",
+          "path": "/app/content/contents/{id}/review-translation",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-suggest-translation"
+          },
+          "control": "button",
+          "identityHash": "sha256:d0ad180a725c925ace7004556c67151aef37a67d3af5aa373a1c5dfc64dc5ffe",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.suggest-translation"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "fields"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-suggest-translation"
+          },
+          "control": "text",
+          "identityHash": "sha256:c3046b4391124cb29ba9b368816b991527286782ae8ad9f663cd3e152e1ea213",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.fields"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "lang"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-suggest-translation"
+          },
+          "control": "text",
+          "identityHash": "sha256:b59ec20ea490730b24988dde902562e27285891b29fbb824fcd30b89d16c9c70",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.lang"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/suggest-translation",
+      "identityHash": "sha256:494fd408d94a778a36121a548d981f15c89b736f4f73b85fb8460831c0e458a3",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-suggest-translation",
+          "path": "/app/content/contents/{id}/suggest-translation",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "many",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/translate",
+      "identityHash": "sha256:05090388161d76205b80f4c25ee463a9efc2a33ea61801d986a95ca3d200bfbb",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-translate",
+          "path": "/app/content/contents/{id}/translate",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-unpublish"
+          },
+          "control": "button",
+          "identityHash": "sha256:950a66598fae0ca7b3c2722cbf6296e96e8e9d8a470be15c875c8e0d3f67cd64",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.unpublish"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/unpublish",
+      "identityHash": "sha256:42aaf2bde3438594683011c8143d01c68b30e285dc5512fe82a958acf4dd8c36",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-unpublish",
+          "path": "/app/content/contents/{id}/unpublish",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-untranslate"
+          },
+          "control": "button",
+          "identityHash": "sha256:2170d171a82f13b0f2783d9cbc123bab0e336d2882034f0e7bd651647d2b8d9e",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.untranslate"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "fields"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-untranslate"
+          },
+          "control": "text",
+          "identityHash": "sha256:393381945407e57cd79b89e3a553281131413b5670300701af0a2b6a6496a660",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.fields"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "lang"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-untranslate"
+          },
+          "control": "text",
+          "identityHash": "sha256:509e0387fdece3ce75b3e80c64830f11fce0bf31b0f7db1299fc38dd60503f0b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.lang"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/content/resource/content/detail"
+      ],
+      "id": "app/content/resource/content/command/untranslate",
+      "identityHash": "sha256:dd666856a99c4d138370239ba5855a198c9397842bed0a7d9f87499bdf87568e",
+      "kind": "command",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-untranslate",
+          "path": "/app/content/contents/{id}/untranslate",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/content/resource/content/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:a36761557771ec9494b3ea3158724d5f051e036f08ebf40eaa116a4dbf91b954",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-create"
+          },
+          "control": "button",
+          "identityHash": "sha256:59912b85ee30ee1a1072f100aa0e550c59dc67c75a9507e7ed730a8029e4cd68",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "body"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-create"
+          },
+          "control": "richtext",
+          "identityHash": "sha256:faf8593bfaec051959a5bf1d4ca542da2a6648120e3bc28c306285bb3b090011",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.body"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "coverImageId"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:b20546bbe56311e1b242fe355caa9aba24467cf6282acb8c37e54153677fb0e2",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.coverImageId"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "kind"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-create"
+          },
+          "control": "select",
+          "identityHash": "sha256:4feeea0ca1950c5d3f7bc977e5d4c55ee917201cc23af14f545ffb565b6c52c1",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.kind"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "slug"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:b9f1047e0faee613d2f0835e1525d388f6837d490f03e83b738d6513b7aa4950",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.slug"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "title"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:5ee9d30a39f17a949408a6c748f2ad1a73e9e5695b45b4d3b5f41df7be94b7bf",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.title"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/content/resource/content/create",
+      "identityHash": "sha256:07882a0d1296b5e18a2ac244643aeaca3d36ebcd0ae1b78eaafd279e6c1ad8d0",
+      "kind": "create",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "GET",
+          "operationId": "screen-content-content-new",
+          "path": "/app/content/contents/new",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-create",
+          "path": "/app/content/contents",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:26eb7f473a9fd8b2d3fc2033a43421b285d61fc6e37c86319f56d33a40c8845b",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/content/resource/content/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:eaaac5bcee42a6f2289f22e25ba5a4a0b1da2547d3dacb605000fec1660d6e16",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/content/resource/content/detail",
+      "identityHash": "sha256:3ff68b08af7e899b086e8759cea11ea042d041996e8b2f9888e6d13e1eda8d5d",
+      "kind": "detail",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:read",
+          "method": "GET",
+          "operationId": "screen-content-content-read",
+          "path": "/app/content/contents/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/content/resource/content/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:3f1fc7800e9b5d54ded1482074009be8e36fe187d26e1e5a6832edc613cb693c",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-content-content-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:26910e7dcc0146fa18dde2886744b66e17ef2f17ec5f0372e69a4d73f9bc32eb",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/content/content/field/author"
+          },
+          "control": "text",
+          "identityHash": "sha256:d73a56850ff31c7fe60bb691ccdfdc54149e97d5df9d46d281676cfc67d4f5fb",
+          "interactions": [],
+          "name": "field.author"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "body"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-update"
+          },
+          "control": "richtext",
+          "identityHash": "sha256:55a5a080d5ff00e937014337075265a417c95abf36df6626b0cb625b10b321be",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.body"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "coverImageId"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:e669ac3a191f32f01e78ac3d39297224e522a51f58b448dd7d0e01446255008a",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.coverImageId"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "kind"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-update"
+          },
+          "control": "select",
+          "identityHash": "sha256:0d26daaf2c54b0cf1ade35f5718c8ef62f914298e5a0953e61f519610417b0c6",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.kind"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/content/content/field/publishedAt"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:ce423ef252b5459d28e863f55fbcd22ef0e150c246baa92fd365805afc0d873c",
+          "interactions": [],
+          "name": "field.publishedAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "slug"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:4734c3f255f712e4cec8c902fce5a15c36c6366e1c40e210ff84dadad8803d8b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.slug"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/content/content/field/status"
+          },
+          "control": "select",
+          "identityHash": "sha256:dd7e8c891a82921bb6cf3536dd98654d8305a91d7a3f707293428e8eeaaebeae",
+          "interactions": [],
+          "name": "field.status"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "title"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-content-content-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:17620c8feb811bba89d2a2e403b1e6f3e2a43ab3b62aad3649a2c369ab420ac7",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.title"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/content/resource/content/edit",
+      "identityHash": "sha256:da93370bebb51cdfdd1838148dd5788471548e8f6fc3ce47632657a9a79f26e4",
+      "kind": "edit",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:manage",
+          "method": "GET",
+          "operationId": "screen-content-content-edit",
+          "path": "/app/content/contents/{id}/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission content:manage",
+          "method": "POST",
+          "operationId": "screen-content-content-update",
+          "path": "/app/content/contents/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/content/resource/content/create"
+          },
+          "control": "link",
+          "identityHash": "sha256:8abd3bc82d0053bfa80a958ac27989db5975e60e99114999769e35983a64729c",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.create"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/content/resource/content/list",
+      "identityHash": "sha256:98031fa76291c8be2fee035cacc722e41d655b7d096338ad4bb62c8fe7d7b0b0",
+      "kind": "list",
+      "owner": "content",
+      "routes": [
+        {
+          "guard": "permission content:read",
+          "method": "GET",
+          "operationId": "screen-content-content-list",
+          "path": "/app/content/contents",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/file/custom/library"
+          },
+          "control": "link",
+          "identityHash": "sha256:293e92f642ec406af188b8e25f27654a99bae1f36b066d2482575f089571ca36",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.clear"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "file-library-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:2eac361be580fa2a92d00c55baa1c1657e2a38b046b8645e12b14828e5a7bdcb",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "file-library"
+          },
+          "control": "button",
+          "identityHash": "sha256:f8a4b9f37a3b68375a18a0b2b4bda95a6bbf7a1186a5df7eb3ab12443174d0dc",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.filter"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "file-library-alt"
+          },
+          "control": "button",
+          "identityHash": "sha256:a631699ef7db916771103359c3f266b6e9103b9220ccfc9ffedcdd076b3ae6be",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.save-alt"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [
+              {
+                "fieldPath": [
+                  "image"
+                ],
+                "location": "query",
+                "value": "true"
+              }
+            ],
+            "kind": "submission",
+            "target": "file-library-upload"
+          },
+          "control": "button",
+          "identityHash": "sha256:a77f1dab870c65377a66a94809a2df4c731b0231b4e069af6a15c4777ef5e88e",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.upload"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "alt"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library-alt"
+          },
+          "control": "textarea",
+          "identityHash": "sha256:413b5a00404844284348d6fe682adcb4ac6ef94b6ccb8ab23bec09e963371736",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.alt"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "decorative"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library-alt"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:ce4bd8d126f566a9e4f00c4a1b1fda417e4588793f0d57ba6e119b471a5e2603",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.decorative"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "file"
+            ],
+            "fixed": [
+              {
+                "fieldPath": [
+                  "image"
+                ],
+                "location": "query",
+                "value": "true"
+              }
+            ],
+            "kind": "value",
+            "target": "file-library-upload"
+          },
+          "control": "file",
+          "identityHash": "sha256:5e96ec830e1db14b310603db89462fbcba1023a27943504ab585b1abefd76a73",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.file"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "q"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library"
+          },
+          "control": "search",
+          "identityHash": "sha256:dd75ca00d04b95b6724893996d84debf6a7814d2489f7cf8842f78cf090845fc",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.q"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "sort"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library"
+          },
+          "control": "select",
+          "identityHash": "sha256:103b5cb223cf086ef7206bc6e0afc9df25948c313d6d603aa607ff71bff78ddd",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.sort"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "type"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library"
+          },
+          "control": "select",
+          "identityHash": "sha256:5e9792aa981f44935db8f64a77cb4bc25016a912550de0c491b2ef74f4a734a6",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.type"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "unused"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "file-library"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:2d8bea0b4cc0d9ea8214144d3aa4ec749e287b6a95b15dbc313fea1de846fd8b",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.unused"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/file/custom/library",
+      "identityHash": "sha256:2560bf7dc8f98bb2d3747e514a6634c1c9696e293a7b624c05a7c1a6a64ec362",
+      "kind": "custom",
+      "owner": "file",
+      "routes": [
+        {
+          "guard": "permission file:read",
+          "method": "GET",
+          "operationId": "file-library",
+          "path": "/app/file/files",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission file:manage",
+          "method": "POST",
+          "operationId": "file-library-upload",
+          "path": "/app/file/files/upload",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission file:manage",
+          "method": "POST",
+          "operationId": "file-library-alt",
+          "path": "/app/file/files/{id}/alt",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission file:manage",
+          "method": "POST",
+          "operationId": "file-library-delete",
+          "path": "/app/file/files/{id}/delete",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/file/custom/pick",
+      "identityHash": "sha256:66e13c9d2d277d8aac69d0fb8d4ca80a7a4ac50eb795940d87ef818837d1c190",
+      "kind": "custom",
+      "owner": "file",
+      "routes": [
+        {
+          "guard": "permission file:read",
+          "method": "GET",
+          "operationId": "file-library-pick",
+          "path": "/app/file/files/pick",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "many",
+      "hosts": [],
+      "id": "app/keeping/custom/saved-list",
+      "identityHash": "sha256:f4070b739973b4037fec360e57d2f229f9be1488138aea1a2943a8dd020d3895",
+      "kind": "custom",
+      "owner": "keeping",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "app-saved",
+          "path": "/app/keeping/saved",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/notification/custom/inbox",
+      "identityHash": "sha256:fd2f462f767f9f69c2211584b55bb94055499dab9a6f89eb4da68f81eda1c71d",
+      "kind": "custom",
+      "owner": "notification",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "notification-inbox",
+          "path": "/app/notification/notifications",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/platformkit/custom/access-request-sent",
+      "identityHash": "sha256:eef7348763a6f448fa9550596101a765eeb740108bac9d266aea0bd876c2212b",
+      "kind": "custom",
+      "owner": "platformkit",
+      "routes": [
+        {
+          "guard": "signed_in",
+          "method": "GET",
+          "operationId": "app-access-request-sent",
+          "path": "/app/access-request/sent",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/site/resource/settings/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:a537d8fe16206a9569ff5c0d7d4b88676e5ad5bc82cbc6885374b513b7b98313",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/site/resource/settings/detail",
+      "identityHash": "sha256:2aac710b6c1976d0376a57729698c9de9b2091d156bc76a48c716b82bacda5e2",
+      "kind": "detail",
+      "owner": "site",
+      "routes": [
+        {
+          "guard": "permission site:manage",
+          "method": "GET",
+          "operationId": "screen-site-settings-read",
+          "path": "/app/site/settings",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/site/resource/settings/detail"
+          },
+          "control": "link",
+          "identityHash": "sha256:ca83d3af5a53f2299b9567234a8783aeb5ff38a4c1d8befa4b2a81a026a14182",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-site-settings-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:1fd15d535ef8749288a0ca585487c16316bb6ffc2b80ffcf4b823449c96164d8",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "homeSlug"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:d979f43f55bd29ac5c3962f06051a6bb0d9baa31d92072fa4d4934eac1231fee",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.homeSlug"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "logoFileId"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:f39e067c77592cfd1d2da84ae4f97154f17966bed4684da80daa3e8e8f09362f",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.logoFileId"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "primaryColor"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:bf3a134c6e437f709bee2f724a5ca88d1ae2f7ab74b24a4e5afe22354d1451e8",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.primaryColor"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "tagline"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:ae8a417628cf7fafc3caa55f8bcd694945779951fca0e1dd7423b053effa5015",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.tagline"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "theme"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "select",
+          "identityHash": "sha256:e302f9bc5e7fab745fa744de2ee20deaa0ea677c9d542b7e557dfc839925d379",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.theme"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "title"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-site-settings-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:8e6d8a7ad632b8e2b6fbdf7885cea7589982675e0d9c1dfef247e63973fd70b8",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.title"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/site/resource/settings/edit",
+      "identityHash": "sha256:d2ec13a77f62eab972b054ec09f7a101c8c9e128f94c1d40e7bb86190b05565f",
+      "kind": "edit",
+      "owner": "site",
+      "routes": [
+        {
+          "guard": "permission site:manage",
+          "method": "GET",
+          "operationId": "screen-site-settings-edit",
+          "path": "/app/site/settings/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission site:manage",
+          "method": "POST",
+          "operationId": "screen-site-settings-update",
+          "path": "/app/site/settings",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-task-task-assign"
+          },
+          "control": "button",
+          "identityHash": "sha256:412b89943b781d9b0a1dc56c97d3e6b650d42ced8a03312d3b3503f913c4eaf2",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.assign"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "assigneeId"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-assign"
+          },
+          "control": "text",
+          "identityHash": "sha256:99033b5dfda82a83ff5ffa03f563f9a234e2965ebe2f35acceceeb655291d2a7",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.assigneeId"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/task/resource/task/detail"
+      ],
+      "id": "app/task/resource/task/command/assign",
+      "identityHash": "sha256:92c7ea2ebed6c6e688772110c744fd16f37d57545c93849acf9b7c8714e2dd34",
+      "kind": "command",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:update",
+          "method": "POST",
+          "operationId": "screen-task-task-assign",
+          "path": "/app/task/tasks/{id}/assign",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-task-task-resolve"
+          },
+          "control": "button",
+          "identityHash": "sha256:0c53ceee2a55d1a08960e7c504bf2b1e80b76741356b97ebf81df81267235788",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.resolve"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "resolution"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-resolve"
+          },
+          "control": "text",
+          "identityHash": "sha256:24082412e4e6d99e760c9c75e190c84fd7e4d72a722be1bb6c973f7dadeffd6a",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.resolution"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/task/resource/task/detail"
+      ],
+      "id": "app/task/resource/task/command/resolve",
+      "identityHash": "sha256:b0e288da7cbcc973ce1849843a20d4ea4915f4166b6a3e7bece9a102c33cc366",
+      "kind": "command",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:update",
+          "method": "POST",
+          "operationId": "screen-task-task-resolve",
+          "path": "/app/task/tasks/{id}/resolve",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/task/resource/task/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:10cb6aa3ca7b7b659de2ca3b0007d6fb0890f812b1f68d61c8a65c30c08898db",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-task-task-create"
+          },
+          "control": "button",
+          "identityHash": "sha256:67a3d86b96f86604897fabb08ad79d036d90d6bd02475748cbc9e7c3a040d460",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "description"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "textarea",
+          "identityHash": "sha256:bb4b26d3b9dcbd91197df01ce79290533e924a77109bbc8ebd21c1d6e139e5ce",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.description"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "dueAt"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:e9b4c998b69fe773301f79444bc94fb0e6dc00fcbdca032312f60d689a807c27",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.dueAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "priority"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "select",
+          "identityHash": "sha256:9a1cd6b882185bbe7a88b825b383bea617d23f97b5b7fbbff28f157d50e48758",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.priority"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "slaDeadline"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:7db093a16662527468b9dba28e6abebc97873f030687cfb70036a9144705a9be",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.slaDeadline"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "status"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "select",
+          "identityHash": "sha256:41a88f55935d931b13c8219eab57ef6ca581dd6169dd851b74119d95a382d20d",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.status"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "title"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:780f4373c1285b7b6af70bde2a946e644b0c0c598e771deb0f42332a0f81a414",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.title"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/task/resource/task/create",
+      "identityHash": "sha256:f5aeba3f506f8b507d3588171dd73f85b34c3142d9512a0f16f9807dd683f056",
+      "kind": "create",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:update",
+          "method": "GET",
+          "operationId": "screen-task-task-new",
+          "path": "/app/task/tasks/new",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission task:update",
+          "method": "POST",
+          "operationId": "screen-task-task-create",
+          "path": "/app/task/tasks",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-task-task-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:a2505596fcecd5f7f1e3b70b595d52ad910671542468551695e146ae709c3a83",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/task/resource/task/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:5433989dc979e29c5b343fe3c65ac75598e5186804e1f134cfe66bcc319f32d7",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/task/resource/task/detail",
+      "identityHash": "sha256:39a0e96e90f970e21d13373722cae6d1c96919e5dedade7b0598795f68c56865",
+      "kind": "detail",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:read",
+          "method": "GET",
+          "operationId": "screen-task-task-read",
+          "path": "/app/task/tasks/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/task/resource/task/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:468e92c93e05093cd62c9ab68b2aff0e3bd8e398b5599adac0df2b939b60ed7e",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-task-task-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:9b1933e6e46f22dc7d1158fd8aeee4fb58fe48d47b592e27c5f167f7b9062da1",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/task/task/field/assigneeId"
+          },
+          "control": "entity-picker",
+          "identityHash": "sha256:e3efd5838df33e037e5eb24eecbaa7de1b6d95d6dfae17a931440d91af7d2567",
+          "interactions": [],
+          "name": "field.assigneeId"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "description"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "textarea",
+          "identityHash": "sha256:0b70a38c94075366bbeef496ed78be49514eb789e83d54a659cc8931cfdae376",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.description"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "dueAt"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:515bb6e1498679e990f13cbb7b714437bca1ead2c73ba50ff55a0ad8770b3e34",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.dueAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "priority"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "select",
+          "identityHash": "sha256:9ce4e956d3d2093637332bc8f870eea38d4bd3bbaa47c20e9084d5b04494a822",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.priority"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/task/task/field/resolution"
+          },
+          "control": "textarea",
+          "identityHash": "sha256:b8b483bf4be632e582fcbdadc747afe81a60aed34f6ca5e890fa31ce6d408bca",
+          "interactions": [],
+          "name": "field.resolution"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/task/task/field/resolvedAt"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:6c532b198e0246153b5448144be1c12cb91f96584068086f32491267d8c61345",
+          "interactions": [],
+          "name": "field.resolvedAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/task/task/field/slaBreached"
+          },
+          "control": "checkbox",
+          "identityHash": "sha256:74fcad4dbbbbe323bc9e8113f4aec86336587e29e21676bb04d7fac48dcee587",
+          "interactions": [],
+          "name": "field.slaBreached"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "slaDeadline"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:0c7109b2f38159f8127d99e633f037ea9dafa9e3772d30feb0175d70b4d64c7d",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.slaDeadline"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "status"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "select",
+          "identityHash": "sha256:b8091d3fc9f1e2cce8960779e0d56135882c885fd360f79e2678b82de90b32b7",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.status"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "title"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-task-task-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:541927910aab707c74b365e95c4d8ae378b5a69584e53657d09e2e4a65f27034",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.title"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/task/resource/task/edit",
+      "identityHash": "sha256:0d96ee60b10180a6805f3356238125fb962be8daec0b54e222eb0b59b3f37b34",
+      "kind": "edit",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:update",
+          "method": "GET",
+          "operationId": "screen-task-task-edit",
+          "path": "/app/task/tasks/{id}/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission task:update",
+          "method": "POST",
+          "operationId": "screen-task-task-update",
+          "path": "/app/task/tasks/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/task/resource/task/create"
+          },
+          "control": "link",
+          "identityHash": "sha256:de6d04dd3dedd78295e235bff2e6e433324fe1e1b3471ab07d282a89836cfc43",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.create"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/task/resource/task/list",
+      "identityHash": "sha256:053095039079637bf4e5ad4fbd71a0fcc02f8d015afe0a762560440571bc4897",
+      "kind": "list",
+      "owner": "task",
+      "routes": [
+        {
+          "guard": "permission task:read",
+          "method": "GET",
+          "operationId": "screen-task-task-list",
+          "path": "/app/task/tasks",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-approve-registration"
+          },
+          "control": "button",
+          "identityHash": "sha256:93e2baee495a1167a0c163bbd920ac6c1ab40768b4dcfb6ef405dc7454e1e8bb",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.approve-registration"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/user/resource/user/detail"
+      ],
+      "id": "app/user/resource/user/command/approve-registration",
+      "identityHash": "sha256:e810f9a82e29c305ebf15520a1fb46e23fafd715a59f888196484f1fd16eddc3",
+      "kind": "command",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:approve",
+          "method": "POST",
+          "operationId": "screen-user-user-approve-registration",
+          "path": "/app/user/users/{id}/approve-registration",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-deactivate"
+          },
+          "control": "button",
+          "identityHash": "sha256:3ae51dabcd727b8f351798676c18ed930313f5e23ae8741cd8d31eadfea0b537",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.deactivate"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/user/resource/user/detail"
+      ],
+      "id": "app/user/resource/user/command/deactivate",
+      "identityHash": "sha256:6b0c1ce66bf2578a0b3e35daec8897bbb2ea71ce07855e644d03eb58a34f9ee2",
+      "kind": "command",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-deactivate",
+          "path": "/app/user/users/{id}/deactivate",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-handle"
+          },
+          "control": "button",
+          "identityHash": "sha256:fe50983a07cdae3f3e50de2baec5f0d639ce65dd0c1befc6af53554cf40238a2",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.handle"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "handle"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-handle"
+          },
+          "control": "text",
+          "identityHash": "sha256:415dd2ee665e83830bec4ce3f0912c6a5b0c74133b1a9ac40f5066b5962154d1",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.handle"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/user/resource/user/detail"
+      ],
+      "id": "app/user/resource/user/command/handle",
+      "identityHash": "sha256:28fe7aec0ff9e87dff5462e8bc68533cc066336484186669933a67180081a04f",
+      "kind": "command",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-handle",
+          "path": "/app/user/users/{id}/handle",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-roles"
+          },
+          "control": "button",
+          "identityHash": "sha256:b1b17e3d2bcc4b5c19335a17810d09fbc8ca0b91d1caabca8990cb8de85ec2ed",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.roles"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "roles"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-roles"
+          },
+          "control": "text",
+          "identityHash": "sha256:6da784a9b435f4cf5a436f369f58b663e9ff8cad676dc8bd762e0a19a60bb1de",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.roles"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/user/resource/user/detail"
+      ],
+      "id": "app/user/resource/user/command/roles",
+      "identityHash": "sha256:0af174c14e5f739a6a41d2fe04b5728be778b8d9a6a877c235992e33c49fb3f6",
+      "kind": "command",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-roles",
+          "path": "/app/user/users/{id}/roles",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-set-password"
+          },
+          "control": "button",
+          "identityHash": "sha256:3c238440a7af9a23a57bd41b4cf0d82ef8cf1c1ca30f7bb6d16b98ea37d749f4",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.set-password"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "password"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-set-password"
+          },
+          "control": "text",
+          "identityHash": "sha256:59a6f2996ce4c210124571f3969679c4a715fefc5dcab4cf08be38691dd0b058",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.password"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/user/resource/user/detail"
+      ],
+      "id": "app/user/resource/user/command/set-password",
+      "identityHash": "sha256:dba41604339409891914734312e8ab44b944bdb7b4ce5a007e0a5efed0731a13",
+      "kind": "command",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-set-password",
+          "path": "/app/user/users/{id}/set-password",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/user/resource/user/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:82f314ffd58ef03e88e501faa695c000c98cc58d0141d073159db60a44900c27",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-create"
+          },
+          "control": "button",
+          "identityHash": "sha256:c0cda491dda9a7a5d604cb21feb14490cb6af8eb1497f2702d1055cbf263dd53",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "displayName"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:11394fadc25932206eee3f3a9254b177da660e07f9855d2b780fcf2037cce387",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.displayName"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "email"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-create"
+          },
+          "control": "text",
+          "identityHash": "sha256:23d24f73ad2b416b7e1200884b09308a4e91ce6ba1d8234d7422d7d77f49afea",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.email"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/user/resource/user/create",
+      "identityHash": "sha256:9f5765483746a4bb9532473fa6bd111455a2692c87456ce8bb26b465ffcb3ed1",
+      "kind": "create",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "GET",
+          "operationId": "screen-user-user-new",
+          "path": "/app/user/users/new",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-create",
+          "path": "/app/user/users",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:fa76688d229cf71209af1f2b5d230efc6ff68b608b6472b4bc5fb64349a1eca4",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/user/resource/user/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:fc083510519611d0408f3141081fa1176330fd709cfe09a4ab6d42c660a807b9",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/user/resource/user/detail",
+      "identityHash": "sha256:c82e2d764bd12eb85a173742cf89e717eaf18b28fa0a30f61a4b37c9a6d5c56b",
+      "kind": "detail",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:read",
+          "method": "GET",
+          "operationId": "screen-user-user-read",
+          "path": "/app/user/users/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/user/resource/user/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:35c41ae0b7ce309180cf1ec52dfa8a612371139eafe010b8dae51711405dbb72",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-user-user-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:8274ef179a7d3d9d247f76cc42409d148890753d0eb8662b64dd3665ba2fbf78",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "displayName"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:642503c5a94012c83aed1cf61b46c91f0696819e24452f24897fbea72beb57c0",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.displayName"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "email"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-user-user-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:c576a2ccdc034d73ee5b8296e87d50c4648cd196e79b154197d65539c9005136",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.email"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/user/user/field/handle"
+          },
+          "control": "text",
+          "identityHash": "sha256:d59adfe35254b504d5e2e2a04c9777c3f5fcd375b5800e31fe130032d9d434f9",
+          "interactions": [],
+          "name": "field.handle"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/user/user/field/roles"
+          },
+          "control": "text",
+          "identityHash": "sha256:5bdef0f1fef1950dd6e5a0909de64e82d9d694dc9f710fa172e57f85248baea9",
+          "interactions": [],
+          "name": "field.roles"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/user/user/field/status"
+          },
+          "control": "select",
+          "identityHash": "sha256:e8a39777103f4ee10a919c01e38e47bb24dfc99db453b954053adcc4f58a489b",
+          "interactions": [],
+          "name": "field.status"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/user/resource/user/edit",
+      "identityHash": "sha256:08720977deab54de53dc79253fd64e1d172d0a1bde8c88ce858dc46c2046caed",
+      "kind": "edit",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:manage",
+          "method": "GET",
+          "operationId": "screen-user-user-edit",
+          "path": "/app/user/users/{id}/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission user:manage",
+          "method": "POST",
+          "operationId": "screen-user-user-update",
+          "path": "/app/user/users/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/user/resource/user/create"
+          },
+          "control": "link",
+          "identityHash": "sha256:7ae943fd84b46d818faecc8c379f7a423828944b28cd23379c1232f61387ef57",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.create"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/user/resource/user/list",
+      "identityHash": "sha256:9665bf022fb05882ccd796493cddbc426233faae72fc66070688fc4c0b308971",
+      "kind": "list",
+      "owner": "user",
+      "routes": [
+        {
+          "guard": "permission user:read",
+          "method": "GET",
+          "operationId": "screen-user-user-list",
+          "path": "/app/user/users",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-delivery-replay"
+          },
+          "control": "button",
+          "identityHash": "sha256:df775342df71841fe534d426c2976fb0c567566a40745c85808b7e9f9d67aa30",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.replay"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/webhook/resource/delivery/detail"
+      ],
+      "id": "app/webhook/resource/delivery/command/replay",
+      "identityHash": "sha256:ad5412b3b8d2818960e27c87edef6d051b77d31cebe2bc517410d11c88681770",
+      "kind": "command",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:update",
+          "method": "POST",
+          "operationId": "screen-webhook-delivery-replay",
+          "path": "/app/webhook/deliveries/{id}/replay",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/webhook/resource/delivery/detail",
+      "identityHash": "sha256:60d8b1e781d73c55a24e7ca49056e0df45ae73ad122ddb228401428f083a4e07",
+      "kind": "detail",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:read",
+          "method": "GET",
+          "operationId": "screen-webhook-delivery-read",
+          "path": "/app/webhook/deliveries/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/webhook/resource/delivery/list",
+      "identityHash": "sha256:fda6e185193358f80acf831f2a37e1f2a01c610eeb09efbca920d75e28021a74",
+      "kind": "list",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:read",
+          "method": "GET",
+          "operationId": "screen-webhook-delivery-list",
+          "path": "/app/webhook/deliveries",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-endpoint-disable"
+          },
+          "control": "button",
+          "identityHash": "sha256:cc8edb91973d5a0fde75f4fc4ba6338359002ef53fb12cf05c4c0d6c2300343b",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.disable"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/webhook/resource/endpoint/detail"
+      ],
+      "id": "app/webhook/resource/endpoint/command/disable",
+      "identityHash": "sha256:c00d3c8060f3b6e6a071fdbe9568feb3ae89ba1fca4a8a270bdc9eb5a53a3d64",
+      "kind": "command",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:update",
+          "method": "POST",
+          "operationId": "screen-webhook-endpoint-disable",
+          "path": "/app/webhook/endpoints/{id}/disable",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-endpoint-enable"
+          },
+          "control": "button",
+          "identityHash": "sha256:4b1e83db9c4ab36579f1683b91869601df3e579258defdaecaa1014cc6e49921",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.enable"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/webhook/resource/endpoint/detail"
+      ],
+      "id": "app/webhook/resource/endpoint/command/enable",
+      "identityHash": "sha256:5931e2d0a1f5b6fc2220eced367acf6f1a7bbb62d365c8c1cabd7b6861aaa2f2",
+      "kind": "command",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:update",
+          "method": "POST",
+          "operationId": "screen-webhook-endpoint-enable",
+          "path": "/app/webhook/endpoints/{id}/enable",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-endpoint-target"
+          },
+          "control": "button",
+          "identityHash": "sha256:cd1cf20a889024afc4ea45d2dcd1f389dc36d8c01e20304d96422e4b33183e6e",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "command.target"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "events"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-webhook-endpoint-target"
+          },
+          "control": "text",
+          "identityHash": "sha256:997a511018128a4a46586d367bed1b905f83280fa79b5a90ca3be90d28a9e796",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.events"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "url"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-webhook-endpoint-target"
+          },
+          "control": "text",
+          "identityHash": "sha256:3add937a9cdedf4a370c3df62febe6e9dd0f2f3526673a1d7dbe6dfcd052b768",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.url"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [
+        "app/webhook/resource/endpoint/detail"
+      ],
+      "id": "app/webhook/resource/endpoint/command/target",
+      "identityHash": "sha256:1c252810933f2f5995d53a6b8c028862e660040e7210dc24c35972f6da13d6ea",
+      "kind": "command",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:update",
+          "method": "POST",
+          "operationId": "screen-webhook-endpoint-target",
+          "path": "/app/webhook/endpoints/{id}/target",
+          "response": "redirect",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-endpoint-delete"
+          },
+          "control": "button",
+          "identityHash": "sha256:da315bced1dad593fedbc6a32b29d340582476641f1eb4a42d0cc2ef45518ee5",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.delete"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/webhook/resource/endpoint/edit"
+          },
+          "control": "link",
+          "identityHash": "sha256:71436d369cccccef9036e6433da5b38d8dbabaa4479d914eacfd693e211f52e2",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.edit"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/webhook/resource/endpoint/detail",
+      "identityHash": "sha256:7bed2c5d382205a3d758b6c6394dfee2cab61d2072889f0e0653f5e484d67a35",
+      "kind": "detail",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:read",
+          "method": "GET",
+          "operationId": "screen-webhook-endpoint-read",
+          "path": "/app/webhook/endpoints/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "navigation",
+            "target": "app/webhook/resource/endpoint/list"
+          },
+          "control": "link",
+          "identityHash": "sha256:b2387fb52889a672796add61d7ba2d22701390ac2e9a00df135c213457008cc4",
+          "interactions": [
+            "activated"
+          ],
+          "name": "action.cancel"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "screen-webhook-endpoint-update"
+          },
+          "control": "button",
+          "identityHash": "sha256:0438bc2e6a16dc1ff03f34d17ec3bb573abe5b07e6441840070672a19afbf9c7",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.submit"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/createdBy"
+          },
+          "control": "text",
+          "identityHash": "sha256:fb9775dae66c6e4b0d75d448f3d6bbca7c3b058348b98ef6e0f5846f04903e7d",
+          "interactions": [],
+          "name": "field.createdBy"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/disabledAt"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:f4efec7048506c269b117f954883a75403efde35ee8abcc63567cf40e8290746",
+          "interactions": [],
+          "name": "field.disabledAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/disabledReason"
+          },
+          "control": "text",
+          "identityHash": "sha256:24d98d5763554e828faa26757af19c4dc7de9669ca8107699b65f2598c1248c0",
+          "interactions": [],
+          "name": "field.disabledReason"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/events"
+          },
+          "control": "text",
+          "identityHash": "sha256:5d90eaf3172389242c003c3995edd88201759152e98e3aa36ac70dcb0932335b",
+          "interactions": [],
+          "name": "field.events"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/lastSuccessAt"
+          },
+          "control": "datetime",
+          "identityHash": "sha256:a7c27523d96f43cf87a5b609a53f4d1f64b93b3933db1fb8cb190a2667689656",
+          "interactions": [],
+          "name": "field.lastSuccessAt"
+        },
+        {
+          "binding": {
+            "fieldPath": [
+              "name"
+            ],
+            "fixed": [],
+            "kind": "value",
+            "target": "screen-webhook-endpoint-update"
+          },
+          "control": "text",
+          "identityHash": "sha256:e20478d53fd2a948bf06f58ce70a9f6e36ccecd040f2ac2679565370aa04f71f",
+          "interactions": [
+            "committed"
+          ],
+          "name": "field.name"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/status"
+          },
+          "control": "select",
+          "identityHash": "sha256:d4737e8bb76aeeb2fa97c67d1eed29d6b0674e1cde6dd822ecc1be3658fcaa5f",
+          "interactions": [],
+          "name": "field.status"
+        },
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "display",
+            "target": "resource/webhook/endpoint/field/url"
+          },
+          "control": "url",
+          "identityHash": "sha256:0806e8761ba0c7ac71e93f7b5bbbd8424e6ff12a66fe7a7131c89ec299a26884",
+          "interactions": [],
+          "name": "field.url"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/webhook/resource/endpoint/edit",
+      "identityHash": "sha256:7580b75cd0812bbeb1c3483e4c85d6c4fd8e4c58d783f789606c51649ae16501",
+      "kind": "edit",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:update",
+          "method": "GET",
+          "operationId": "screen-webhook-endpoint-edit",
+          "path": "/app/webhook/endpoints/{id}/edit",
+          "response": "input",
+          "surface": "app"
+        },
+        {
+          "guard": "permission webhook:update",
+          "method": "POST",
+          "operationId": "screen-webhook-endpoint-update",
+          "path": "/app/webhook/endpoints/{id}",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "app/webhook/resource/endpoint/list",
+      "identityHash": "sha256:3b88bbdebddc5ec6c99e1dbbdcc1919febd4d5073255d74f37ebac373454f06b",
+      "kind": "list",
+      "owner": "webhook",
+      "routes": [
+        {
+          "guard": "permission webhook:read",
+          "method": "GET",
+          "operationId": "screen-webhook-endpoint-list",
+          "path": "/app/webhook/endpoints",
+          "response": "input",
+          "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-verify-email-confirm"
+          },
+          "control": "button",
+          "identityHash": "sha256:25d8eb97a4479fd5a9faa9d6040144736bedd064abc1cdcd33528234f6151cd4",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.confirm"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "public/auth/custom/verify-email",
+      "identityHash": "sha256:6cca022952853bb0d7f42cf5ab0d13f56481d619e69c132be7171a62c0819ab3",
+      "kind": "custom",
+      "owner": "auth",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "auth-verify-email-page",
+          "path": "/auth/verify-email",
+          "response": "input",
+          "surface": "public"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "public/web/custom/home",
+      "identityHash": "sha256:f7f69e888f266e42280e87ce8a2763e97772e3862b753395298bc8d440d41936",
+      "kind": "custom",
+      "owner": "web",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "web-home",
+          "path": "/",
+          "response": "input",
+          "surface": "public"
+        }
+      ]
+    },
+    {
+      "anchors": [],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "public/web/custom/page",
+      "identityHash": "sha256:2ead797d0c54c5bc643f62363703c39085fbf11d22b10e3a0ff2e4559f9c69c2",
+      "kind": "custom",
+      "owner": "web",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "web-page",
+          "path": "/{slug}",
+          "response": "input",
+          "surface": "public"
+        }
+      ]
+    }
+  ]
+}

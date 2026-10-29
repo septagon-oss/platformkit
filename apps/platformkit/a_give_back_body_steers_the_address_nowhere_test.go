@@ -16,17 +16,13 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 )
 
 func TestTheGiveBackSendsThePersonToThisInstallationsOwnKeptListWhateverTheBodyCarries(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	startSaved(t, cfg, c)
 	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	list, _, _, revision := oneKeptCopy(t, cfg, keeper, "Where a give-back sends the person")
 	listPath, err := url.Parse(list)

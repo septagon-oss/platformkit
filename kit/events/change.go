@@ -27,21 +27,15 @@ type Change struct {
 
 // Changes returns the fields a save moved, over the names the caller lists.
 //
-// Both operands are *T, which is the compiler refusing a diff of two different rows —
-// the mistake this makes impossible is comparing a site settings row against a task
-// row and calling the result history. A field is changed when the json of its value
-// differs byte for byte: one comparison, no second equality logic to drift from the
-// type, and a time.Time therefore compares to the nanosecond it stores.
+// Both operands are *T, which is the compiler refusing a diff of two different kinds of
+// row. A field is changed when the json of its value differs byte for byte: one comparison,
+// no second equality logic to drift from the type.
 //
-// fields is an allow-list, not "every field", and that is the same decision the
-// emitting module already makes about the columns a save writes: a column nobody names
-// is not diffed, and an unlisted column that moves is a hole a test finds rather than a
-// silent omission. A name the type does not carry is an error rather than a skipped
-// name, because a list that quietly stops covering a field is a diff that quietly stops
-// explaining the save, and rule 9 means the caller's mutation fails and writes nothing.
-//
-// before == nil is a create: every named field that carries a value is new, and says so
-// with only its After half. A field tagged `audit:"-"` may not be asked for at all.
+// fields is an allow-list, the same decision the emitting module makes about the columns a
+// save writes, and a name the type does not carry is an error rather than a skipped name: a
+// list that quietly stops covering a field is a diff that quietly stops explaining the
+// save, so the caller's mutation fails and writes nothing. before == nil is a create; a
+// field tagged `audit:"-"` may not be asked for.
 func Changes[T any](before, after *T, fields ...string) ([]Change, error) {
 	return ChangesOf(before, after, fields...)
 }
@@ -140,22 +134,16 @@ func ChangesOf(before, after any, fields ...string) ([]Change, error) {
 	return out, nil
 }
 
-// Recorder is a payload that can hold the diff a write path computed for it. The
-// kernel's CRUD door holds the locked before-image of a save it performed on a module's
-// behalf, so it is the one place that can say what the save replaced; an entity that
-// opts in with this one method gets that answer in its own payload, and every module is
-// saved the three lines it would otherwise hand-roll. The field is the entity's, tagged
-// json:",omitempty" so a payload that moved nothing carries no changes member, gorm:"-"
-// so it is not a column, and hidden:"true" so the REST document never offers a field no
-// response body ever holds: the door sets it immediately before it publishes, and clears
-// it immediately after, so the row a caller reads back is the row and not the diff.
+// Recorder is a payload that can hold the diff a write path computed for it. The kernel's
+// CRUD door holds the locked before-image of a save it made on a module's behalf, so it is
+// the one place that can say what the save replaced; the door sets the member immediately
+// before it publishes and clears it immediately after, so the row a caller reads back is
+// the row and not the diff.
 //
-// The one method cuts both ways, and the door holds both halves. A member the door owns
-// is a member a body can reach for, because hidden:"true" speaks to the document and
-// not to the decoder, and the create door decodes a body straight into the entity. So
-// that door clears whatever arrived for the member, as it clears an id: the diff says
-// what a save replaced, a create replaced nothing, and the only history a create may
-// carry is the one nobody wrote for it. See kit/rest's createRow and reportDiff.
+// The one method cuts both ways: hidden:"true" speaks to the document and not to the
+// decoder, and the create door decodes a body straight into the entity — so that door
+// clears whatever arrived for the member, as it clears an id. See kit/rest's createRow and
+// reportDiff.
 type Recorder interface {
 	SetChanges([]Change)
 }

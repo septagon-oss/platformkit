@@ -114,12 +114,12 @@ func TestTheSpansTheHandlerOpensNameTheRequestThatCausedThem(t *testing.T) {
 	if txSpan == nil {
 		t.Fatalf("no %q span on the publisher's trace %s was recorded, so this case never got to "+
 			"the assertion it exists to make (spans: %v)",
-			"database transaction", publisher.TraceID(), review2Names(recorder.Ended()))
+			"database transaction", publisher.TraceID(), txSpanNames(recorder.Ended()))
 	}
 
 	// Reachability first, off facts that work today: the transaction is the handler's,
 	// and it names the event's tenant.
-	if _, has := review2Attr(txSpan, telemetry.AttrTenantID); !has {
+	if _, has := txSpanAttr(txSpan, telemetry.AttrTenantID); !has {
 		t.Fatalf("the handler's transaction span carries no %s: %v",
 			telemetry.AttrTenantID, txSpan.Attributes())
 	}
@@ -128,7 +128,7 @@ func TestTheSpansTheHandlerOpensNameTheRequestThatCausedThem(t *testing.T) {
 			txSpan.Parent().SpanID(), delivery.SpanContext().SpanID())
 	}
 
-	if id, has := review2Attr(txSpan, telemetry.AttrRequestID); !has {
+	if id, has := txSpanAttr(txSpan, telemetry.AttrRequestID); !has {
 		t.Errorf("the handler's transaction span carries no %s, though the delivery span above it "+
 			"does and the cure promises the id reaches every span below the delivery: the request "+
 			"that published this event was %q, and the transaction a handler runs in is the span an "+
@@ -186,8 +186,8 @@ func TestTheEnvelopeThatLeavesTheProcessCarriesTheRequestMember(t *testing.T) {
 	}
 }
 
-// review2Attr reads one attribute off a recorded span.
-func review2Attr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
+// txSpanAttr reads one attribute off a recorded span.
+func txSpanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	for _, kv := range s.Attributes() {
 		if string(kv.Key) == key {
 			return kv.Value, true
@@ -196,7 +196,7 @@ func review2Attr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	return attribute.Value{}, false
 }
 
-func review2Names(all []sdktrace.ReadOnlySpan) []string {
+func txSpanNames(all []sdktrace.ReadOnlySpan) []string {
 	out := make([]string, 0, len(all))
 	for _, s := range all {
 		out = append(out, s.Name())

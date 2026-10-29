@@ -8,7 +8,7 @@ import { defineConfig, devices } from '@playwright/test';
 // proves the admin shell renders and a generated CRUD screen works.
 export default defineConfig({
   testDir: '.',
-  testIgnore: ['picture/**'],
+  testIgnore: ['picture/**', 'formsteps/**'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

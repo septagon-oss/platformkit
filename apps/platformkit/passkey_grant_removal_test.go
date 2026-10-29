@@ -15,7 +15,7 @@ func TestRemovingAPasskeyGrantDoesNotRefuseForFindingNoAdministrator(t *testing.
 	s := twoAdministrators(t, cfg, compose(cfg))
 	catalogue := []tenancy.Grant{{Permission: authcontracts.PermissionPasskeySignIn}}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := s.c.auth.SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
+		_, err := s.c.testAuth().SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestRemovingAPasskeyGrantDoesNotRefuseForFindingNoAdministrator(t *testing.
 		t.Fatalf("fixture has administering holders: %v", got)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		role, err := s.c.auth.SetRole(ctx, tx, "door", nil, catalogue)
+		role, err := s.c.testAuth().SetRole(ctx, tx, "door", nil, catalogue)
 		if err == nil && (role == nil || len(role.Grants) != 0) {
 			t.Errorf("removed passkey grant returned role %v, want an empty grant list", role)
 		}

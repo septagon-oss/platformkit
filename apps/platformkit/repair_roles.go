@@ -29,34 +29,18 @@ import (
 
 // repairRoles walks every active tenant and reports the grants its own seeder
 // wrote that no composed module defines any more. Active is the lister this
-// composition hands every tenant-scoped job — modules/auth's hourly sweep
-// included — so a suspended tenant is neither repaired nor swept, which is the
-// behaviour one walk of this installation should have. --remove takes them away,
-// one transaction per tenant, through the module's ordinary role write: the
-// tenant's lock, the floor that keeps somebody able to administer it, and an
-// auth.role_set event in the same transaction, so the repair is in the audit like
-// any other change to a role. What it prints is the roles whose rows that write
-// moved: the write reports whether it changed anything, so two operators running
-// this at once — both reading the same dead grant before either reached it —
-// print one line between them and not two.
+// composition hands every tenant-scoped job, so a suspended tenant is neither
+// repaired nor swept. --remove takes them away, one transaction per tenant, through
+// the module's ordinary role write: the tenant's lock, the floor that keeps somebody
+// able to administer it, and an auth.role_set event beside the row, so the repair is
+// in the audit like any other change to a role. What it prints is the roles whose
+// rows that write moved, so two operators running it at once print one line.
 //
-// The two values it passes are the two the seeder is given — the catalogue is
-// composition.catalogue, the same reader seeds from, and the roles are the
-// literal it reads — because those two are what the seeder decided with, and a
-// grant it did not write is not this command's to take away. A grant somebody
-// added by hand is reported by the hourly sweep and by nothing here. It is
-// idempotent: a second run finds nothing and prints the one sentence its own
-// case pins. Read that sentence for what it claims, because it claims two things
-// and no third — that this run took nothing, and that every tenant it read was an
-// active one. It prints no count and no slug. Active is the lister, so a tenant
-// somebody suspended was never read and the line says nothing about its rows: a
-// grant left there is inert and the sweep is quiet about it for the same reason,
-// so the all-clear is not the place to start listing suspended tenants, and not a
-// place to call them clean either. Nor is it a place to call the installation
-// clean, for a second reason: a role holding a dead grant of the seeder's beside
-// one of somebody else's is declined whole — the write would take both, and the
-// second is not this command's — so a run that finds nothing it can write has not
-// proved there is nothing anywhere.
+// It passes the catalogue and the roles the seeder was given, because a grant the
+// seeder did not write is not this command's to take away. Its all-clear claims two
+// things only: that this run took nothing, and that every tenant it read was an
+// active one — not that suspended tenants are clean, nor a role declined whole
+// because a live grant sat beside a dead one.
 func repairRoles(args []string) error {
 	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -84,11 +68,11 @@ func repairRoles(args []string) error {
 		verb = "removed"
 	}
 	var found int
-	err = jobs.PerTenant(ctx, conn, tenantcontracts.Active{Service: c.tenants},
+	err = jobs.PerTenant(ctx, conn, tenantcontracts.ActiveTenants{Tenants: c.tenantList},
 		func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
 			var lines []string
 			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				stale, err := auth.RepairSeededRoles(ctx, tx, c.auth, declared, initialRoles, *remove)
+				stale, err := auth.RepairSeededRolesWith(ctx, tx, c.roleRepair, declared, initialRoles, *remove)
 				if err != nil {
 					return err
 				}

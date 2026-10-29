@@ -1,19 +1,12 @@
-// catalog.go is the promise a module makes about the shape of what it emits,
-// and the check the outbox holds it to.
+// catalog.go is the promise a module makes about the shape of what it emits, and the check
+// the outbox holds it to.
 //
-// A name alone is not a contract: modules/user could publish "user.invited" with
-// any JSON in it and every subscriber would learn about it in production. So a
-// manifest names each event with the Go type its payload is (Declared), the
-// projection of that type is the schema (schema.go), and write — the one INSERT
-// every event already passes through — refuses a payload that is not one. The
-// catalog is not a second declaration anybody maintains: it is the manifest,
-// read once per composition, and kept under the slug of the app that composed it.
-//
-// The refusal is inside the caller's authoritative transaction, so a mis-shaped
-// event rolls back the state change that would have caused it. That is the
-// behaviour change worth naming: a publisher that gets this error has a bug in
-// the code that built the payload, no retry fixes it, and the mutation it came
-// with does not happen. Rule 9 in one sentence.
+// A manifest names each event with the Go type its payload is (Declared), the projection of
+// that type is the schema (schema.go), and write — the one INSERT every event passes
+// through — refuses a payload that is not one. The refusal sits inside the caller's
+// authoritative transaction, so a mis-shaped event rolls back the state change that would
+// have caused it: a publisher that gets this error has a bug in the code that built the
+// payload, no retry fixes it, and the mutation it came with does not happen.
 package events
 
 import (
@@ -71,25 +64,17 @@ func Names(list []Declared) []string {
 // Schema is the payload's projection, or nil when Payload describes nothing.
 func (d Declared) Schema() *Schema { return SchemaOf(d.Payload) }
 
-// The catalog belongs to an app, not to a process.
-//
-// What shape user.invited has is a property of the composition that emits it, and
-// one process may hold two of those: a server that hosts acme and academy over one
-// database boots both (kit/appname, decision 0074 §6). A single map for the whole
-// process is then replaced by whichever app was composed last, so academy's boot
-// takes acme's payload contract out of the one door every event passes through, and
-// the malformed event acme's own modules write begins to commit and to be relayed.
-// So the catalog is keyed by app slug, and the entry a publish consults is the one
-// of the app that holds the tenant the row belongs to — the same column the relay
-// reads to decide which rows it carries (RelayApp) and a delivery reads to decide
-// whose handler may run (holdsTenant). One column, three questions, one answer.
-//
-// It is still not per tenant or per request: what an app declares is what that app
-// emits, and no tenant, actor, locale or feature flag widens or narrows the check
-// another publisher meets (decision 0028's shared instance). The app segment comes
-// from the composition and from tenants.app, which no route rewrites
-// (migrations/000043). The pointer swap makes install safe beside concurrent
-// publishes; readers take no lock, and the mutex below covers only the replace.
+// The catalog belongs to an app, keyed by slug, and not to a process.
+// What shape user.invited has is a property of the composition that emits it, and one
+// process may hold two of those (kit/appname, decision 0074 §6): a single map would be
+// replaced by whichever app was composed last, taking one app's payload contract out of the
+// door every event passes through. The entry a publish consults is the one of the app that
+// holds the tenant the row belongs to — the same column the relay reads (RelayApp) and a
+// delivery reads (holdsTenant).
+// It is not per tenant or per request: no tenant, actor or feature flag widens the check
+// another publisher meets (decision 0028's shared instance), and the app segment comes from
+// tenants.app, which no route rewrites (migrations/000043). The pointer swap makes install
+// safe beside concurrent publishes; readers take no lock.
 var catalog atomic.Pointer[catalogue]
 
 // catalogInstall guards every change to the catalog below — an install, a claim
@@ -188,23 +173,13 @@ func DeclareApp(app appname.Name, list []Declared) {
 // would check its own tenants against the contract of an app that is not it.
 func DeclareAll(list []Declared) { DeclareApp("", list) }
 
-// ClaimApp installs one app's declared events beside the ones that app already
-// holds and returns the release of what it added. It refuses, installing nothing,
-// when the list spells an event that app already answers under a different payload
-// shape: one app holds one shape per event name, so the shapes a live composition
-// is answering publish under are neither replaced on the way in nor taken away on
-// the way out, and a second composition of the same app that means something else
-// by a name the first chose is the disagreement its author has to settle. Two
-// *different* apps may spell one name two ways, because each is measured against
-// its own entry and its tenants' own row says which entry that is.
-//
-// kit/app's Start takes the claim above the connection, as the last answer a boot
-// gives before it opens anything, and releases it on every refusal after it — a
-// claim that is refused has taken nothing, and a claim that is given back leaves
-// another live composition's shapes standing.
-//
-// The returned release is safe to call twice and from two goroutines; a boot that
-// never installed anything returns a release a caller may call anyway.
+// ClaimApp installs one app's declared events beside the ones that app already holds and
+// returns the release of what it added. It refuses, installing nothing, when the list
+// spells an event that app already answers under a different payload shape: one app holds
+// one shape per name, and a second composition that means something else by a name the
+// first chose is the disagreement its author settles. Two different apps may spell one name
+// two ways, each measured against its own entry. The release is safe to call twice and from
+// two goroutines, and a boot that installed nothing returns one a caller may call anyway.
 func ClaimApp(app appname.Name, list []Declared) (func(), error) {
 	slug := app.String()
 	want, err := declaredSchemas(list)
@@ -519,37 +494,17 @@ func checkPayload(app, name string, body []byte) error {
 }
 
 // checkDeclared refuses a publication no manifest declares, at the one door every
-// publication goes through.
+// publication goes through. The manifest gate in kit/app covers routes, which is narrower
+// than the process, and SubscribeAll expands into one subscription per declared name, so an
+// undeclared name is never delivered at all. Refusing here says that fact at the moment it
+// becomes known, inside the caller's own transaction, so the state change that would have
+// caused it rolls back; it is correctable in one line — the module names the event in its
+// own Declared list.
 //
-// The manifest gate in kit/app covers routes, which is narrower than the process:
-// a name published from a job, a command or a handler is not a route, and it used
-// to be accepted, written, stamped published and received by nobody — the core
-// review of 2026-09-29 (P2) measured two publications accepted and one audit row,
-// and the loss was silent. SubscribeAll expands into one subscription per declared
-// name, so an undeclared name has no subscriber by construction: the event is not
-// lost later, it is never delivered at all. Refusing here says the same fact at the
-// moment it becomes known, inside the caller's own transaction, so the state change
-// that would have caused it rolls back, nothing is stamped and nothing is emitted.
-// It is correctable in one line — the emitting module names the event in its own
-// Declared list — and a retry without that line changes nothing, which is what makes
-// it a refusal rather than a failure.
-//
-// Whose declaration it asks for is the same answer checkPayload gives, at the same
-// price. For a name some app gave a payload type, the write has already read which
-// app holds the tenant, so the name is asked of that app alone: a name only another
-// app declares has no handler in this one either. For a name no app typed there is
-// no read to ride on, and the check stops at the cheaper question the process can
-// answer without one — did any app in this process declare it — so the app that
-// declared it untyped still publishes it unchecked, which is the shape main's
-// typed set already protects. "Declared by another app, and this app never named
-// it" is therefore the one hole that costs nothing to leave open; a delivery of an
-// event no handler of its own app subscribes to is silent, and naming it would cost
-// every unchecked publish a read of the tenant table.
-//
-// The check is exactly as wide as the process's own knowledge: no catalog installed
-// (DeclareApp never ran), and a composition that declared nothing, are one state
-// with no names to consult, and both mean no check rather than a refusal of every
-// hand-named event in a process with no composition.
+// Whose declaration it asks for is the answer checkPayload gives, at the same price: for a
+// typed name, the app holding the tenant, already read by the write; for a name no app
+// typed, the cheaper question the process answers without a read. No catalog installed
+// means no names to consult, and no check rather than a refusal.
 func checkDeclared(app, name string) error {
 	c := catalog.Load()
 	if c == nil || len(c.declared) == 0 {

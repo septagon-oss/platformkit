@@ -1,22 +1,14 @@
-// Package observetest runs the cases every PlatformKit events transport must
-// answer for an ephemeral observation. It is the shape both providers are
-// measured against; a provider that cannot answer one of them does not serve
-// live connections.
-//
-// The six cases are the contract of transport.Transport.Observe turned into
-// executable checks: an observation is addressed to one tenant and one event, it
-// is handed each publish at most once, it starts nothing and resumes nothing, and
-// it withdraws on demand. Nothing here needs a tenant registry, a database or an
-// installed application, because a transport routes by an address and never asks
-// whether the tenant exists — every case makes its own two ids and publishes
-// through the transport under test. That is what lets the same six cases run
-// against an in-process transport and against a broker.
-//
-// A provider's own test file is one call to Run. What a provider cannot express
-// at this generality stays in the provider's package: the JetStream provider
-// additionally checks that a message written at an address its own document does
-// not claim is dropped, which needs a raw client, and the in-process provider
-// routes inside one process and so has no address to disagree with.
+// Package observetest runs the cases every PlatformKit events transport must answer for an
+// ephemeral observation. It is the shape both providers are measured against; a provider
+// that cannot answer one of them does not serve live connections.
+// The six cases are the contract of transport.Transport.Observe turned into executable
+// checks: one tenant and one event, each publish handed at most once, nothing started or
+// resumed, and withdrawal on demand. None needs a tenant registry, a database or an
+// installed application, because a transport routes by an address and never asks whether
+// the tenant exists — which is what lets the same six run against an in-process transport
+// and against a broker.
+// A provider's own test file is one call to Run; what a provider cannot express at this
+// generality stays in the provider's package.
 package observetest
 
 import (

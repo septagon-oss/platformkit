@@ -49,7 +49,7 @@ func TestErasingASoftDeletedPersonRunsEveryOwnerAndLeavesNoAddress(t *testing.T)
 			return err
 		}
 		var e error
-		tenant, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		tenant, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	}); err != nil {
 		t.Fatalf("seed a soft-deleted person: %v", err)

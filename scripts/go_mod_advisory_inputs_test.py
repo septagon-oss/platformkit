@@ -10,13 +10,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class AdvisoryInputs(unittest.TestCase):
     def test_release_floors_and_commented_pins(self):
+        # One case per floor the guard carries, at it, above it and back inside it. The net releases
+        # straddle two ranges: v0.61.0 sits above the release that closed the HTTP/2 batch and inside
+        # the one that closed the html coalescing finding, so only that second entry can refuse it.
         cases = (
-            ("fixed", "go1.27.3", "v0.60.0", False, 0),
-            ("newer", "go1.28.2", "v0.61.0", False, 0),
+            ("fixed", "go1.27.3", "v0.62.0", False, 0),
+            ("newer", "go1.28.2", "v0.63.0", False, 0),
             ("old_net", "go1.27.3", "v0.59.0", False, 1),
-            ("old_toolchain", "go1.27.1", "v0.60.0", False, 1),
-            ("x509_toolchain", "go1.27.2", "v0.60.0", False, 1),
-            ("commented_net", "go1.27.3", "v0.60.0", True, 1),
+            ("net_between_fixes", "go1.27.3", "v0.61.0", False, 1),
+            ("old_toolchain", "go1.27.1", "v0.62.0", False, 1),
+            ("x509_toolchain", "go1.27.2", "v0.62.0", False, 1),
+            ("commented_net", "go1.27.3", "v0.62.0", True, 1),
         )
         for name, toolchain, net, commented, expected in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:

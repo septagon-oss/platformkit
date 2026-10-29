@@ -16,6 +16,7 @@ package module
 
 import (
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"io/fs"
 	"regexp"
 	"slices"
@@ -103,6 +104,8 @@ type Module struct {
 
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
+	// Views are immutable custom-screen descriptors, checked again after Routes.
+	Views []screen.View
 
 	// There is no Health. Nothing in three repositories ever contributed a
 	// check, and /ready is the one question a probe can act on — is this
@@ -151,6 +154,20 @@ type Module struct {
 	// its to refuse. See httpx.Surfaces.
 	Routes func(r httpx.Surfaces)
 
+	// SystemAccess declares that this module has work no tenant transaction can
+	// do, and what that work is. The kernel mints one cross-tenant credential per
+	// module that declares it and hands it out while that module is being wired
+	// (httpx.Surfaces.SystemToken); a module that takes one without declaring it
+	// is refused at composition, and one that declares it and never takes it is
+	// refused too — the declaration is read in both directions. The zero value
+	// says the module crosses no tenant boundary, which is the answer for every
+	// module but the few this repository holds.
+	//
+	// It declares a scope and not an authorization: who may make the request that
+	// reaches the handler holding the token is that route's own guard, and
+	// docs/adr/0006 says why the two are not the same question.
+	SystemAccess SystemAccess
+
 	// Moved is the addresses this module used to answer at and where each one
 	// lives now. The kernel answers an old address with a redirect and nothing
 	// else — 302 for a safe method, 307 for the rest, never cached, never a
@@ -166,6 +183,42 @@ type Module struct {
 // request under From keeps its remainder and its query.
 type Move struct {
 	From, To string
+}
+
+// SystemAccess is one module's declared need for a transaction that sees every
+// tenant. Reason is the whole of it: one sentence, in source language, naming
+// the work. It is the audit record of every cross-tenant transaction the module
+// opens — a slog field and a span attribute, and nowhere else — so it names the
+// work rather than the capability, and Validate refuses anything longer or
+// spanning lines. It is operator text and deliberately not translatable: a
+// security fact a tenant could rewrite is not a security fact.
+type SystemAccess struct {
+	Reason string
+}
+
+// maxSystemReason bounds the one sentence a module says about its cross-tenant
+// work. The value is a log field and a span attribute and nothing else, so a
+// bound is what keeps the audit line a line.
+const maxSystemReason = 200
+
+// Declared says this module crosses tenant boundaries. An empty Reason is not a
+// weaker claim but no claim, which is why the question is a method and the field
+// stays the zero value.
+func (s SystemAccess) Declared() bool { return strings.TrimSpace(s.Reason) != "" }
+
+// fault is why this declaration is not a usable audit sentence, or "" when it
+// is. The refusal names what to write rather than only what is wrong, because
+// whoever reads it is editing a manifest and not debugging a request.
+func (s SystemAccess) fault() string {
+	switch {
+	case !s.Declared():
+		return ""
+	case len(s.Reason) > maxSystemReason:
+		return fmt.Sprintf("SystemAccess reason is %d characters; it is the audit record of every cross-tenant transaction this module opens — name the work in one sentence of at most %d characters", len(s.Reason), maxSystemReason)
+	case strings.ContainsAny(s.Reason, "\n\t"):
+		return "SystemAccess reason spans lines; it is one sentence in a log field and a span attribute"
+	}
+	return ""
 }
 
 // Emits returns everything the module says it emits, in the one shape the
@@ -377,21 +430,62 @@ func Expand(mods []Module) []Module {
 
 	out := slices.Clone(mods)
 	for i, m := range out {
-		if !m.SubscribeAll || len(m.Subscriptions) != 1 {
-			continue
+		if m.SubscribeAll && len(m.Subscriptions) == 1 {
+			template := m.Subscriptions[0]
+			subs := make([]events.Subscription, 0, len(all))
+			for _, e := range all {
+				// App travels with the template rather than being invented here: the
+				// expansion is one subscription per emitted event and nothing else,
+				// and the durable each of them gets is the template's app joined to
+				// that event (kit/appname.Durable). Dropping the field would hand a
+				// SubscribeAll module the unscoped consumer name for every event in
+				// the system.
+				subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
+			}
+			m.Subscriptions, m.SubscribeAll = subs, false
+			out[i].SubscribeAll = false
 		}
-		template := m.Subscriptions[0]
-		subs := make([]events.Subscription, 0, len(all))
-		for _, e := range all {
-			// App travels with the template rather than being invented here: the
-			// expansion is one subscription per emitted event and nothing else,
-			// and the durable each of them gets is the template's app joined to
-			// that event (kit/appname.Durable). Dropping the field would hand a
-			// SubscribeAll module the unscoped consumer name for every event in
-			// the system.
-			subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
+		// The two facts the kernel can answer for a manifest: a subscription no
+		// module is named on belongs to the manifest that carries it, and a screen
+		// named by its entity alone is this module's own screen. Both are the same
+		// answer Validate gives, filled where it is the only moment before either
+		// is read — pkit, the durable consumer name and the navigation are all
+		// asked long before any router exists.
+		out[i].Subscriptions = attributedTo(m.Subscriptions, m.Name)
+		out[i].Nav = screensOf(m.Nav, m.Name)
+	}
+	return out
+}
+
+// attributedTo names every subscription that names none, and only those: a name
+// the manifest already wrote survives, including another module's, because that
+// disagreement is what Validate refuses and the durable consumer name is stamped
+// from it. The answer is always a slice of its own, so the expanded plan holds no
+// window onto the manifest it was built from.
+func attributedTo(subs []events.Subscription, owner string) []events.Subscription {
+	out := make([]events.Subscription, len(subs))
+	for i, s := range subs {
+		if s.Module == "" {
+			s.Module = owner
 		}
-		out[i].Subscriptions, out[i].SubscribeAll = subs, false
+		out[i] = s
+	}
+	return out
+}
+
+// screensOf completes the nav entries that name only their entity: "tasks" in
+// module task is the task module's own screen, "task/tasks". An entry that
+// already names a module keeps it, including across modules — a shell linking to
+// another module's screens says so — and an empty Screen is left for Validate
+// to refuse, which is what makes filling it and requiring it one rule. Like
+// attributedTo it answers with a slice of its own.
+func screensOf(entries []NavEntry, owner string) []NavEntry {
+	out := make([]NavEntry, len(entries))
+	for i, n := range entries {
+		if n.Screen != "" && !strings.Contains(n.Screen, "/") {
+			n.Screen = owner + "/" + n.Screen
+		}
+		out[i] = n
 	}
 	return out
 }
