@@ -45549,6 +45549,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/internal/the_trail_of_an_operation_that_names_another_tenant_stays_in_the_recording_tenant_test.go",
+   "id": "modules/audit/internal/the_trail_of_an_operation_that_names_another_tenant_stays_in_the_recording_tenant_test.go#TestTheTrailOfAnOperationThatNamesAnotherTenantStaysInTheRecordingTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTrailOfAnOperationThatNamesAnotherTenantStaysInTheRecordingTenant",
+   "needs_db": true,
+   "pkg": "modules/audit/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go",
    "id": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go#TestTheTrailRefusesAnUnattributableOperationOfAnEventItAlreadyStores",
    "kind": "go",
@@ -92842,7 +92861,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2568,
+  "files": 2569,
   "forge_runs": [
    408,
    413,
@@ -92876,7 +92895,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4045,
+   "behaviour": 4046,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92895,9 +92914,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4718,
+  "rows": 4719,
   "tiers": {
-   "merge": 2912,
+   "merge": 2913,
    "nightly": 121,
    "push": 1685
   },
@@ -92905,13 +92924,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2323,
+   "keep": 2324,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4332,
+   "keep": 4333,
    "keep-rewrite": 170,
    "merge": 216
   }
