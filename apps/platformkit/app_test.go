@@ -728,6 +728,9 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
 		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
+		// A composition built by hand declares what its manifests say: four modules
+		// cross tenants, and the fixture names their four reasons.
+		SystemAccess: systemAccessOf(c.modules),
 		// The installation is where the control plane is served, and this is the
 		// composition's own answer to that: the same value boot passes.
 		Installation: cfg.Server.InstallationHost,
@@ -856,6 +859,9 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
 		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
+		// A composition built by hand declares what its manifests say: four modules
+		// cross tenants, and the fixture names their four reasons.
+		SystemAccess: systemAccessOf(c.modules),
 		Installation: cfg.Server.InstallationHost,
 	})
 	var entries []module.NavEntry

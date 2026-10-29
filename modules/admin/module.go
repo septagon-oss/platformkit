@@ -180,6 +180,9 @@ func New(deps Deps) module.Module {
 		Nav:           nil,
 		Jobs:          nil,
 		Subscriptions: nil,
+		// The switcher lists every tenant, which is a question no tenant's own
+		// transaction can answer. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "list every tenant for the workspace's tenant switcher"},
 		Routes: func(s httpx.Surfaces) {
 			internal.Mount(s, internal.Shell{
 				Nav:       navigation(deps.Modules),
@@ -195,7 +198,7 @@ func New(deps Deps) module.Module {
 				Locale:    deps.Locale,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
-				// tenant switcher lists. See docs/adr/0006.
+				// tenant switcher lists.
 				Token:             s.SystemToken(),
 				SignIn:            deps.SignIn,
 				SignInOperationID: deps.SignInOperationID,

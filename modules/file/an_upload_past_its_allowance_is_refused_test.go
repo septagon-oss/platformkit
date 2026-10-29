@@ -32,8 +32,9 @@ func TestAnUploadPastOnePersonsAllowanceIsRefused(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	person := uuid.New()
 	api, router := httpx.New(httpx.Options{
-		Cache:      cache.Memory("pkit"),
-		PublicHost: host, Tenants: caller{hosts: map[string]tenancy.Tenant{host: acme}}, Conn: conn,
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"),
+		PublicHost:   host, Tenants: caller{hosts: map[string]tenancy.Tenant{host: acme}}, Conn: conn,
 		Authorize: caller{hosts: map[string]tenancy.Tenant{host: acme}},
 		Authenticate: func(_ context.Context, _ db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error) {
 			if r.Header.Get("X-Second-Person") != "" {
