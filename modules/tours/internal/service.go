@@ -218,6 +218,11 @@ func (s *Service) Act(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.
 	if err := transition(run, action, run.StepIDs); err != nil {
 		return nil, err
 	}
+	if action.Kind == "viewed" && run.Source == "automatic" {
+		if err := consumeAutomaticOffer(ctx, tx, run, action.At); err != nil {
+			return nil, err
+		}
+	}
 	if err := crud.Update(ctx, tx, run, "status", "current_step", "done", "skipped", "revision", "later_until", "viewed_at", "completed_at", "dismissed_at", "updated_at"); err != nil {
 		return nil, err
 	}
@@ -293,6 +298,30 @@ func reserveOffer(ctx context.Context, tx db.Tx[db.Tenant], run *contracts.Run, 
 		ON CONFLICT (tenant_id, app, person_id)
 		WHERE consumed_at IS NULL AND released_at IS NULL DO NOTHING`,
 		tenantID, run.App, run.PersonID, run.TourID, run.Edition, run.ID, at, at.Add(reservationDuration))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return crud.ErrConflict
+	}
+	return nil
+}
+
+func consumeAutomaticOffer(ctx context.Context, tx db.Tx[db.Tenant], run *contracts.Run, at time.Time) error {
+	tenantID := db.TenantOf(tx).ID
+	dbtx := tx.DB().WithContext(ctx)
+	result := dbtx.Exec(`UPDATE tours_reservations SET consumed_at = ?, revision = revision + 1
+		WHERE tenant_id = ? AND app = ? AND person_id = ? AND tour_id = ? AND edition = ? AND run_id = ?
+		AND consumed_at IS NULL AND released_at IS NULL AND expires_at > ?`,
+		at, tenantID, run.App, run.PersonID, run.TourID, run.Edition, run.ID, at)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return crud.ErrConflict
+	}
+	result = dbtx.Exec(`UPDATE tours_person_frequency SET last_automatic_viewed_at = ?, revision = revision + 1, updated_at = ?
+		WHERE tenant_id = ? AND app = ? AND person_id = ?`, at, at, tenantID, run.App, run.PersonID)
 	if result.Error != nil {
 		return result.Error
 	}
