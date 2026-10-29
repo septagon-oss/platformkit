@@ -41,7 +41,7 @@ func (taskSeeder) Resource() seed.Resource {
 
 func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, now time.Time) (seed.Target, error) {
 	// The deadline first, because it is the one declared value YAML reads into a
-	// type of its own: `dueAt: 2026-10-10` arrives as a date, and the grammar's own
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and the
 	// answer is the honest refusal. A fixed day on disk is a deadline no rerun can
 	// honour — this format resolves a deadline against the run that writes the row —
 	// so it is refused in the words that say what to write instead, and not read as
@@ -50,7 +50,7 @@ func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string
 		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00, and an absolute date names a day no rerun can honour")
 	}
 	// The deadline first, because it is the one declared value YAML reads into a
-	// type of its own: an unquoted `dueAt: 2026-10-10` arrives as a date, and the
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and
 	// honest refusal is the grammar's own sentence. This format resolves a deadline
 	// against the run that writes the row, so a fixed day on disk is one no rerun
 	// can honour, and it is refused in the words that say what to write instead —

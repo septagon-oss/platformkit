@@ -88,26 +88,19 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
 	}
 	// Two values are create-only rather than state, and the file module is the reason
-	// for the second. The bytes are the first: an upload writes them once and no
-	// rerun patches them (see Update), so they instruct the record's creation the way
-	// a relative date does. The media type is the second, because the owner does not
-	// keep the one this record declared: a raster is measured, turned and re-encoded
-	// on its way into storage, "the row's size, digest and media type are read from"
-	// that pass rather than from what the request declared, and the frame's alpha
-	// decides the container (decision 0069 §4, filecontracts.ImagePass). So the
-	// digest on a stored row is the digest of the frame a reader is served — a
-	// different object from the bytes beside this record — and its media type is the
-	// container those pixels chose, not the extension's answer.
+	// for the second. The bytes are the first: an upload writes them once and no rerun
+	// patches them (see Update), so they instruct the record's creation the way a
+	// relative date does. The media type is the second because the owner does not keep
+	// what the record declared: a raster is measured, turned and re-encoded on its way
+	// into storage, and the frame's alpha decides the container (decision 0069 §4). So
+	// a stored row's digest is the digest of the frame a reader is served, and its media
+	// type the container those pixels chose.
 	//
-	// A record that reconciled either of them would refuse every image on the run
-	// after the one that wrote it: a refusal of the write that is not there to take,
-	// over a row whose bytes no seed run could put there in any case. What the record
-	// manages, and so what it compares, is the two facts the owner keeps as they were
-	// declared: the name a list shows and the visibility that decides which reader an
-	// Open answers.
-	//
-	// Both create-only values stay named, because a declared field is accounted for or
-	// refused: see unappliedField in kit/seed/decide.go.
+	// A record that reconciled either would refuse every image on the run after the one
+	// that wrote it, over a row whose bytes no seed run could put there in any case. What
+	// it compares is the two facts the owner keeps as declared: the name a list shows and
+	// the visibility an Open answers. Both create-only values stay named, because a
+	// declared field is accounted for or refused.
 	return seed.Target{
 		Fields:     map[string]any{"name": name, "visibility": visibility},
 		CreateOnly: map[string]any{"asset": body, "contentType": contentType},

@@ -26,7 +26,7 @@ import (
 // then on. Passwords are never in a seed file — the loader refuses a field named
 // for one — and never in a plan line, which prints keys and addresses only.
 type userSeeder struct {
-	users usercontracts.Service
+	users usercontracts.SeedWriter
 	// demoPassword is config's Demo.Password: the one password a demonstration's
 	// people sign in with. It is the deployment's answer to a record that asks for
 	// a credential, and an empty one asks the run to mint one per person and hand
