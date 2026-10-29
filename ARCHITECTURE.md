@@ -29,6 +29,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
+| Sketch field | [`entity.Sketch`](kit/entity/sketch.go) validates ordered integer strokes through JSON and JSONB; [`forms`](ui/forms/sketch.go) edits them and [`components.Sketch`](ui/components/sketch.go) supplies the shared SVG reading. |
 | Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
@@ -36,7 +37,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 Run `go test ./ui/screens -run 'ExampleFormExample|TestGeneratedForm'` to exercise
 the [form-to-export example](ui/screens/design_test.go) and its composition checks.
 This local check does not exercise a browser, native editor or business write.
-Entity fields are flat scalars/lists; nested answer maps need an adapter. Component
+Entity fields are flat scalars/lists or explicit semantic values such as sketches; nested answer maps need an adapter. Component
 Props describe presentation, while entity and answer contracts own data validity.
 A2UI/MCP adapters need separate protocol wiring; source export does not supply it.
 

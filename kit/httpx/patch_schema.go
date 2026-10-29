@@ -39,7 +39,7 @@ func SetPatchSchema[T any](router *Router, path string, fields []entity.Field) {
 		copy := *property
 		copy.Default, copy.ReadOnly = nil, false
 		fieldType := typ.FieldByIndex(field.Index).Type
-		if fieldType.Kind() == reflect.Pointer || fieldType.Kind() == reflect.Slice {
+		if (fieldType.Kind() == reflect.Pointer || fieldType.Kind() == reflect.Slice) && !(field.Type == entity.TypeSketch && field.Required) {
 			copy.Nullable = false
 			patch.Properties[field.Name] = &huma.Schema{AnyOf: []*huma.Schema{&copy, {Type: "null"}}}
 		} else {
