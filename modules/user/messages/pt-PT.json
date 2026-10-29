@@ -71,6 +71,15 @@
       "": "Alterar funções"
     }
   },
+  "hints.user/user.command.roles.field.expectedRevision.label": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Revisão esperada",
+    "plural": {
+      "": "Revisão esperada"
+    }
+  },
   "hints.user/user.command.set-password.field.password.label": {
     "references": [
       "modules/user/module.go"
@@ -78,6 +87,15 @@
     "translation": "Nova palavra-passe",
     "plural": {
       "": "Nova palavra-passe"
+    }
+  },
+  "hints.user/user.command.set-password.field.expectedRevision.label": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Revisão esperada",
+    "plural": {
+      "": "Revisão esperada"
     }
   },
   "hints.user/user.command.set-password.label": {

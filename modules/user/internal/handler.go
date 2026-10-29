@@ -159,7 +159,7 @@ func mountDeactivation(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User],
 // sends no body at all.
 type passwordBody struct {
 	Password         string `json:"password" ui:"label:New password" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
-	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
+	ExpectedRevision int64  `json:"expectedRevision,omitempty" ui:"label:Expected revision"`
 }
 
 type handleBody struct {
@@ -168,7 +168,7 @@ type handleBody struct {
 
 type rolesBody struct {
 	Roles            []string `json:"roles" doc:"The roles this person holds from now on" example:"admin"`
-	ExpectedRevision int64    `json:"expectedRevision,omitempty"`
+	ExpectedRevision int64    `json:"expectedRevision,omitempty" ui:"label:Expected revision"`
 }
 
 // invitations is where somebody is invited. It is beside the users collection
