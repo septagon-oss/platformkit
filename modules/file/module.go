@@ -200,29 +200,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		quota = 0 // said out loud: this deployment has no quota
 	}
 	svc := internal.NewService(deps.Storage, max, quota, deps.MaxImagePixels)
-	// The sweep is constructed here and given its capability in Routes, which
-	// is the one moment the kernel offers one: a job is built before the API
-	// exists. See internal/reconcile.go for why it is not jobs.PerTenant.
-	sweep := internal.NewReconcile(deps.Storage, deps.ReconcileEvery)
-	// The retention sweep is the second job and the opposite one: the orphan
-	// sweep starts at the store, this one starts at the rows, inside each
-	// tenant's own transaction. internal/retention.go says why they are two
-	// jobs and not two modes.
-	retention := internal.NewSweep(deps.Storage, internal.SweepConfig{
-		Retention: deps.Retention, Tenants: deps.Tenants, Every: deps.RetainEvery,
-	})
-	// The encode pass is the third job and the only one that writes bytes rather
-	// than removing them. It needs the service because a width charges for itself
-	// through the same quota an upload does, and it needs the tenant lister
-	// because it walks tenants the way the retention sweep does — which is why
-	// Jobs() mounts nothing when no lister was wired rather than running over
-	// nobody.
-	variants := internal.NewVariants(svc, deps.Storage, deps.Tenants, deps.VariantEvery)
-	// The release sweep is the fourth. It needs no storage — the bytes go on the
-	// strength of the work order it publishes, which is the only thing that can
-	// remove an object after the row's transaction commits — and it needs the
-	// tenant lister for the reason every sweep here does.
-	unused := internal.NewUnused(deps.Tenants, deps.UnusedAfter, deps.UnusedEvery)
+	sweep, scheduled := fileJobs(deps, svc)
 	// The library's page is composed over the service this function just built, so
 	// the meter on it and the refusal in an upload are the same sum, and the grid
 	// reads through the same row-level policy the list door answers by. No chrome
@@ -239,33 +217,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Views:      contracts.Views(deps.Library != nil, true, true),
 		Migrations: Migrations.Files,
 		// Bytes go, rows stay, and the certificate names both a subject and an actor.
-		PersonalData: personaldata.Implements(
-			// files.alt (000063) is the sentence somebody typed about a picture, and a
-			// caption is their own words about themselves as much as a file name is — with
-			// the difference that the caption is what a screen reader hands out to whoever
-			// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
-			// the one statement that also moves the row's instant: see personalData.Erase.
-			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
-			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
-			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
-			// file_uses (000045) says which record's field displays which file. `record`
-			// is a polymorphic reference — `module` and `entity` say whose row it is — so
-			// it is filed as about rather than not-person: a richtext field of a user's
-			// own record names this person's row in it, and the module that writes the
-			// row is not the module that decides what it points at. `module`, `entity`,
-			// `field` and `locale` name no identifier: the first three are CHECKed
-			// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
-			// so none of them is a column an address was ever copied into.
-			personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
-			// file_variants (000054) is one width of one picture: the file it belongs
-			// to is a row, not a person, and the two text columns hold no sentence —
-			// `state` is a CHECKed vocabulary and `reason` is a failed encode's own
-			// word for itself, capped at 24 characters by the same CHECK.
-			personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
-		),
-		Adopts:      Migrations.Adopts,
-		Permissions: permissions,
-		Declared:    contracts.Events,
+		PersonalData: filePersonalData(),
+		Adopts:       Migrations.Adopts,
+		Permissions:  permissions,
+		Declared:     contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Files", Screen: "file/files", Permission: contracts.PermissionFileRead},
 		},
@@ -279,7 +234,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// than with four encodes on the way there. The release sweep removes the images
 		// nobody is showing once the grace period has run — the one job that reads the
 		// use ledger rather than writing it.
-		Jobs: append(append(append(sweep.Jobs(), retention.Jobs()...), variants.Jobs()...), unused.Jobs()...),
+		Jobs: scheduled,
 		// The one subscription, and it is to this module's own event: the bytes
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
@@ -296,4 +251,41 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			internal.MountLibrary(s, library)
 		},
 	}
+}
+
+// fileJobs builds the scheduled work and returns the store-facing sweep for its
+// route capability. Each job owns a distinct cleanup or encoding boundary.
+func fileJobs(deps Deps, svc *internal.Service) (*internal.Reconcile, []jobs.Job) {
+	// Reconciliation starts at the store because orphaned bytes have no tenant row
+	// to walk from. The other sweeps start from rows and use tenant transactions.
+	sweep := internal.NewReconcile(deps.Storage, deps.ReconcileEvery)
+	retention := internal.NewSweep(deps.Storage, internal.SweepConfig{
+		Retention: deps.Retention, Tenants: deps.Tenants, Every: deps.RetainEvery,
+	})
+	variants := internal.NewVariants(svc, deps.Storage, deps.Tenants, deps.VariantEvery)
+	unused := internal.NewUnused(deps.Tenants, deps.UnusedAfter, deps.UnusedEvery)
+	all := append(sweep.Jobs(), retention.Jobs()...)
+	all = append(all, variants.Jobs()...)
+	all = append(all, unused.Jobs()...)
+	return sweep, all
+}
+
+// filePersonalData maps the module's stored text and references to their
+// subject or related record for erasure.
+func filePersonalData() personaldata.Declaration {
+	return personaldata.Implements(
+		// files.alt (000063) is the sentence somebody typed about a picture, and a
+		// caption is their own words about themselves as much as a file name is — with
+		// the difference that the caption is what a screen reader hands out to whoever
+		// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
+		// the one statement that also moves the row's instant: see personalData.Erase.
+		personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
+		personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+		personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+		// file_uses (000045) points at another module's record, so record is about
+		// that person; the vocabulary columns and language tag hold no identifiers.
+		personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
+		// A variant belongs to its file row, not directly to a person.
+		personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
+	)
 }
