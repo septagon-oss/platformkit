@@ -67291,6 +67291,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/tours/internal/viewing_consumes_automatic_reservation_test.go",
+   "id": "modules/tours/internal/viewing_consumes_automatic_reservation_test.go#TestViewingAutomaticRunConsumesReservation",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestViewingAutomaticRunConsumesReservation",
+   "needs_db": true,
+   "pkg": "modules/tours/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/translation/contracts/translationtest/fake_test.go",
    "id": "modules/translation/contracts/translationtest/fake_test.go#TestTheFakeIsAService",
    "kind": "go",
@@ -98708,7 +98727,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2774,
+  "files": 2775,
   "forge_runs": [
    408,
    413,
@@ -98742,7 +98761,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4321,
+   "behaviour": 4322,
    "composition": 557,
    "contract": 24,
    "journey": 123
@@ -98761,9 +98780,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5025,
+  "rows": 5026,
   "tiers": {
-   "merge": 3060,
+   "merge": 3061,
    "nightly": 123,
    "push": 1842
   },
@@ -98771,13 +98790,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2529,
+   "keep": 2530,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4639,
+   "keep": 4640,
    "keep-rewrite": 170,
    "merge": 216
   }
