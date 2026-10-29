@@ -135,7 +135,7 @@ func (s *Service) rolesFromHTTP(ctx context.Context, tx db.Tx[db.Tenant], id uui
 		return nil, err
 	}
 	if s.invitationCommandRequired(u) {
-		got, err := s.SetInvitationRoles(ctx, tx, id, in.ExpectedRevision, in.Roles)
+		got, err := s.SetInvitationRoles(ctx, tx, id, int64(in.ExpectedRevision), in.Roles)
 		return got, InvitationFault(err)
 	}
 	return s.SetRoles(ctx, tx, id, in.Roles)
@@ -147,7 +147,7 @@ func (s *Service) passwordFromHTTP(ctx context.Context, tx db.Tx[db.Tenant], id 
 		return nil, err
 	}
 	if s.invitationCommandRequired(u) {
-		err = s.SetInvitationPassword(ctx, tx, id, in.ExpectedRevision, in.Password)
+		err = s.SetInvitationPassword(ctx, tx, id, int64(in.ExpectedRevision), in.Password)
 	} else {
 		err = s.SetPassword(ctx, tx, id, in.Password)
 	}
