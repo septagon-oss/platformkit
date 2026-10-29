@@ -37,21 +37,20 @@ var (
 	noticeHTML = htmltemplate.Must(htmltemplate.ParseFS(templates, "templates/notice.html.tmpl"))
 )
 
-// SendMail is the subscription that sends the message.
+// SendMail is the subscription that turns a mail request into a duty: it decides
+// the mail — the row, the address, the host, the rendered parts — and writes the
+// intent, in the transaction the kernel opened for the event. It never opens a
+// socket.
 //
-// It is a subscriber and not part of Notify for the reason the event exists:
-// the request that raised the notice commits its row and returns, and the
-// worker talks to the mail server. So a slow relay costs nobody a response, a
-// failure is retried by the outbox on the kernel's own ladder, and a message
-// that can never be sent ends in platformkit_dead_letters rather than in a log
-// line somebody has to notice.
-//
-// What it is handed is two identifiers. The row, the address and the host are
-// all read here, inside the transaction the kernel opened in the event's own
-// tenant — see contracts.EmailRequested for why the payload is that thin, and
-// for the two consequences: a notice deleted in the meantime is a skip, and an
-// address changed in the meantime is the one the mail goes to.
-func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hosts contracts.HostLookup, senders contracts.Senders, secure bool) events.Subscription {
+// The sending moved. A relay dialled inside this transaction was a mail a rollback
+// could undo after it had left, and a relay whose answer was never written left no
+// row at all, so the outbox redelivered the event, the person was mailed twice and
+// nothing said so. The intent row closes both halves. The row, the address and the
+// host are all read here, in the event's own tenant — see contracts.EmailRequested
+// for why the payload is that thin — and the worker asks both again before the
+// socket opens, because a queue is where the gap between a decision and its send
+// lives.
+func SendMail(svc *Service, hosts contracts.HostLookup, secure bool) events.Subscription {
 	return events.Subscription{
 		Module: "notification", Name: contracts.EventEmailRequested,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -88,7 +87,7 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 					"notification", row.ID, "recipient", req.Recipient)
 				return nil
 			}
-			to, err := address(ctx, tx, recipients, row.RecipientID)
+			to, err := address(ctx, tx, svc.recipients, row.RecipientID)
 			if err != nil {
 				return err
 			}
@@ -107,7 +106,7 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
-			if mailer == nil || contracts.IsNoTransport(mailer) {
+			if svc.mailer == nil || contracts.IsNoTransport(svc.mailer) {
 				// No transport in this installation, said on the delivery ledger
 				// rather than in a log line somebody has to notice: the notice stays
 				// and stays readable in the application, and the mail it asked for is
@@ -123,8 +122,8 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			// identity has always sent from, and the header says so plainly rather
 			// than borrowing a name nobody claimed.
 			var sender *contracts.Sender
-			if senders != nil {
-				if sender, err = senders.For(ctx, tx); err != nil {
+			if svc.senders != nil {
+				if sender, err = svc.senders.For(ctx, tx); err != nil {
 					return err
 				}
 				if sender == nil {
@@ -144,27 +143,22 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 						"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
 				}
 			}
-			msg := contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"}
-			if sender != nil {
-				msg.Sender, msg.ReplyTo = sender, sender.ReplyTo
-			}
-			if err := mailer.Send(ctx, msg); err != nil {
-				// Two answers, and the ledger distinguishes them. A transient one —
-				// the connection dropped, the relay is down — writes no row: this
-				// transaction rolls back and the outbox retries on the kernel's
-				// ladder, which is the only record a retry needs.
-				//
-				// A permanent one (contracts.ErrPermanent: the relay's 5xx, a
-				// signature this deployment cannot make) writes failed with what the
-				// relay said and returns nil, so the message is acknowledged. A
-				// permanent failure that is retried is a channel with no terminal row
-				// until the dead letter, and dead letters are not a ledger.
-				if errors.Is(err, contracts.ErrPermanent) {
-					return record(tx, row.ID, ChannelEmail, OutcomeFailed, reason(err))
-				}
-				return err
-			}
-			return record(tx, row.ID, ChannelEmail, OutcomeSent, "")
+			// The mail is owed, so it is written rather than sent. The cause is this
+			// event's own id, which is the identity the outbox keeps across a
+			// redelivery and an operator's replay of the same event: one mail request
+			// is one intent, and the unique partial index of 000076 is what makes that
+			// a fact rather than an intention. ReplyTo is left empty on purpose — the
+			// worker sets it from the tenant's sender when it sends, and a reply
+			// address copied here would be a stale reading of a row the tenant may
+			// still change.
+			_, _, err = svc.Queue(ctx, tx, contracts.OutgoingMail{
+				Purpose: contracts.EventEmailRequested,
+				Cause:   ev.ID.String(),
+				Person:  row.RecipientID,
+				Notice:  row.ID,
+				Message: contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"},
+			})
+			return err
 		},
 	}
 }
@@ -186,11 +180,7 @@ func closed(tx db.Tx[db.Tenant], notification uuid.UUID, channel string) (bool, 
 const maxReason = 500
 
 func reason(err error) string {
-	msg := strings.TrimPrefix(err.Error(), "notification: ")
-	if len(msg) > maxReason {
-		return msg[:maxReason]
-	}
-	return msg
+	return clipReason(strings.TrimPrefix(err.Error(), "notification: "))
 }
 
 // baseURL is the scheme and the host this tenant's people reach the application

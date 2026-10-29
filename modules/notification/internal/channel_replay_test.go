@@ -73,6 +73,12 @@ func TestEveryCarriedChannelIgnoresACommittedEventReplay(t *testing.T) {
 			}
 			delivered := len(carrier.got)
 			if channel == contracts.ChannelEmail {
+				// Mail is the channel whose handler only decides: the two replays
+				// wrote one owed mail, and the drain is what sends it once.
+				worker := internal.NewService(directory{}, internal.WithMailer(mailbox))
+				if err := internal.Deliver(worker, acmeOnly, 0, 0, 0).Run(ctx, conn); err != nil {
+					t.Fatalf("drain the owed mail: %v", err)
+				}
 				delivered = len(mailbox.Sent())
 			}
 			if delivered != 1 {
