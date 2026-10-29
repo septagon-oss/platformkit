@@ -32,6 +32,8 @@ type webExpectation struct {
 // and a screen nobody renders has to be a named decision rather than a skip line.
 var webUnasserted = map[string]string{
 	"choice-axes-command": "its resolved model and rows are asserted by the resolver's own fixture run",
+	"sketch-en":           "the semantic model and SVG geometry are checked by the drawing component suite",
+	"sketch-pt-pt":        "the semantic model and SVG geometry are checked by the drawing component suite",
 }
 
 func TestEveryParityFixtureRendersItsSemanticModel(t *testing.T) {

@@ -48,13 +48,17 @@ var Module = pkit.NewModule("user", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Administration:      pkit.Get[usercontracts.Administration](w),
 		Granting:            pkit.Get[usercontracts.Granting](w),
 		Clock:               pkit.Get[usercontracts.Clock](w),
 		InvitationTiming:    pkit.Get[usercontracts.InvitationTiming](w),
 		InvitationAuthority: pkit.Get[usercontracts.InvitationAuthority](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[usercontracts.InvitationCommands](w, svc.(*internal.Service))
 	pkit.Put[usercontracts.InvitationReader](w, svc.(*internal.Service))

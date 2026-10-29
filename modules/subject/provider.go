@@ -41,12 +41,16 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Tenants:             pkit.Get[jobs.TenantLister](w),
 		Files:               pkit.Get[filecontracts.Service](w),
 	}
-	deps.Service = internal.NewService(internal.Deps{
+	svc, err := internal.NewServiceChecked(internal.Deps{
 		Parts: deps.Parts, People: subjects(deps), InvitationRetention: deps.InvitationRetention,
 		Bundles: deps.Bundles, Notes: deps.Notes,
 	})
-	pkit.Put[subjectcontracts.Service](w, deps.Service)
-	return NewWith(deps), nil
+	if err != nil {
+		return module.Module{}, err
+	}
+	deps.Service = svc
+	pkit.Put[subjectcontracts.Service](w, svc)
+	return NewWithChecked(deps)
 }
 
 // bundles stores a person's bundle through the file module: sealed against its

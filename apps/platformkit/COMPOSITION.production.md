@@ -61,6 +61,7 @@ pkit: notification.Module is built after product.Module, user.Module, tenant.Mod
 pkit: notification.Module needs notificationcontracts.RecipientLookup from user.Module.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: notification.Module needs secrets.Secrets from product.Module.
+pkit: notification.Module needs jobs.TenantLister from tenant.Module.
 pkit: notification.Module could use push.Adapters; platformkit composes no provider, so it will not.
 pkit: notification.Module uses *notification.Page from workspace.Module.
 pkit: notification.Module reads config.Mail.
@@ -219,6 +220,7 @@ pkit: tenant.Module provides tenantcontracts.SAMLReader; no module in platformki
 pkit: tenant.Module provides tenantcontracts.Bootstrapper; no module in platformkit needs it.
 pkit: tenant.Module provides tenantcontracts.LocaleSetter; no module in platformkit needs it.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
+pkit: notification.Module provides notificationcontracts.MailIntents; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Creator; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Reader; no module in platformkit needs it.

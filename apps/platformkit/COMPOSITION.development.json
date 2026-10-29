@@ -237,7 +237,8 @@
         "authcontracts.Notifier",
         "notificationcontracts.Mailer",
         "notificationcontracts.MailDelivery",
-        "notificationcontracts.MailLedger"
+        "notificationcontracts.MailLedger",
+        "notificationcontracts.MailIntents"
       ],
       "needs": [
         {
@@ -251,6 +252,10 @@
         {
           "contract": "secrets.Secrets",
           "from": "product"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
         }
       ],
       "uses": [

@@ -125,7 +125,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err := deps.AccountRequests.Check(); err != nil {
 		return module.Module{}, fmt.Errorf("auth: auth.account_requests: %w", err)
 	}
-	svc, manifest := New(deps)
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	if authority := pkit.Get[usercontracts.InvitationAuthority](w); authority != nil {
 		if holder, ok := authority.(*usercontracts.InvitationAuthorityFunc); ok && holder != nil {
@@ -196,38 +199,44 @@ func MailedLinksOpen(pages LinkPages) *pkit.Module {
 // provisions is the one each names.
 
 // Registration is member signup with emailed password setup.
-var Registration = door("registration", func(users usercontracts.RegistrationUsers) authcontracts.RegistrationMode {
-	return authcontracts.PasswordRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}
+var Registration = door("registration", func(users usercontracts.RegistrationUsers) (authcontracts.RegistrationMode, error) {
+	return authcontracts.PasswordRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}, nil
 })
 
 // EmailRegistration is the password door that also requires mailbox
 // confirmation. A composition that turns it off takes the three inquiry aliases
 // out with it — /api/v1/auth/register, /resend-verification and /verify-email —
 // and the case that asks the running server each one answers says so.
-var EmailRegistration = door("emailregistration", func(users usercontracts.EmailRegistrar) authcontracts.RegistrationMode {
+var EmailRegistration = door("emailregistration", func(users usercontracts.EmailRegistrar) (authcontracts.RegistrationMode, error) {
 	policy, err := (&authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}).Checked()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return authcontracts.EmailRegistrationMode{Policy: &policy}
+	return authcontracts.EmailRegistrationMode{Policy: &policy}, nil
 })
 
 // ApprovalRegistration accepts a password, a confirmation and a terms consent
 // and keeps the account pending for review. It needs no mail delivery.
-var ApprovalRegistration = door("approvalregistration", func(users usercontracts.PendingRegistrar) authcontracts.RegistrationMode {
+var ApprovalRegistration = door("approvalregistration", func(users usercontracts.PendingRegistrar) (authcontracts.RegistrationMode, error) {
 	policy, err := (&authcontracts.ApprovalRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}).Checked()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return authcontracts.ApprovalRegistrationMode{Policy: &policy}
+	return authcontracts.ApprovalRegistrationMode{Policy: &policy}, nil
 })
 
 // door is the shape all three share: the people it writes through come from the
 // user module, and what it puts is the finished policy, so no half-filled door
-// is ever mounted.
-func door[T any](name string, mode func(T) authcontracts.RegistrationMode) *pkit.Module {
+// is ever mounted. A mode its own Checked refuses answers the build as an error
+// and puts nothing, which is how the plan reports it — as the refusal of the one
+// door, with its dependents suppressed — rather than as a panic out of a build.
+func door[T any](name string, mode func(T) (authcontracts.RegistrationMode, error)) *pkit.Module {
 	return pkit.NewModule(name, func(w *pkit.Wiring) (module.Module, error) {
-		pkit.Put[authcontracts.RegistrationMode](w, mode(pkit.Get[T](w)))
+		filled, err := mode(pkit.Get[T](w))
+		if err != nil {
+			return module.Module{}, err
+		}
+		pkit.Put[authcontracts.RegistrationMode](w, filled)
 		return module.Module{Name: name}, nil
 	},
 		pkit.Needs[T](),

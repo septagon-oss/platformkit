@@ -16,6 +16,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -121,11 +122,25 @@ var permissions = []module.Permission{
 // notification's modules return their services: the kernel asks this module
 // what a tenant's plan includes, for the operations whose declaration names a
 // feature, and this is where an application is handed something to answer with.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (httpx.Entitler, module.Module) {
+	plan, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return plan, manifest
+}
+
+// NewChecked builds the service and the manifest. Deps.Payments is required —
+// billing.Manual() is this module's own answer when no processor is composed —
+// and a zero RenewEvery keeps the nightly cron. It opens nothing, runs no query
+// and is safe to call twice.
+func NewChecked(deps Deps) (httpx.Entitler, module.Module, error) {
 	if deps.Payments == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference in the worker at two in the morning.
-		panic("billing.Module: Deps.Payments is required; wire billing.Manual() when there is no payment processor")
+		return nil, module.Module{}, errors.New("billing.Module: Deps.Payments is required; wire billing.Manual() when there is no payment processor")
 	}
 	svc := internal.NewService()
 	return svc, module.Module{
@@ -174,5 +189,5 @@ func New(deps Deps) (httpx.Entitler, module.Module) {
 			mounted.Mount(s)
 			internal.RegisterRoutes(s, svc)
 		},
-	}
+	}, nil
 }

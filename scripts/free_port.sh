@@ -65,30 +65,90 @@ port_listeners() { # [port] — every pid the operating system attributes to a l
 # proved it can answer at all. ss without `-p`, a container with no /proc, a stripped
 # lsof: each returns nothing for every question, and a gate that trusts the silence
 # refuses runs it should serve. So the mechanism is tried against a listener this
-# script started itself, on a port it just took from the same allocator, and the run
-# keeps whichever answer comes back.
-port_attribution_works() { # exit 0 when this machine attributes a listening socket to the process holding it, 1 when it does not
-	local probe="" pid="" tries=0
-	if ! probe="$(bind_free_port)"; then
-		return 1
+# script started itself, on a port the kernel allocated for it, and the run keeps
+# whichever answer comes back.
+#
+# One node process is the allocation and the listener together: a separate
+# `bind_free_port` would pay for a second start of the toolchain to ask a question
+# whose answer is already in hand. The listener writes the port it was given to a
+# private file and stays up, so the wait is for that line rather than for a fixed
+# sleep, and the ownership question is first asked at the moment a socket really
+# exists to be asked about.
+#
+# Two refusals come out of this, and they are two machines' faults. Exit 1 is the
+# socket table's: a listener is up and nothing would say who holds it. Exit 2 is the
+# fault of whatever should have put that listener up: none could be started, so the
+# question was never asked. They are kept apart because a person told their `ss` will
+# not answer goes to look at iproute2 and /proc, and finds nothing wrong with either.
+#
+# Exit 2 has two producers — a toolchain that reported no port, and a TMPDIR with
+# nowhere private to write the port it was given — and one exit serves both because a
+# run that cannot announce a port has no listener to ask about either way. The line
+# each prints is what tells them apart, so it names its own machine and the step that
+# follows: one sends the person to node, the other to TMPDIR.
+#
+# The grace around the attribution is short and bounded, because a socket in LISTEN
+# state sits in the kernel's table already: /proc either maps it to its owner or
+# cannot read itself at all, and a machine in the second state has to be refused
+# before the run builds anything rather than after it has waited a while to be sure.
+# It is not a single question. A machine that can attribute answers the first ask here
+# — five runs, one question each, 247-251 ms — while asking about a port a second
+# process had allocated needed a second question in two of those five runs on the same
+# machine. Eight asks is what a slow table may spend, not a budget to cut: at one or
+# two this refuses a run whose socket table was merely slow rather than mute.
+port_attribution_works() { # exit 0 when this machine attributes a listening socket to the process holding it, 1 when a listener is up and the socket table names no holder for it, 2 when no listener could be started to ask about, either because node reported no port or because TMPDIR holds nowhere private to write the one it reported
+	local announce="" probe="" pid="" tries=0 attributed="no"
+	# Asked before node is started, because a listener whose port nobody can read is a
+	# listener this run cannot prove it owns, and a refusal that reached this far would
+	# have paid for a toolchain start to arrive at the same place.
+	if ! announce="$(mktemp)"; then
+		echo "free port: no private place under ${TMPDIR:-/tmp} to write the port the probe listener was given; set TMPDIR to a directory this run can create files in" >&2
+		return 2
 	fi
-	node -e 'const net = require("node:net");
+	node -e 'const fs = require("node:fs");
+		const net = require("node:net");
 		const server = net.createServer();
 		server.on("error", () => process.exit(1));
-		server.listen(Number(process.argv[1]), "127.0.0.1");' "$probe" >/dev/null 2>&1 &
+		server.listen(0, "127.0.0.1", () => {
+			fs.writeFileSync(process.argv[1], `${server.address().port}\n`);
+		});' "$announce" >/dev/null 2>&1 &
 	pid=$!
-	while [ "$tries" -lt 20 ]; do
-		if port_listeners "$probe" 2>/dev/null | grep -qx "$pid"; then
-			kill "$pid" 2>/dev/null || true
-			wait "$pid" 2>/dev/null || true
-			return 0
-		fi
+	# The listener is up when it has said which port it got. `read` with a redirection
+	# asks the file itself, so the wait costs one syscall per look rather than a
+	# pipeline. The first look lands while the toolchain is still starting, so even a
+	# healthy run pays one poll for it: that poll is what waiting for the listener
+	# actually costs, against sleeping a fixed budget and hoping.
+	while [ "$tries" -lt 25 ]; do
+		probe=""
+		IFS= read -r probe <"$announce" 2>/dev/null || true
+		case "$probe" in
+		'' | *[!0-9]*) probe="" ;;
+		esac
+		if [ -n "$probe" ]; then break; fi
 		if ! kill -0 "$pid" 2>/dev/null; then break; fi
 		sleep 0.2
 		tries=$((tries + 1))
 	done
+	tries=0
+	while [ -n "$probe" ] && [ "$tries" -lt 8 ]; do
+		if port_listeners "$probe" 2>/dev/null | grep -qx "$pid"; then
+			attributed="yes"
+			break
+		fi
+		if ! kill -0 "$pid" 2>/dev/null; then break; fi
+		sleep 0.25
+		tries=$((tries + 1))
+	done
 	kill "$pid" 2>/dev/null || true
 	wait "$pid" 2>/dev/null || true
+	rm -f "$announce"
+	if [ "$attributed" = "yes" ]; then
+		return 0
+	fi
+	if [ -z "$probe" ]; then
+		echo "free port: the probe listener never said which port it took, so no listener is running to ask about" >&2
+		return 2
+	fi
 	return 1
 }
 

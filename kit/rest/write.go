@@ -23,6 +23,10 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if err := validateSketchInput(e); err != nil {
+		var zero T
+		return zero, err
+	}
 	var err error
 	e, err = s.choiceCreateRow(e)
 	if err != nil {
@@ -266,7 +270,12 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
 	}
-	return s.createRow(ctx, tx, e)
+	row, err := s.createRow(ctx, tx, e)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 // UpdateRow patches the columns `values` names, of this Spec's own schema, and
@@ -282,7 +291,12 @@ func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
 	}
-	return s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
+	row, err := s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {

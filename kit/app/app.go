@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -300,8 +301,16 @@ func (a *App) serve(ctx context.Context, h http.Handler) error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	// The socket exists before the process says it listens: ListenAndServe binds
+	// inside a goroutine, so the line below would otherwise be printed on the way
+	// to a refusal, and a person reading the log would be told to look at an
+	// address that was never open.
+	listener, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return fmt.Errorf("app: serve: %w", err)
+	}
 	stopped := make(chan error, 1)
-	go func() { stopped <- srv.ListenAndServe() }()
+	go func() { stopped <- srv.Serve(listener) }()
 	a.log.InfoContext(ctx, "app: listening", "addr", a.cfg.Server.Addr, "role", a.opts.Role)
 
 	select {

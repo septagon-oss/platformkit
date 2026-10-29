@@ -19,8 +19,8 @@ func TestQueuedMailRechecksSenderVerificationBeforeDelivery(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	store := senders()
 	mailbox := notification.NewMailbox()
-	svc := internal.NewService(directory{}, internal.WithSenders(store))
-	send := internal.SendMail(mailbox, directory{}, hosts{}, store, true)
+	svc := internal.NewService(directory{}, internal.WithSenders(store), internal.WithMailer(mailbox))
+	send := internal.SendMail(svc, hosts{}, true)
 	ctx := asAdmin(tenancy.WithTenant(t.Context(), acme))
 	var noticeID uuid.UUID
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
