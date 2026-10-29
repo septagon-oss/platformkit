@@ -59,7 +59,7 @@ func TestExpandRewritesSubscriptionsAndNothingElse(t *testing.T) {
 			emitted = append(emitted, e.Name)
 		}
 	}
-	want := slices.Sorted(slices.Values(append(slices.Clone(KernelEvents), emitted...)))
+	want := slices.Sorted(slices.Values(append(slices.Clone(KernelEventNames()), emitted...)))
 	var names []string
 	for _, s := range got[1].Subscriptions {
 		names = append(names, s.Name)

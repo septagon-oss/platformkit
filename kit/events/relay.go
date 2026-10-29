@@ -213,18 +213,34 @@ func stillWaiting(ctx context.Context, tx db.Tx[db.System], reported map[lagKey]
 	return out, nil
 }
 
-// Relay publishes unscoped rows in batches until a batch is short or ctx ends.
-// FOR UPDATE SKIP LOCKED lets workers claim independent batches; locks last for
-// one batch. Publication precedes stamping, so failed batches remain retryable
-// and may deliver duplicates.
+// Relay publishes the rows of the deployment that names no app in batches until a batch
+// is short or ctx ends.
+//
+// Deprecated: use RelayFor with the app this process relays for, or
+// appname.Name("") for the deployment that names no app.
 func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
-	return RelayApp(ctx, conn, t, "")
+	return RelayFor(ctx, conn, t, "")
 }
 
-// RelayApp relays only rows whose tenant belongs to app, using one transaction
-// per batch. Unnamed deployments also own rows with missing tenants; named apps
-// do not. Ownership is checked when claiming rows, before publishing or stamping.
+// RelayApp relays one app's rows.
+//
+// Deprecated: use RelayFor, which is the same claim stated once and named for the app
+// whose rows it moves.
 func RelayApp(ctx context.Context, conn *db.Conn, t Transport, app appname.Name) error {
+	return RelayFor(ctx, conn, t, app)
+}
+
+// RelayFor relays only the rows whose tenant belongs to app, using one transaction per
+// batch, until a batch is short or ctx ends. FOR UPDATE SKIP LOCKED lets workers claim
+// independent batches, so two relays of one app move different rows and locks last for
+// one batch. Publication precedes stamping, so a crash between the two leaves the row
+// retryable and may deliver a duplicate.
+//
+// Which rows are the app's is the table's answer (tenants.app), read when claiming,
+// before anything is published or stamped: an unnamed deployment also owns rows whose
+// tenant is gone, and a named app owns nothing that is not its own. The appname.Name("")
+// of the deployment that names no app is the whole of the unscoped relay it always ran.
+func RelayFor(ctx context.Context, conn *db.Conn, t Transport, app appname.Name) error {
 	for {
 		n, err := relayBatch(ctx, conn, t, app)
 		if err != nil || n < batch {

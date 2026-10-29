@@ -183,7 +183,7 @@ func TestSubscribeAllHearsAModuleComposedAfterIt(t *testing.T) {
 	}
 	// Every event a module declares, and the events the kernel emits itself (KernelEvents),
 	// sorted: the trail hears a refused authorization like any other event.
-	want := slices.Sorted(slices.Values(append([]string{"first.happened", "last.again", "last.happened"}, KernelEvents...)))
+	want := slices.Sorted(slices.Values(append([]string{"first.happened", "last.again", "last.happened"}, KernelEventNames()...)))
 	if !slices.Equal(names, want) {
 		t.Errorf("the trail subscribes to %v, want %v", names, want)
 	}
@@ -236,12 +236,12 @@ func TestSubscribeAllTakesExactlyOneSubscription(t *testing.T) {
 // for a module's name would be the same thing backwards.
 func TestTheKernelManifestIsTheOnlyOneThatMayEmitAKernelEvent(t *testing.T) {
 	t.Run("the kernel's own manifest may declare one", func(t *testing.T) {
-		if err := Validate([]Module{{Name: KernelName, Declared: []events.Declared{{Name: KernelEvents[0]}}}}); err != nil {
+		if err := Validate([]Module{{Name: KernelName, Declared: []events.Declared{{Name: KernelEventNames()[0]}}}}); err != nil {
 			t.Errorf("Validate refused the kernel's own event: %v", err)
 		}
 	})
 	t.Run("another module may not", func(t *testing.T) {
-		err := Validate([]Module{{Name: "billing", Declared: []events.Declared{{Name: KernelEvents[0]}}}})
+		err := Validate([]Module{{Name: "billing", Declared: []events.Declared{{Name: KernelEventNames()[0]}}}})
 		if err == nil || !strings.Contains(err.Error(), "is not namespaced by the module that emits it") {
 			t.Errorf("Validate = %v, want the namespace refusal for a module that emits a kernel event", err)
 		}
