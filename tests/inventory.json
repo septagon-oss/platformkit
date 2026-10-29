@@ -2433,6 +2433,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/cluster_version_marker_output_test.go",
+   "id": "apps/platformkit/cluster_version_marker_output_test.go#TestClusterVersionMarkerOutputOmitsUntrustedContents",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestClusterVersionMarkerOutputOmitsUntrustedContents",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/composed_picture_test.go",
    "id": "apps/platformkit/composed_picture_test.go#TestComposedPictureUsesTheGeneratedListAndSessionDoor",
    "kind": "go",
@@ -102419,7 +102438,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2909,
+  "files": 2910,
   "forge_runs": [
    408,
    413,
@@ -102454,7 +102473,7 @@
   ],
   "layers": {
    "behaviour": 4480,
-   "composition": 592,
+   "composition": 593,
    "contract": 24,
    "journey": 123
   },
@@ -102472,9 +102491,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5219,
+  "rows": 5220,
   "tiers": {
-   "merge": 3198,
+   "merge": 3199,
    "nightly": 123,
    "push": 1898
   },
@@ -102482,13 +102501,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2664,
+   "keep": 2665,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4833,
+   "keep": 4834,
    "keep-rewrite": 170,
    "merge": 216
   }
