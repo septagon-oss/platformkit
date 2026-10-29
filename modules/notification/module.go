@@ -9,6 +9,8 @@
 package notification
 
 import (
+	"errors"
+
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -162,8 +164,10 @@ func streamedTopics() []string {
 // not depend on Go's map iteration. A provider is a channel this deployment
 // sends, and a channel it sends has to have somebody listening, so both halves
 // — this list and the decision that opens a ledger row — come from
-// contracts.Providers.Active over the same Deps value and cannot disagree.
-func subscriptions(deps Deps) []events.Subscription {
+// contracts.Providers.Active over the same Deps value and cannot disagree. A
+// wired channel no worker is asked for answers as the refusal of the wiring, the
+// module's own or the carrier's, before any subscription is handed to the plan.
+func subscriptions(deps Deps) ([]events.Subscription, error) {
 	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
 	for _, c := range deps.Providers.Active() {
 		p := deps.Providers.Get(c)
@@ -172,15 +176,38 @@ func subscriptions(deps Deps) []events.Subscription {
 			// Module already refuses to compose without. A second carrier for either
 			// would be two subscriptions on one event and two sent rows for one
 			// delivery, so it fails at the wiring rather than in the worker.
-			panic("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
+			return nil, errors.New("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
 		}
-		subs = append(subs, internal.Carrier(p, deps.Hosts, deps.Secure))
+		carrier, err := internal.Carrier(p, deps.Hosts, deps.Secure)
+		if err != nil {
+			return nil, err
+		}
+		subs = append(subs, carrier)
 	}
-	return subs
+	return subs, nil
 }
 
+// New is the manifest, and the service it is built on.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest, one carrier subscription per
+// provider the deployment wired, and answers as an error a provider on a channel
+// this module carries itself: two carriers on one event write two sent rows for
+// one delivery. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	deps = withDeviceCarriers(deps)
+	subs, err := subscriptions(deps)
+	if err != nil {
+		return nil, module.Module{}, err
+	}
 	devices := internal.DeviceStore{Adapters: deps.Push}
 	svc := internal.NewService(deps.Recipients,
 		internal.WithPreferences(internal.Prefs{}),
@@ -217,7 +244,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: subscriptions(deps),
+		Subscriptions: subs,
 		// The live door onto the two events this module raises for one person,
 		// watched by the recipient each payload names. An event not listed here
 		// keeps the durable path it has always had; listing one opens a connection
@@ -233,7 +260,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 				})
 			}
 		},
-	}
+	}, nil
 }
 
 // withDeviceCarriers puts a channel in Deps.Providers for every device channel

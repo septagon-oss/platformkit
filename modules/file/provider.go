@@ -45,7 +45,7 @@ var Module = pkit.NewModule("file", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	settings := pkit.Config(w, func(c config.Config) config.Files { return c.Files })
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Storage:        pkit.Get[filecontracts.Storage](w),
 		MaxBytes:       settings.MaxBytes,
 		QuotaBytes:     settings.QuotaBytes,
@@ -57,6 +57,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// service below rather than anything a composition could hand in.
 		Library: pkit.Get[*LibraryChrome](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	// The image port reads the widths this file can serve today, and the service
 	// is what answers that. The assertion is a narrowing and not a discovery: the

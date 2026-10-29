@@ -88,7 +88,7 @@ Edges whose source is a module's own root package — the composition side, wher
 | `history` | `content` | `platform` -> `platform` | lateral | external-test | composition |  |
 | `history` | `translation` | `platform` -> `platform` | lateral | external-test | composition |  |
 | `notification` | `auth` | `identity` -> `identity` | lateral | production | composition | yes |
-| `scim` | `user` | `product` -> `identity` | down | production | composition |  |
+| `scim` | `user` | `product` -> `identity` | down | external-test, production | composition |  |
 | `subject` | `file` | `product` -> `platform` | down | production | composition |  |
 | `subject` | `notification` | `product` -> `identity` | down | production | composition |  |
 | `subject` | `user` | `product` -> `identity` | down | internal-test, production | composition |  |

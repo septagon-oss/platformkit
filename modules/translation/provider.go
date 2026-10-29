@@ -34,9 +34,13 @@ var Module = pkit.NewModule("translation", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Sources: []rest.TranslationSource{pkit.Get[rest.TranslationSource](w)},
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[translationcontracts.Service](w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
