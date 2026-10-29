@@ -127,6 +127,7 @@ func validNamed(list []string, name string, emptyOK bool) bool {
 // order its group sits in. It carries no JSON tags of its own: it is a
 // declaration the mount gate reads, and the bytes are ui/screens' to write.
 type EntryHints struct {
+	Forms       *FormsHints
 	Singular    string // "note"; a shell's default is Humanize(Entity)
 	Plural      string // "notes"; a shell's default is Singular + "s"
 	Description string
@@ -193,6 +194,7 @@ type EntitySection struct {
 // What to type into, how to read and how much to show are three questions with
 // three answers, and 0085 keeps each meaning.
 type FieldHints struct {
+	Figure ChoiceFigure `json:"figure,omitempty"`
 	// Label is what a header, a control and a term call this field. Absent, the
 	// reading is display.FieldLabel, which is Humanize(Name).
 	Label string `json:"label,omitempty"`

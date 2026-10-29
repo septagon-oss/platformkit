@@ -62,87 +62,117 @@ func numericList(s string, budget *int) ([]float64, error) {
 	}
 	return out, nil
 }
-func validateElement(e *element, root bool, budget *int) error {
+func validateElement(e *element, root bool, budget *int, figure bool) error {
 	specific := map[string]string{"svg": "xmlns viewBox width height preserveAspectRatio", "g": "", "path": "d", "rect": "x y width height rx ry", "circle": "cx cy r", "ellipse": "cx cy rx ry", "line": "x1 y1 x2 y2", "polyline": "points", "polygon": "points"}
+	if figure {
+		specific["text"] = "x y font-size text-anchor font-weight"
+	}
 	attrs, ok := specific[e.name]
 	if !ok || (!root && e.name == "svg") {
 		return fmt.Errorf("element %s is forbidden", e.name)
 	}
 	if !root {
-		attrs += " fill stroke stroke-width stroke-linecap stroke-linejoin stroke-miterlimit fill-rule opacity fill-opacity stroke-opacity transform data-part data-option data-slot"
+		attrs += " fill stroke stroke-width stroke-linecap stroke-linejoin stroke-miterlimit fill-rule opacity fill-opacity stroke-opacity transform"
+		if figure {
+			attrs += " data-choice"
+		} else {
+			attrs += " data-part data-option data-slot"
+		}
 	}
-	allowed := " " + attrs + " "
 	for k, v := range e.attrs {
-		if !strings.Contains(allowed, " "+k+" ") {
+		if !strings.Contains(" "+attrs+" ", " "+k+" ") {
 			return fmt.Errorf("attribute %s is forbidden", k)
 		}
-		var err error
-		switch k {
-		case "xmlns", "data-part", "data-option", "data-slot":
-		case "fill", "stroke":
-			if v != "none" && !colourPattern.MatchString(v) {
-				err = errors.New("paint must be none or #RRGGBB")
-			}
-		case "stroke-linecap":
-			err = vocabulary(v, "butt round square")
-		case "stroke-linejoin":
-			err = vocabulary(v, "miter round bevel")
-		case "fill-rule":
-			err = vocabulary(v, "nonzero evenodd")
-		case "preserveAspectRatio":
-			if v != "none" && v != "xMidYMid meet" && v != "xMidYMid slice" {
-				err = errors.New("unsupported preserveAspectRatio")
-			}
-		case "transform":
-			err = transform(v, budget)
-		case "d":
-			err = path(v, budget)
-		default:
-			var ns []float64
-			ns, err = numericList(v, budget)
-			if err == nil {
-				switch k {
-				case "viewBox":
-					if len(ns) != 4 || ns[2] <= 0 || ns[3] <= 0 || ns[2] > 8192 || ns[3] > 8192 {
-						err = errors.New("viewBox needs four numbers and positive axes at most 8192")
-					}
-				case "points":
-					minimum := 4
-					if e.name == "polygon" {
-						minimum = 6
-					}
-					if len(ns) < minimum || len(ns)%2 != 0 {
-						err = errors.New("points needs complete coordinate pairs")
-					}
-				default:
-					if len(ns) != 1 {
-						err = errors.New("one number is required")
-						break
-					}
-					lo, hi := -1000000.0, 1000000.0
-					switch k {
-					case "opacity", "fill-opacity", "stroke-opacity":
-						lo, hi = 0, 1
-					case "stroke-width":
-						lo, hi = 0, 8192
-					case "stroke-miterlimit":
-						lo, hi = 1, 1000
-					case "width", "height", "rx", "ry", "r":
-						lo = 0
-					}
-					if ns[0] < lo || ns[0] > hi {
-						err = errors.New("number outside the permitted interval")
-					}
-					if root && (k == "width" || k == "height") && (ns[0] <= 0 || ns[0] > 8192) {
-						err = errors.New("dimension must be positive and at most 8192")
-					}
-				}
-			}
-		}
-		if err != nil {
+		if err := attribute(e, k, v, root, budget); err != nil {
 			return fmt.Errorf("%s: %w", k, err)
 		}
 	}
+	return requiredAttributes(e, root)
+}
+
+func attribute(e *element, k, v string, root bool, budget *int) error {
+	var err error
+	switch k {
+	case "xmlns", "data-part", "data-option", "data-slot", "data-choice":
+	case "fill", "stroke":
+		if v != "none" && !colourPattern.MatchString(v) {
+			err = errors.New("paint must be none or #RRGGBB")
+		}
+	case "text-anchor":
+		err = vocabulary(v, "start middle end")
+	case "font-weight":
+		err = vocabulary(v, "normal bold 100 200 300 400 500 600 700 800 900")
+	case "font-size":
+		ns, fault := numericList(v, budget)
+		err = fault
+		if err == nil && (len(ns) != 1 || ns[0] <= 0 || ns[0] > 256) {
+			err = errors.New("font-size must be positive and at most 256")
+		}
+	case "stroke-linecap":
+		err = vocabulary(v, "butt round square")
+	case "stroke-linejoin":
+		err = vocabulary(v, "miter round bevel")
+	case "fill-rule":
+		err = vocabulary(v, "nonzero evenodd")
+	case "preserveAspectRatio":
+		if v != "none" && v != "xMidYMid meet" && v != "xMidYMid slice" {
+			err = errors.New("unsupported preserveAspectRatio")
+		}
+	case "transform":
+		err = transform(v, budget)
+	case "d":
+		err = path(v, budget)
+	default:
+		err = numericAttribute(e, k, v, root, budget)
+	}
+	return err
+}
+
+func numericAttribute(e *element, k, v string, root bool, budget *int) error {
+
+	ns, err := numericList(v, budget)
+	if err == nil {
+		switch k {
+		case "viewBox":
+			if len(ns) != 4 || ns[2] <= 0 || ns[3] <= 0 || ns[2] > 8192 || ns[3] > 8192 {
+				err = errors.New("viewBox needs four numbers and positive axes at most 8192")
+			}
+		case "points":
+			minimum := 4
+			if e.name == "polygon" {
+				minimum = 6
+			}
+			if len(ns) < minimum || len(ns)%2 != 0 {
+				err = errors.New("points needs complete coordinate pairs")
+			}
+		default:
+			if len(ns) != 1 {
+				err = errors.New("one number is required")
+				break
+			}
+			lo, hi := -1000000.0, 1000000.0
+			switch k {
+			case "opacity", "fill-opacity", "stroke-opacity":
+				lo, hi = 0, 1
+			case "stroke-width":
+				lo, hi = 0, 8192
+			case "stroke-miterlimit":
+				lo, hi = 1, 1000
+			case "width", "height", "rx", "ry", "r":
+				lo = 0
+			}
+			if ns[0] < lo || ns[0] > hi {
+				err = errors.New("number outside the permitted interval")
+			}
+			if root && (k == "width" || k == "height") && (ns[0] <= 0 || ns[0] > 8192) {
+				err = errors.New("dimension must be positive and at most 8192")
+			}
+		}
+	}
+	return err
+}
+
+func requiredAttributes(e *element, root bool) error {
 	required := map[string]string{"svg": "viewBox", "path": "d", "rect": "width height", "circle": "r", "ellipse": "rx ry", "polyline": "points", "polygon": "points"}
 	for k := range strings.FieldsSeq(required[e.name]) {
 		if _, ok := e.attrs[k]; !ok {

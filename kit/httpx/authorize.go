@@ -52,24 +52,8 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 
-	p, hasPrincipal := tenancy.PrincipalFrom(ctx.Context())
-	if !hasPrincipal || p.UserID == uuid.Nil {
-		// A page has somewhere to send somebody who has nobody to be; an API
-		// route has not. See SignInExtension.
-		if to, page := signInFor(ctx); page {
-			ctx.SetHeader("Location", to)
-			ctx.SetStatus(http.StatusSeeOther)
-			return
-		}
-		if auth.kind == kindBearerKey {
-			a.challenge(ctx)
-			return
-		}
-		a.anonymous(ctx)
-		return
-	}
-	if expected := ctx.Header(ExpectedPrincipalHeader); unsafeMethod(ctx.Method()) && expected != "" && expected != p.UserID.String() {
-		a.deny(ctx, CodePrincipalChanged, "the signed-in account differs from the one that prepared this request")
+	p, admitted := a.admitPrincipal(ctx, auth)
+	if !admitted {
 		return
 	}
 	t, hasTenant := tenancy.FromContext(ctx.Context())
@@ -77,36 +61,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		a.deny(ctx, CodeNoTenant, "this operation is tenant work and the host resolved to none")
 		return
 	}
-	// There is no principal-belongs-to-this-tenant check, because there is no
-	// way for it to fail: the principal was built from a row read inside this
-	// tenant's own transaction. See Principal.
-	// A credential that carries its own ceiling is held to it in both branches
-	// below, and this is the first of the two — a rule about the operation, not
-	// about the credential. An operation that names no permission asks the caller
-	// for their whole authority — being the caller is all it checks, and what sits
-	// behind it resolves the holder's roles — so a key narrowed to a list of
-	// permissions may not stand in for it. Read without this branch, the ceiling
-	// would be asked only of operations that name a permission, and every
-	// self-service door (mint a key, replace the recovery codes, sign out of every
-	// browser) would answer at its holder's full authority to a credential scoped
-	// to one read: the narrowed credential widening itself back to the holder,
-	// which is the escalation tenancy.Principal.Permissions says a non-nil list
-	// prevents.
-	//
-	// SignedIn is the declaration that spends that authority, and it is the only
-	// one that does. AnyCredential names no permission either and spends none: it
-	// is the door for the operation that answers what the caller may already reach
-	// and narrows its own answer by the caller's grants — the resource catalogue,
-	// which is the first request of a client that is not a browser and whose only
-	// credential is a key. Refusing it would leave a scoped credential able to do
-	// its work and unable to find it, and would buy nothing, because that document
-	// is filtered by this credential's own scopes on the way out. See AnyCredential.
-	if auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
-		a.deny(ctx, CodeDenied, "this operation acts on the key that authenticated the request, and a session carries none")
-		return
-	}
-	if auth.kind == kindSignedIn && p.Permissions != nil {
-		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
+	if !a.admitCredential(ctx, auth, p) {
 		return
 	}
 	if auth.kind == kindSignedIn || auth.kind == kindAnyCredential || auth.kind == kindBearerKey {
@@ -119,60 +74,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 
-	grant, _ := auth.grant()
-	// The second half: a credential that carries its own authority is held to it
-	// before the Authorizer is asked. The check is an exact name, so a key never
-	// inherits a wildcard it was not given, and a key whose holder has since been
-	// stood down from the role arrives here with an empty list — the roles are
-	// rechecked on every request, in the resolution that built this one.
-	if p.Permissions != nil && !slices.Contains(p.Permissions, grant.Permission) {
-		a.deny(ctx, CodeDenied, "this credential does not carry "+grant.Permission)
-		return
-	}
-	// Before the Authorizer, and that order is the point of the declaration: a
-	// customer's administrator holds the wildcard in their own tenant, and asking
-	// the roles table first would answer a question about everybody's with the
-	// answer about theirs. A tenant that is not the operator's cannot exercise an
-	// operator permission however its roles are written.
-	//
-	// The surface decided *which address* serves the control plane — see the
-	// installation host gate, which answered a 404 before this middleware ran at
-	// all. What is left here is the second, independent guarantee: a row of data
-	// may point the installation's host at some tenant, and the answer to that is
-	// still no. On the control-plane surface it is the same 404 the host gate
-	// gave, so the address does not disclose that it knows the difference;
-	// anywhere else — a generated page of the workspace that reads across
-	// tenants, an operator write mounted beside a customer's — it is the ordinary
-	// refusal of a caller who may not, and no wildcard satisfies it.
-	if grant.Operator && !t.Operator {
-		if SurfaceOf(ctx.Context()) == SurfaceOps {
-			a.notHere(ctx)
-			return
-		}
-		a.deny(ctx, CodeNotOperator, grant.Permission+" is the operator's, and this is not the operator's tenant")
-		return
-	}
-
-	allowed, err := a.opts.Authorize.Allowed(ctx.Context(), t, grant)
-	if err != nil {
-		// An authorization decision that could not be made is not a denial, and
-		// saying so would send a person away from work they are entitled to do.
-		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: authorization decision unavailable",
-			"permission", grant.Permission, "operator", grant.Operator, "tenant", t.Slug, "error", err)
-		ctx.SetHeader("Retry-After", "3")
-		a.refuse(ctx, http.StatusServiceUnavailable, "authorization is temporarily unavailable")
-		return
-	}
-	if !allowed {
-		// The fact before the sentence. The page and the audit row read what is
-		// recorded here; the words below stay for the log line and the problem
-		// document. A person refused here is now told which grant they lack in the
-		// words of the module that defines it, which is a different page.
-		noteRefused(ctx.Context(), Refusal{
-			Code: CodeDenied, Permission: grant.Permission, Label: a.grantLabel(grant.Permission),
-			Method: ctx.Method(), Path: ctx.URL().Path,
-		})
-		a.deny(ctx, CodeDenied, "this operation requires "+grant.Permission)
+	if !a.admitGrant(ctx, auth, p, t) {
 		return
 	}
 	// The plan question last, so a caller who may not do this at all is told
@@ -285,28 +187,9 @@ func (a *API) planDecision(ctx context.Context, auth Auth) (ok bool, status int,
 	return true, 0, "", ""
 }
 
-// The refusal codes, exported because the presentation layer translates them.
-//
-// A refusal has one value and two shapes (docs/adr/0015): the same verdict as a
-// problem document for a program and as a sentence for a person. The second
-// shape was English-only, because the sentence was a string literal in the
-// guard that made it. These constants are the carrier the code travels in,
-// ui/page/fault.go holds the one table from a code to a catalog key, and the
-// refusal page is then negotiated from the request's own Accept-Language — so a
-// shell that ships the sentence for a code answers a refusal in the language it
-// ships, and a shell that ships none is answered in the English below and
-// declared English, which is what it is. A guard that refuses in a shape a
-// person can be shown, and not only a machine, writes one of these and answers
-// through API.refuse; a code that travelled as a string literal could not be
-// looked up by anybody, which is how LIMIT_EXHAUSTED arrived untranslated twice
-// over — no constant, so no table row, and huma's writer, so no page.
-//
-// Two codes are named here and left out of that table on purpose, for one
-// reason: their sentence carries something the caller has to have rather than
-// something they have to understand. CodeWriteElsewhere names the address the
-// write belongs at and CodePlanExcludes the feature to ask for; a translated
-// sentence would drop it, because the mechanism replaces a sentence and does not
-// interpolate an argument. Both are shown as they are written.
+// Refusal codes connect guard decisions to localized page messages and problem
+// documents. CodeWriteElsewhere and CodePlanExcludes retain their literal details
+// because those details carry an address or feature the caller needs.
 const (
 	CodeAnonymous         = "AUTH_ANONYMOUS"
 	CodeDenied            = "AUTH_DENIED"
@@ -434,4 +317,90 @@ func (a *API) denied(ctx huma.Context, status int, code, detail string) {
 		Permission: permission, Label: label,
 		Operation: operation, RequestID: requestIDFrom(ctx.Context()), Tenant: t, Principal: p,
 	})
+}
+
+func (a *API) admitPrincipal(ctx huma.Context, auth Auth) (tenancy.Principal, bool) {
+	p, hasPrincipal := tenancy.PrincipalFrom(ctx.Context())
+	if !hasPrincipal || p.UserID == uuid.Nil {
+		// A page has somewhere to send somebody who has nobody to be; an API
+		// route has not. See SignInExtension.
+		if to, page := signInFor(ctx); page {
+			ctx.SetHeader("Location", to)
+			ctx.SetStatus(http.StatusSeeOther)
+			return tenancy.Principal{}, false
+		}
+		if auth.kind == kindBearerKey {
+			a.challenge(ctx)
+			return tenancy.Principal{}, false
+		}
+		a.anonymous(ctx)
+		return tenancy.Principal{}, false
+	}
+	if expected := ctx.Header(ExpectedPrincipalHeader); unsafeMethod(ctx.Method()) && expected != "" && expected != p.UserID.String() {
+		a.deny(ctx, CodePrincipalChanged, "the signed-in account differs from the one that prepared this request")
+		return tenancy.Principal{}, false
+	}
+	return p, true
+}
+
+func (a *API) admitCredential(ctx huma.Context, auth Auth, p tenancy.Principal) bool {
+	// Authentication already read the principal inside this tenant's transaction.
+	// Scoped credentials cannot use SignedIn to recover their holder's full authority;
+	// AnyCredential may admit them because its result is filtered by their grants.
+	if auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+		a.deny(ctx, CodeDenied, "this operation acts on the key that authenticated the request, and a session carries none")
+		return false
+	}
+	if auth.kind == kindSignedIn && p.Permissions != nil {
+		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
+		return false
+	}
+	return true
+}
+
+func (a *API) admitGrant(ctx huma.Context, auth Auth, p tenancy.Principal, t tenancy.Tenant) bool {
+	grant, _ := auth.grant()
+	// The second half: a credential that carries its own authority is held to it
+	// before the Authorizer is asked. The check is an exact name, so a key never
+	// inherits a wildcard it was not given, and a key whose holder has since been
+	// stood down from the role arrives here with an empty list — the roles are
+	// rechecked on every request, in the resolution that built this one.
+	if p.Permissions != nil && !slices.Contains(p.Permissions, grant.Permission) {
+		a.deny(ctx, CodeDenied, "this credential does not carry "+grant.Permission)
+		return false
+	}
+	// Check operator tenancy before roles: a customer's wildcard grants no operator
+	// power. Ops conceals the refusal with its ordinary 404; other surfaces use 403.
+	if grant.Operator && !t.Operator {
+		if SurfaceOf(ctx.Context()) == SurfaceOps {
+			a.notHere(ctx)
+			return false
+		}
+		a.deny(ctx, CodeNotOperator, grant.Permission+" is the operator's, and this is not the operator's tenant")
+		return false
+	}
+
+	allowed, err := a.opts.Authorize.Allowed(ctx.Context(), t, grant)
+	if err != nil {
+		// An authorization decision that could not be made is not a denial, and
+		// saying so would send a person away from work they are entitled to do.
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: authorization decision unavailable",
+			"permission", grant.Permission, "operator", grant.Operator, "tenant", t.Slug, "error", err)
+		ctx.SetHeader("Retry-After", "3")
+		a.refuse(ctx, http.StatusServiceUnavailable, "authorization is temporarily unavailable")
+		return false
+	}
+	if !allowed {
+		// The fact before the sentence. The page and the audit row read what is
+		// recorded here; the words below stay for the log line and the problem
+		// document. A person refused here is now told which grant they lack in the
+		// words of the module that defines it, which is a different page.
+		noteRefused(ctx.Context(), Refusal{
+			Code: CodeDenied, Permission: grant.Permission, Label: a.grantLabel(grant.Permission),
+			Method: ctx.Method(), Path: ctx.URL().Path,
+		})
+		a.deny(ctx, CodeDenied, "this operation requires "+grant.Permission)
+		return false
+	}
+	return true
 }

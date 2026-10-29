@@ -62,33 +62,19 @@ func newCachedTenant(t tenancy.Tenant) cachedTenant {
 // holds every arriving request open on the client's patience rather than ours.
 const resolveTimeout = 2 * time.Second
 
-// InvalidateHost closes the namespace of host resolutions, so a rename, a
-// suspension or a new language declaration takes effect now rather than within
-// hostTTL. The tenant module calls it when it changes a host; nothing else has any
-// reason to.
+// InvalidateHost closes the namespace of host resolutions, so a rename, a suspension or a new
+// language declaration takes effect now rather than within hostTTL. The tenant module calls it
+// when it changes a host; nothing else has any reason to.
 //
-// It is a Move and not a Delete of the hosts named, and the race is the reason for
-// the whole of kit/cache. A delete forgets what is in the store at the moment it
-// runs and nothing else: replica A has missed, is already in its loader, and the
-// operator's replica commits a suspension and deletes the key; replica A writes the
-// tenant it loaded a moment later, and every replica that reads this store serves a
-// suspended host for the rest of hostTTL. A move forbids what arrives afterwards as
-// well as what is there — TestAnInvalidationDuringALoadLeavesNoResolutionBehind is
-// that interleaving run through this function rather than through the port. The
-// names are therefore not the keys being forgotten, and nothing here normalises
-// them: the namespace is what closes.
+// It is a Move and not a Delete of the hosts named. A delete forgets what is in the store at
+// the moment it runs and nothing else: a replica already in its loader writes the tenant it
+// loaded a moment later, and every replica that reads that store serves a suspended host for
+// the rest of hostTTL. A move forbids what arrives afterwards as well as what is there. The
+// names are therefore not the keys being forgotten — the namespace is what closes — and what
+// they decide is whether anything is closed at all.
 //
-// What the names decide is whether anything is closed at all: a change that touched
-// no host changes no resolution, and a tenant with no hosts costs no command.
-// The cost of the coarser invalidation is that one suspension costs every other host
-// one loader query on its next request — for a handful of operator actions a day
-// over an indexed query, the trade kit/cache names on Move.
-//
-// It returns the store's error, because the invalidation crosses a network and a
-// failure there is a fact the caller has to answer for: the committed write stands —
-// unwinding a suspension because a cache stopped answering is the worse outage — but
-// the change is not yet true at every process reading that store, and the route that
-// made it says so rather than reporting an outcome it did not achieve.
+// It returns the store's error, because the invalidation crosses a network: the committed
+// write stands, but the change is not yet true at every process reading that store.
 func (a *API) InvalidateHost(hosts ...string) error {
 	if len(hosts) == 0 {
 		return nil
@@ -190,23 +176,23 @@ func (a *API) cached(ctx context.Context, key cache.Key) (tenancy.Tenant, bool) 
 // distinction the log keeps is the one an operator needs — a store that is
 // answering nothing is an outage, and a cold cache is not.
 func (a *API) cachedUnder(ctx context.Context, key cache.Key) (tenancy.Tenant, bool, cache.Generation) {
-	buf, found, under, err := a.opts.Cache.Get(ctx, key)
+	entry, err := cache.GetEntry(ctx, a.opts.Cache, key)
 	if err != nil {
 		a.log.WarnContext(ctx, "httpx: the shared cache is not answering; resolving from the database",
 			"host", key.Entry(), "error", err)
 		return tenancy.Tenant{}, false, cache.Generation{}
 	}
-	if !found {
-		return tenancy.Tenant{}, false, under
+	if !entry.Found {
+		return tenancy.Tenant{}, false, entry.Generation
 	}
 	var c cachedTenant
-	if err := json.Unmarshal(buf, &c); err != nil {
-		return tenancy.Tenant{}, false, under
+	if err := json.Unmarshal(entry.Value, &c); err != nil {
+		return tenancy.Tenant{}, false, entry.Generation
 	}
 	if c.ID == uuid.Nil {
-		return tenancy.Tenant{}, false, under
+		return tenancy.Tenant{}, false, entry.Generation
 	}
-	return c.tenant(), true, under
+	return c.tenant(), true, entry.Generation
 }
 
 // tenant resolves the request host to a tenant and puts it on the context,
@@ -236,21 +222,16 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 		// filtering the number by tenant has to be able to ask it of a refusal too,
 		// not only of a latency bar. See answerNote.
 		noteAnswer(ctx.Context(), t)
-		// The latency number is recorded here and not in the operation middleware
-		// that names the span, because this is the only place that holds both the
-		// operation and the tenant the host resolved to. A bar that cannot be split
-		// by tenant is the number this runtime promises not to publish: one process,
-		// many tenants, and an aggregate that cannot say whose requests are slow
-		// answers the question nobody asked.
+		// The latency number is recorded here and not in the operation middleware that names the
+		// span, because this is the only place that holds both the operation and the tenant the
+		// host resolved to: a bar that cannot be split by tenant is the number this runtime
+		// promises not to publish — one process, many tenants.
 		//
-		// Deferred, so the bar belongs to every answer this request got and not to the
-		// answers that came back up a call stack: a panicking handler unwinds past a
-		// statement placed after next, and respond — below this middleware — is what
-		// turns that panic into the 500 the client was given. The histogram is the
-		// denominator of every latency question, so the shape of an answer cannot
-		// decide whether its seconds are in it: if only the refusal counter notices a
-		// request that fell over, an operator reads "refusals up, latency flat" and
-		// triages the wrong thing at the moment it costs most.
+		// Deferred, so the bar belongs to every answer this request got and not to the answers
+		// that came back up a call stack: a panicking handler unwinds past a statement placed
+		// after next, and respond is what turns that panic into the 500 the client was given. The
+		// histogram is the denominator of every latency question, so the shape of an answer
+		// cannot decide whether its seconds are in it.
 		start := time.Now()
 		tctx := tenancy.WithTenant(ctx.Context(), t)
 		defer func() {
@@ -280,25 +261,18 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 
 // withHostTenant hands a refusal the request that names its tenant.
 //
-// Host resolution is an operation middleware: it runs once a route has been chosen.
-// The refusals this package answers for itself — the address nobody mounted, the verb
-// an address does not take, the cross-site write, the handler that panicked — are
-// answered ahead of any route, on a request that therefore carries no tenant, and the
-// page one of them renders would then negotiate its language from the caller's
-// Accept-Language alone. Which languages a request is answered in is a fact about the
-// tenant behind its host and not about the header (ui/page.Served), so a guard that
-// answers in a language this tenant never declared answers in one it refused.
+// Host resolution is an operation middleware: it runs once a route has been chosen. The
+// refusals this package answers for itself — the address nobody mounted, the verb an address
+// does not take, the cross-site write, the handler that panicked — are answered ahead of any
+// route, on a request that therefore carries no tenant, and the page one of them renders
+// would then negotiate its language from the caller's Accept-Language alone. Which languages
+// a request is answered in is a fact about the tenant behind its host (ui/page.Served), so a
+// guard that answers in a language this tenant never declared answers in one it refused.
 //
-// A refusal is allowed to ask the question the route never got to ask. The answer is
-// already in the cache every request warms, the one query it may cost is bounded by
-// resolveTimeout, and a request whose context is already over gets no query at all.
-// A resolution that fails leaves the request as it arrived, which is the case the
-// deployment's own catalogue answers for: a host nobody serves has no tenant to
-// declare a language, and a database that is not answering has larger problems than
-// the language of a refusal page.
-//
-// The guards inside the huma chain need no such call: they run after a.tenant, which
-// either put a tenant on the request or refused the host for having none.
+// A refusal may ask the question the route never got to ask: the answer is already in the
+// cache every request warms, the one query it may cost is bounded by resolveTimeout, and a
+// request whose context is already over gets no query at all. A resolution that fails leaves
+// the request as it arrived. The guards inside the huma chain need no such call.
 func (a *API) withHostTenant(r *http.Request) *http.Request {
 	ctx := r.Context()
 	if _, resolved := tenancy.FromContext(ctx); resolved || ctx.Err() != nil {

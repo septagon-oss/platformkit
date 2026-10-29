@@ -1,0 +1,122 @@
+{
+ "name": "null-and-false",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:e094306e779c8163ce4cf5ff6a7adcee368fd71c5f3d2831fe148e897ad5ec50",
+  "expectedHash": "sha256:7961d8443977f7cc1af823543e82d89efca26a9abfe61fba6f470626f170d047"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "active",
+     "type": "bool"
+    },
+    {
+     "name": "count",
+     "type": "int"
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [
+   {
+    "id": "r1",
+    "title": null,
+    "active": false,
+    "count": null
+   },
+   {
+    "id": "r2",
+    "title": "x",
+    "active": true,
+    "count": 0
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title",
+     "reading": {
+      "missing": "—",
+      "true": "",
+      "false": "",
+      "precision": null
+     }
+    },
+    {
+     "name": "active",
+     "control": "checkbox",
+     "kind": "boolean",
+     "reading": {
+      "true": "Yes",
+      "false": "No"
+     }
+    },
+    {
+     "name": "count",
+     "control": "number",
+     "reading": {
+      "precision": 0
+     }
+    }
+   ],
+   "list": {
+    "filters": [
+     {
+      "field": "active",
+      "kind": "bool",
+      "values": [
+       {
+        "value": "true",
+        "label": "Yes"
+       },
+       {
+        "value": "false",
+        "label": "No"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "rows": {
+   "r1": {
+    "listTitle": "r1",
+    "recordTitle": "r1",
+    "cells": {
+     "title": "—",
+     "active": "No",
+     "count": "—"
+    }
+   },
+   "r2": {
+    "listTitle": "x",
+    "recordTitle": "x",
+    "cells": {
+     "active": "Yes",
+     "count": "0"
+    }
+   }
+  }
+ }
+}

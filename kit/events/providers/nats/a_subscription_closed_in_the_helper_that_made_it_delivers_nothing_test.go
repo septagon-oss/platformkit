@@ -14,11 +14,10 @@ import (
 )
 
 // TestADurableConsumerClosedWithItsSubscriptionDeliversNothing is the measurement
-// behind TestTwoAppsOnOneBrokerNeverShareASubscription, review 1's pin, which was
-// red because its subscribe helper carried `defer sub.Unsubscribe()` in its own body:
+// behind TestTwoAppsOnOneBrokerNeverShareASubscription, which was
+// red once because its subscribe helper carried `defer sub.Unsubscribe()` in its own body:
 // both subscriptions were closed before its first publish, and it then waited on
-// handlers with nothing standing behind them. Root adopted that file with the one
-// line removed (decision 0008); this case stays because what nats.go does on that
+// handlers with nothing standing behind them. This case stays because what nats.go does on that
 // Unsubscribe is a fact about the transport that nothing else in the tree states, and
 // because it is the case that says why a fixture of this package must not leave a
 // consumer — or a backlog — for the next one. Measured here in the shipped shape — the same `wanted` consumer, the same `group(durable)`
@@ -83,7 +82,7 @@ func TestADurableConsumerClosedWithItsSubscriptionDeliversNothing(t *testing.T) 
 		}
 		_ = m.Ack()
 	}
-	// closedInItsBody is review 1's helper: the defer belongs to the helper and not
+	// closedInItsBody is the helper that is the whole difference: the defer belongs to the helper and not
 	// to the test, which is the whole difference between this case and the one below.
 	closedInItsBody := func() {
 		t.Helper()

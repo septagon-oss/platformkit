@@ -8,6 +8,8 @@ import (
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Select renders SelectProps as a labelled native <select>, styled as
@@ -29,84 +31,9 @@ func Select(p SelectProps) g.Node {
 		cl = clInput.Merge(clInputError).Merge(size)
 	}
 
-	selectedValues := make(map[string]struct{}, len(p.Values)+1)
-	for _, value := range p.Values {
-		selectedValues[value] = struct{}{}
-	}
-	if p.Value != "" {
-		selectedValues[p.Value] = struct{}{}
-	}
-
-	var options []g.Node
-	if !p.Multiple && (p.Placeholder != "" || !p.Required) {
-		label := strings.TrimSpace(p.Placeholder)
-		if label == "" {
-			label = "Choose…"
-		}
-		placeholder := []g.Node{h.Value(""), g.Text(label)}
-		if p.Placeholder != "" || p.Required {
-			placeholder = append(placeholder, h.Disabled())
-		}
-		if len(selectedValues) == 0 {
-			placeholder = append(placeholder, h.Selected())
-		}
-		options = append(options, h.Option(placeholder...))
-	}
-	for _, group := range groupSelectOptions(p.Options) {
-		groupOptions := make([]g.Node, 0, len(group.Options))
-		for _, option := range group.Options {
-			groupOptions = append(groupOptions, renderSelectOption(option, selectedValues))
-		}
-		if group.Name == "" {
-			options = append(options, groupOptions...)
-			continue
-		}
-		options = append(options, g.El(
-			"optgroup",
-			g.Attr("label", group.Name),
-			g.Group(groupOptions),
-		))
-	}
-
-	sel := []g.Node{
-		classes(cl.Compile(), p.Class),
-		h.ID(id), h.Name(p.Name),
-		g.Attr("data-pk-value", "value"),
-		g.Attr("data-pk-values", "values"),
-		g.Attr("data-pk-options", "options"),
-	}
-	sel = append(sel, attrPairs(p.Attrs)...)
-	sel = append(sel, htmxAttrs(p.HTMXProps)...)
-	if p.Required {
-		sel = append(sel, h.Required())
-	}
-	if p.Multiple {
-		sel = append(sel, g.Attr("multiple", ""))
-	}
-	visibleRows := p.VisibleRows
-	if p.Multiple && visibleRows <= 0 {
-		visibleRows = 4
-	}
-	if visibleRows > 0 {
-		sel = append(sel, g.Attr("size", itoa(visibleRows)))
-	}
-	if p.Disabled {
-		sel = append(sel, h.Disabled())
-	}
-	describedBy := make([]string, 0, 2)
-	if p.Error != "" {
-		sel = append(sel, g.Attr("aria-invalid", "true"))
-		describedBy = append(describedBy, id+"-error")
-	}
-	if p.HelpText != "" {
-		describedBy = append(describedBy, id+"-help")
-	}
-	if len(describedBy) > 0 {
-		sel = append(sel, g.Attr("aria-describedby", strings.Join(describedBy, " ")))
-	}
-	if p.Label == "" && p.Name != "" {
-		sel = append(sel, g.Attr("aria-label", p.Name))
-	}
+	selectedValues := selectSelectedValues(p)
+	options := selectOptions(p, selectedValues)
+	sel := selectControlAttrs(p, id, cl)
 	sel = append(sel, options...)
 
 	fieldClass := clFieldWrap
@@ -136,8 +63,9 @@ func Select(p SelectProps) g.Node {
 			g.Text(p.Error),
 		))
 	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
 	}
 	return h.Div(field...)
 }
@@ -179,4 +107,94 @@ func renderSelectOption(option SelectOption, selectedValues map[string]struct{})
 		children = append(children, g.Attr("title", description))
 	}
 	return h.Option(children...)
+}
+
+func selectSelectedValues(p SelectProps) map[string]struct{} {
+	selectedValues := make(map[string]struct{}, len(p.Values)+1)
+	for _, value := range p.Values {
+		selectedValues[value] = struct{}{}
+	}
+	if p.Value != "" {
+		selectedValues[p.Value] = struct{}{}
+	}
+
+	return selectedValues
+}
+
+func selectOptions(p SelectProps, selectedValues map[string]struct{}) []g.Node {
+	var options []g.Node
+	if !p.Multiple && (p.Placeholder != "" || !p.Required) {
+		label := strings.TrimSpace(p.Placeholder)
+		if label == "" {
+			label = "Choose…"
+		}
+		placeholder := []g.Node{h.Value(""), g.Text(label)}
+		if p.Placeholder != "" || p.Required {
+			placeholder = append(placeholder, h.Disabled())
+		}
+		if len(selectedValues) == 0 {
+			placeholder = append(placeholder, h.Selected())
+		}
+		options = append(options, h.Option(placeholder...))
+	}
+	for _, group := range groupSelectOptions(p.Options) {
+		groupOptions := make([]g.Node, 0, len(group.Options))
+		for _, option := range group.Options {
+			groupOptions = append(groupOptions, renderSelectOption(option, selectedValues))
+		}
+		if group.Name == "" {
+			options = append(options, groupOptions...)
+			continue
+		}
+		options = append(options, g.El(
+			"optgroup",
+			g.Attr("label", group.Name),
+			g.Group(groupOptions),
+		))
+	}
+
+	return options
+}
+
+func selectControlAttrs(p SelectProps, id string, cl style.ClassList) []g.Node {
+	sel := []g.Node{
+		classes(cl.Compile(), p.Class),
+		h.ID(id), h.Name(p.Name),
+		g.Attr("data-pk-value", "value"),
+		g.Attr("data-pk-values", "values"),
+		g.Attr("data-pk-options", "options"),
+	}
+	sel = append(sel, attrPairs(p.Attrs)...)
+	sel = append(sel, htmxAttrs(p.HTMXProps)...)
+	if p.Required {
+		sel = append(sel, h.Required())
+	}
+	if p.Multiple {
+		sel = append(sel, g.Attr("multiple", ""))
+	}
+	visibleRows := p.VisibleRows
+	if p.Multiple && visibleRows <= 0 {
+		visibleRows = 4
+	}
+	if visibleRows > 0 {
+		sel = append(sel, g.Attr("size", itoa(visibleRows)))
+	}
+	if p.Disabled {
+		sel = append(sel, h.Disabled())
+	}
+	describedBy := make([]string, 0, 2)
+	if p.Error != "" {
+		sel = append(sel, g.Attr("aria-invalid", "true"))
+		describedBy = append(describedBy, id+"-error")
+	}
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		describedBy = append(describedBy, id+"-help")
+	}
+	if len(describedBy) > 0 {
+		sel = append(sel, g.Attr("aria-describedby", strings.Join(describedBy, " ")))
+	}
+	if p.Label == "" && p.Name != "" {
+		sel = append(sel, g.Attr("aria-label", p.Name))
+	}
+	return sel
 }

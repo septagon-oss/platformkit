@@ -1,0 +1,118 @@
+{
+ "name": "enum-fallbacks",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:fd1a2679be170861cc90f54485bd679ec6036931f7f5b3182c808ca9ab51cb26",
+  "expectedHash": "sha256:09f33e87b181f655095392a8cfab2c1a13cd97dc5f85f5b87c98cc38bf9f65d0"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "status",
+     "type": "string",
+     "enum": [
+      "open",
+      "in_progress",
+      "done"
+     ],
+     "presentation": {
+      "enumLabels": {
+       "open": "Open now"
+      },
+      "enumTones": {
+       "open": "success",
+       "done": "bogus"
+      },
+      "doneValues": [
+       "done"
+      ]
+     }
+    }
+   ]
+  },
+  "hints": {
+   "StatusField": "status"
+  },
+  "rows": [
+   {
+    "id": "r1",
+    "title": "a",
+    "status": "archived"
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title"
+    },
+    {
+     "name": "status",
+     "control": "select",
+     "kind": "enum",
+     "options": [
+      {
+       "value": "open",
+       "label": "Open now",
+       "tone": "success",
+       "done": false
+      },
+      {
+       "value": "in_progress",
+       "label": "In progress",
+       "tone": "neutral",
+       "done": false
+      },
+      {
+       "value": "done",
+       "label": "Done",
+       "tone": "neutral",
+       "done": true
+      }
+     ]
+    }
+   ],
+   "list": {
+    "filters": [
+     {
+      "field": "status",
+      "kind": "enum"
+     }
+    ]
+   },
+   "titles": {
+    "status": "status"
+   },
+   "layout": {
+    "overview": [
+     "status"
+    ]
+   }
+  },
+  "rows": {
+   "r1": {
+    "listTitle": "a",
+    "recordTitle": "a"
+   }
+  }
+ }
+}

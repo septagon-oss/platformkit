@@ -3,6 +3,9 @@
 // A tenant reaches the rest of the program through the context: HTTP middleware
 // resolves the host to a Tenant and calls WithTenant, and kit/db reads it back
 // to scope the transaction. Nothing else may derive a tenant from anywhere.
+//
+// The [Policy] example evaluates a tenant-qualified request through [RequirePolicy].
+// It shows an allowed decision and a denial from an explicit provider.
 package tenancy
 
 import (

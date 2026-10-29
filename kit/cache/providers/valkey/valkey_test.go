@@ -254,3 +254,37 @@ func TestAnUnreadableAddressNamesNoPassword(t *testing.T) {
 		t.Errorf("the refusal does not name the setting to fix: %v", err)
 	}
 }
+
+func TestStoreConstructorsKeepConfiguredApplicationValidation(t *testing.T) {
+	for _, constructor := range []string{"New", "Connect"} {
+		t.Run(constructor, func(t *testing.T) {
+			url := unreachable
+			if constructor == "Connect" {
+				url = address(t)
+			}
+			for _, app := range []string{"", "BAD", "-bad", "1legacy", "normal"} {
+				t.Run(app, func(t *testing.T) {
+					cfg := config.Cache{App: app, URL: url}
+					build := func() (cache.Cache, error) { return valkey.New(cfg) }
+					if constructor == "Connect" {
+						build = func() (cache.Cache, error) { return valkey.Connect(t.Context(), cfg) }
+					}
+					c, err := build()
+					if c != nil {
+						t.Cleanup(func() { _ = c.Close() })
+					}
+					if app == "1legacy" || app == "normal" {
+						if err != nil || c == nil {
+							t.Fatalf("%s(%q) = %v, %v; want a cache", constructor, app, c, err)
+						}
+						return
+					}
+					_, want := cache.Slug(app)
+					if c != nil || err == nil || err.Error() != want.Error() {
+						t.Fatalf("%s(%q) = %v, %v; want nil, %v", constructor, app, c, err, want)
+					}
+				})
+			}
+		})
+	}
+}

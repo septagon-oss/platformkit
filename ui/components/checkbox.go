@@ -3,6 +3,7 @@ package components
 // checkbox.go renders the checkbox, its label and the error it announces.
 
 import (
+	"maps"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -50,6 +51,32 @@ func Checkbox(p CheckboxProps) g.Node {
 		root = append(root, g.Attr("hidden"))
 	}
 
+	// The visible label owns the anchor; the native input is visually hidden.
+	if anchor := p.Attrs["data-screen-anchor"]; anchor != "" {
+		root = append(root, g.Attr("data-screen-anchor", anchor))
+	}
+
+	box := checkboxInputAttrs(p, id)
+	root = append(root, h.Input(box...), checkboxIndicator(p, state))
+	if p.Label != "" {
+		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
+	}
+	control := h.Label(root...)
+	if !hasHelp(p.HelpText, p.HelpNotes) && p.Error == "" {
+		return control
+	}
+	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
+	if p.Error != "" {
+		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
+	}
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
+	}
+	return h.Div(field...)
+}
+
+func checkboxInputAttrs(p CheckboxProps, id string) []g.Node {
 	box := []g.Node{
 		h.Class(clCheckboxInput.Compile()), h.Type("checkbox"),
 		g.Attr("data-checkbox-input", "true"),
@@ -60,7 +87,9 @@ func Checkbox(p CheckboxProps) g.Node {
 	if p.Name != "" {
 		box = append(box, h.Name(p.Name))
 	}
-	box = append(box, attrPairs(p.Attrs)...)
+	attrs := maps.Clone(p.Attrs)
+	delete(attrs, "data-screen-anchor")
+	box = append(box, attrPairs(attrs)...)
 	if p.Value != "" {
 		box = append(box, h.Value(p.Value))
 	}
@@ -73,13 +102,8 @@ func Checkbox(p CheckboxProps) g.Node {
 	if p.Disabled {
 		box = append(box, h.Disabled())
 	}
-	// No aria-checked here. This is a real checkbox, and ARIA's mixed state is
-	// for an element that says role="checkbox" and owns its own state: on a
-	// native input the property is `indeterminate`, which is a DOM property and
-	// not an attribute, so it cannot be server-rendered at all. The attribute
-	// below is what a controller sets it from, and the bar is what a person
-	// sees; announcing "mixed" while the input reports unchecked was the two
-	// disagreeing, which is what axe's aria-conditional-attr is about.
+	// Native indeterminate state is a DOM property, set by the controller;
+	// aria-checked would disagree with the native input before it runs.
 	if p.Label == "" && p.Name != "" {
 		box = append(box, g.Attr("aria-label", p.Name))
 	}
@@ -88,13 +112,17 @@ func Checkbox(p CheckboxProps) g.Node {
 		box = append(box, g.Attr("aria-invalid", "true"))
 		describedBy = append(describedBy, id+"-error")
 	}
-	if p.HelpText != "" {
+	if hasHelp(p.HelpText, p.HelpNotes) {
 		describedBy = append(describedBy, id+"-help")
 	}
 	if len(describedBy) > 0 {
 		box = append(box, g.Attr("aria-describedby", strings.Join(describedBy, " ")))
 	}
 
+	return box
+}
+
+func checkboxIndicator(p CheckboxProps, state string) g.Node {
 	indicatorClass := clCheckboxIndicator.Merge(clCheckboxIndicatorIdle)
 	if p.Checked || p.Indeterminate {
 		indicatorClass = clCheckboxIndicator.Merge(clCheckboxIndicatorActive)
@@ -120,30 +148,12 @@ func Checkbox(p CheckboxProps) g.Node {
 	if !p.Indeterminate {
 		bar = append(bar, g.Attr("hidden"))
 	}
-	root = append(root,
-		h.Input(box...),
-		h.Span(
-			h.Class(indicatorClass.Compile()),
-			g.Attr("data-checkbox-box", "true"),
-			g.Attr("data-state", state),
-			g.Attr("aria-hidden", "true"),
-			g.El("svg", checkmark...),
-			h.Span(bar...),
-		),
+	return h.Span(
+		h.Class(indicatorClass.Compile()),
+		g.Attr("data-checkbox-box", "true"),
+		g.Attr("data-state", state),
+		g.Attr("aria-hidden", "true"),
+		g.El("svg", checkmark...),
+		h.Span(bar...),
 	)
-	if p.Label != "" {
-		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
-	}
-	control := h.Label(root...)
-	if p.HelpText == "" && p.Error == "" {
-		return control
-	}
-	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
-	if p.Error != "" {
-		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
-	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
-	}
-	return h.Div(field...)
 }

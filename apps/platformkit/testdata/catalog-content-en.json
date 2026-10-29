@@ -161,6 +161,1343 @@
     "coverField": "coverImageId",
     "thumbnailField": "coverImageId"
   },
+  "resolved": {
+    "views": [
+      {
+        "kind": "list",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.create",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.edit",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          },
+          {
+            "name": "action.delete",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "create",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "slug"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "body"
+            ],
+            "control": "richtext",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "coverImageId"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "kind"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "edit",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "slug"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "body"
+            ],
+            "control": "richtext",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "coverImageId"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "kind"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "status"
+            ],
+            "control": "select",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "publishedAt"
+            ],
+            "control": "datetime",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "author"
+            ],
+            "control": "text",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "restore",
+        "cardinality": "many",
+        "controls": []
+      },
+      {
+        "kind": "command",
+        "verb": "translate",
+        "cardinality": "many",
+        "controls": []
+      },
+      {
+        "kind": "command",
+        "verb": "review-translation",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "lang"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "fields"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "review-translation"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "suggest-translation",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "lang"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "fields"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "suggest-translation"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "untranslate",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "lang"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "fields"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "untranslate"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "publish",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "command",
+            "path": [
+              "publish"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "unpublish",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "command",
+            "path": [
+              "unpublish"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "archive",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "command",
+            "path": [
+              "archive"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      }
+    ],
+    "policyVersion": 1,
+    "language": "en",
+    "identity": {
+      "singular": "page",
+      "plural": "pages",
+      "description": "Write, review and publish the pages your audience sees.",
+      "emptyDescription": "Create a page and save a draft before publishing.",
+      "icon": "document",
+      "group": {
+        "key": "content",
+        "label": "Content"
+      },
+      "order": 0
+    },
+    "titles": {
+      "listCandidates": [
+        "title",
+        "slug"
+      ],
+      "recordCandidates": [
+        "title",
+        "slug",
+        "body"
+      ],
+      "emptyTitle": "—",
+      "preview": "",
+      "status": "status",
+      "cover": "coverImageId",
+      "thumbnail": "coverImageId",
+      "summary": [
+        "kind"
+      ]
+    },
+    "layout": {
+      "columns": [
+        "title",
+        "kind",
+        "status",
+        "coverImageId"
+      ],
+      "overview": [
+        "status",
+        "kind"
+      ],
+      "information": [
+        "createdAt",
+        "updatedAt",
+        "slug",
+        "body",
+        "publishedAt",
+        "author",
+        "revision"
+      ],
+      "sections": [],
+      "create": [
+        "slug",
+        "title",
+        "body",
+        "coverImageId",
+        "kind"
+      ],
+      "update": [
+        "slug",
+        "title",
+        "body",
+        "coverImageId",
+        "kind"
+      ]
+    },
+    "fields": [
+      {
+        "figure": null,
+        "name": "id",
+        "label": "Id",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "createdAt",
+        "label": "Created at",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          }
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "updatedAt",
+        "label": "Updated at",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          }
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "slug",
+        "label": "Address name",
+        "help": "Used to build this page's web address",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "title",
+        "label": "Title",
+        "help": "Headline",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "body",
+        "label": "Body",
+        "help": "The content itself, in Markdown",
+        "section": "",
+        "onList": false,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "richtext",
+        "kind": "longtext",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "coverImageId",
+        "label": "Cover",
+        "help": "File id of the cover picture",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "image",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "kind",
+        "label": "Type",
+        "help": "page or post",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "select",
+        "kind": "enum",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": [
+          {
+            "group": "",
+            "noPreference": false,
+            "value": "page",
+            "label": "Page",
+            "tone": "neutral",
+            "done": false
+          },
+          {
+            "group": "",
+            "noPreference": false,
+            "value": "post",
+            "label": "Post",
+            "tone": "neutral",
+            "done": false
+          }
+        ]
+      },
+      {
+        "figure": null,
+        "name": "status",
+        "label": "Status",
+        "help": "Lifecycle state",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "select",
+        "kind": "enum",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": [
+          {
+            "group": "",
+            "noPreference": false,
+            "value": "draft",
+            "label": "Draft",
+            "tone": "neutral",
+            "done": false
+          },
+          {
+            "group": "",
+            "noPreference": false,
+            "value": "published",
+            "label": "Published",
+            "tone": "success",
+            "done": false
+          },
+          {
+            "group": "",
+            "noPreference": false,
+            "value": "archived",
+            "label": "Archived",
+            "tone": "neutral",
+            "done": false
+          }
+        ]
+      },
+      {
+        "figure": null,
+        "name": "publishedAt",
+        "label": "Published",
+        "help": "When this was published",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          }
+        },
+        "options": []
+      },
+      {
+        "figure": null,
+        "name": "author",
+        "label": "Author",
+        "help": "The user who created this",
+        "section": "",
+        "onList": false,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "entity-picker",
+        "kind": "reference",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null
+        },
+        "options": [],
+        "reference": {
+          "resource": "user/user"
+        }
+      },
+      {
+        "figure": null,
+        "name": "revision",
+        "label": "Revision",
+        "help": "This row's own write count, from 1",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "number",
+        "kind": "number",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": 0
+        },
+        "options": []
+      }
+    ],
+    "list": {
+      "defaultSort": "-createdAt",
+      "sorts": [
+        {
+          "query": "title",
+          "label": "Title",
+          "field": "title",
+          "desc": false
+        },
+        {
+          "query": "-title",
+          "label": "Title",
+          "field": "title",
+          "desc": true
+        },
+        {
+          "query": "publishedAt",
+          "label": "Published",
+          "field": "publishedAt",
+          "desc": false
+        },
+        {
+          "query": "-publishedAt",
+          "label": "Published",
+          "field": "publishedAt",
+          "desc": true
+        },
+        {
+          "query": "updatedAt",
+          "label": "Updated at",
+          "field": "updatedAt",
+          "desc": false
+        },
+        {
+          "query": "-updatedAt",
+          "label": "Updated at",
+          "field": "updatedAt",
+          "desc": true
+        }
+      ],
+      "filters": [
+        {
+          "field": "kind",
+          "label": "Type",
+          "kind": "enum",
+          "values": [
+            {
+              "group": "",
+              "noPreference": false,
+              "value": "page",
+              "label": "Page",
+              "tone": "neutral",
+              "done": false
+            },
+            {
+              "group": "",
+              "noPreference": false,
+              "value": "post",
+              "label": "Post",
+              "tone": "neutral",
+              "done": false
+            }
+          ]
+        },
+        {
+          "field": "status",
+          "label": "Status",
+          "kind": "enum",
+          "values": [
+            {
+              "group": "",
+              "noPreference": false,
+              "value": "draft",
+              "label": "Draft",
+              "tone": "neutral",
+              "done": false
+            },
+            {
+              "group": "",
+              "noPreference": false,
+              "value": "published",
+              "label": "Published",
+              "tone": "success",
+              "done": false
+            },
+            {
+              "group": "",
+              "noPreference": false,
+              "value": "archived",
+              "label": "Archived",
+              "tone": "neutral",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    "commands": [
+      {
+        "fields": [
+          {
+            "figure": null,
+            "name": "version",
+            "label": "Version",
+            "help": "The version to write back, as the list answered it",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "locale",
+            "label": "Locale",
+            "help": "The series to read it from; the record's own language when unset",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "expectedRevision",
+            "label": "Expected revision",
+            "help": "The row's write count as the caller read it; a row past it is refused with 412 and writes nothing",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0
+            },
+            "options": []
+          }
+        ],
+        "verb": "restore",
+        "label": "Restore this version",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": {
+          "title": "Restore this version?",
+          "body": "A new version will be written with this content. Nothing is deleted.",
+          "confirmLabel": "Restore"
+        },
+        "successMessage": "A new version was written with the content you restored."
+      },
+      {
+        "fields": [
+          {
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language being written: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "values",
+            "label": "Values",
+            "help": "The text of each translatable field, keyed by field name",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "map",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "expected",
+            "label": "Expected",
+            "help": "Each field's revision as read; 0 for a field with no translation yet",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "map",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "verb": "translate",
+        "label": "Translate a content",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [
+          {
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "verb": "review-translation",
+        "label": "Mark a content's translation reviewed",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [
+          {
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "verb": "suggest-translation",
+        "label": "Ask the machine for a draft of a content",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [
+          {
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "verb": "untranslate",
+        "label": "Remove a content's translation",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [],
+        "verb": "publish",
+        "label": "Publish",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [],
+        "verb": "unpublish",
+        "label": "Unpublish",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "successMessage": ""
+      },
+      {
+        "fields": [],
+        "verb": "archive",
+        "label": "Archive",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": true,
+        "confirmation": {
+          "title": "Archive this page?",
+          "body": "It stops being served. You can publish it again later.",
+          "confirmLabel": "Archive"
+        },
+        "successMessage": ""
+      }
+    ],
+    "deck": {
+      "undoable": false,
+      "queue": [
+        "status:draft"
+      ],
+      "order": "updatedAt",
+      "directions": {
+        "down": {
+          "command": "",
+          "label": "",
+          "tone": "",
+          "icon": "",
+          "skip": true,
+          "undo": ""
+        },
+        "left": {
+          "command": "archive",
+          "label": "Archive",
+          "tone": "warning",
+          "icon": "folder",
+          "skip": false,
+          "undo": ""
+        },
+        "right": {
+          "command": "publish",
+          "label": "Publish",
+          "tone": "success",
+          "icon": "document",
+          "skip": false,
+          "undo": ""
+        }
+      }
+    },
+    "summary": {
+      "trendField": ""
+    }
+  },
   "screen": "/app/content/contents",
   "immutable": [
     "status",

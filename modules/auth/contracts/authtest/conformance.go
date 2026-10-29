@@ -36,9 +36,23 @@ type Fixture struct {
 	// order. A case reads the link out of one to follow it, and it is the only
 	// place it can be read — which is the property, not an inconvenience.
 	Mailed func() []notificationcontracts.Message
+	// Settle runs step once the case's transaction has committed, in a
+	// transaction of its own over the same rows. A mailed link leaves with the
+	// commit and not with the transaction (kit/db AfterCommit), so the step is
+	// where a case reads one and spends it. The case's own work ends at the
+	// call: what it wrote is what the step reads, and a step's own writes are
+	// rolled back, so a step settles no further. Every harness says what
+	// settling means for it; a case given none is failed rather than skipped.
+	Settle func(step func(Fixture))
 	// Sessions reports how many sessions this user has, which is how a case
 	// says "and the others ended" without knowing how they are stored.
 	Sessions func(user uuid.UUID) int
+	// Delivering moves this case's installation between a sender that attempts the
+	// message and one that only records it — false is the deployment with no mail
+	// host, where a door that would have to promise a person an email refuses.
+	// A harness wires it to whatever its own carrier answers; a case that never
+	// calls it leaves the installation as it found it.
+	Delivering func(delivers bool)
 }
 
 // Declared is the permission catalogue the cases hand to SetRole: two ordinary
@@ -87,6 +101,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 		"a session opened for somebody already recognised is a session":                        openRecognisedSession,
 		"changing a password needs the one in force, and ends the other sessions":              changePassword,
 		"asking to reset a password does the same work whoever asks":                           requestPasswordReset,
+		"where no mail is delivered a reset is refused and nothing is written":                 refuseResetWithoutMail,
 		"the worker looks the address up, and mails a link only to somebody who is here":       mailPasswordReset,
 		"one link per person per interval, however often somebody asks":                        rateLimitPasswordLinks,
 		"the link sets a password once, ends every session it found and signs this browser in": resetPassword,
@@ -120,6 +135,18 @@ func mailed(f Fixture) []notificationcontracts.Message {
 		return nil
 	}
 	return f.Mailed()
+}
+
+// settle hands the rest of a case to the point after its commit, which is the
+// first point at which a link the person was mailed exists to be read. A case
+// that reads one calls this rather than reading the mailbox beside the mint
+// that has not left yet.
+func settle(t *testing.T, f Fixture, step func(Fixture)) {
+	t.Helper()
+	if f.Settle == nil {
+		t.Fatalf("%s reads what the implementation mails, and this harness wires no Settle to read it after the commit", t.Name())
+	}
+	f.Settle(step)
 }
 
 // sessions is how many the user has, or -1 when the harness cannot say.

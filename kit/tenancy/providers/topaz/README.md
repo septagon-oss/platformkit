@@ -15,10 +15,15 @@ not proof of the server's current policy revision.
 Run `go test ./kit/tenancy/providers/topaz` from the foundation repository to
 exercise the adapter against an in-process gRPC server. These tests cover the
 wire envelope, denial, invalid responses, cancellation and timeout; they do
-not qualify a deployed Topaz server or synchronize its directory.
+not qualify a deployed Topaz server or synchronize its directory; see the [substitution matrix](../../../../ARCHITECTURE.md#policy-substitution-boundary).
 
 The [Task policy example](../../../../modules/auth/policies/README.md) explains
 composed authorization. Existing `auth.NewTopazPolicy` and `auth.TopazOptions`
 forward here for compatibility. Construction-error prefixes now identify
 `topaz`; the old compatibility import still carries Auth's other dependencies.
 New provider consumers should import this package directly.
+
+The common [task consumer suite](../../../../modules/task/provider_consumer_test.go)
+exercises this adapter with the official protobuf client and `topaztest.Client`, a
+disposable local gRPC protocol double. It certifies neither a Topaz process nor
+its directory replication, server caches, TLS or deployed credentials.

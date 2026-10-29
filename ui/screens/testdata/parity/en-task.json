@@ -1,0 +1,83 @@
+{
+ "name": "en-task",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:f01bf1831149ddb6171516f1997929eafd1682afd038d52f417c676cb3712ba9",
+  "expectedHash": "sha256:b46eced8eaeb4663e8d96c5a26ee8862a58d39fc7d8ebdbe4174a099dd9695f1"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "task",
+   "path": "/api/v1/m/task",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "done",
+     "type": "bool"
+    },
+    {
+     "name": "createdAt",
+     "type": "time",
+     "readOnly": true
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [
+   {
+    "id": "t1",
+    "title": "Write",
+    "done": false
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "language": "en",
+   "identity": {
+    "singular": "task",
+    "plural": "tasks"
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title"
+    },
+    {
+     "name": "done",
+     "reading": {
+      "true": "Yes",
+      "false": "No",
+      "missing": "—"
+     }
+    },
+    {
+     "name": "createdAt"
+    }
+   ]
+  },
+  "rows": {
+   "t1": {
+    "listTitle": "Write",
+    "recordTitle": "Write",
+    "cells": {
+     "done": "No"
+    }
+   }
+  }
+ }
+}

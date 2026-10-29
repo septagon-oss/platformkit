@@ -20,6 +20,16 @@ import (
 // — a reader is told rather than left in silence (0074 rule 4). A product that
 // composes a desk of its own takes it from here rather than rebuilding one.
 //
+// Four contracts come out of that one service, because a module that needs part
+// of a task desk asks for that part: Service for the three lifecycle commands,
+// Creator to raise a task, Reader to read one, LockedReader to read the row a diff
+// is made against. They are one value under four keys, so no composition can be
+// handed a creator that is not the service its own routes write through.
+// contracts.Writer is deliberately not among them: Save is the one door that moves
+// a protected field with no gate in front of it, and handing it to every
+// composition that asked would widen that door by composition rather than by
+// decision. A product that composes the change-control subject builds it by name.
+//
 // Which task a coordinator may resolve is decided by an object-scope policy, and
 // a policy is this product's object — a rego file it wrote, embedded, priced in
 // its own repository. So it is Optional: a composition that names none has the
@@ -34,13 +44,20 @@ var Module = pkit.NewModule("task", wire,
 	pkit.Optional[tenancy.Policy](),
 	pkit.Optional[rest.Gate](),
 	pkit.Provides[taskcontracts.Service](),
+	pkit.Provides[taskcontracts.Creator](),
+	pkit.Provides[taskcontracts.Reader](),
+	pkit.Provides[taskcontracts.LockedReader](),
 	pkit.Contributes[personaldata.Part](),
 )
 
+// wire builds the desk once and puts it under every contract it answers, so the
+// value a consumer reads as Creator is the value the mounted routes create with.
+// The concrete service is held rather than the narrowest interface it answers,
+// which is what lets one object reach four keys with its identity intact.
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc := NewService()
+	svc := internal.NewService()
 	if policy := pkit.Get[tenancy.Policy](w); policy != nil {
-		svc = NewServiceWithPolicy(policy)
+		svc.Policy = policy
 	}
 	manifest := New(Deps{
 		Service: svc,
@@ -48,6 +65,9 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Gate:    pkit.Get[rest.Gate](w),
 	})
 	pkit.Put[taskcontracts.Service](w, svc)
+	pkit.Put[taskcontracts.Creator](w, svc)
+	pkit.Put[taskcontracts.Reader](w, svc)
+	pkit.Put[taskcontracts.LockedReader](w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

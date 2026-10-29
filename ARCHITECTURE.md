@@ -26,7 +26,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 
 | Contract | Implementation and consumer |
 |---|---|
-| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
 | Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
@@ -75,7 +75,7 @@ Explain and Describe return alike because all four resolve through one plan.
 
 | Area | Observed limitation and counterexample | Required direction |
 |---|---|---|
-| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`/`Command`](kit/rest/rest.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
+| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
 | Content | Markdown is a meaning even when its editor is a textarea. Work already stores a format, while its traced display drops it. Current resource media metadata follows the richtext widget. The saved string `*draft*` is literal in plain text and emphasis in Markdown. | Extend semantic format propagation through the existing entity/rest, content/richtext and file owners, independently of editor selection. Preserve saved meaning and publication digests. A successful generic CRUD upload does not prove custom Work commands validate private attachments or roll file-use writes back. |
 | Operation | Existing operation/catalog schemas describe command fields and presentation without a complete retry/effect/completion contract. AddItem repeated twice increments twice; Checkout recovers the existing transition. Equal-amount refunds can be distinct intents. | Extend existing descriptions and [`httpx` receipts](kit/httpx/operation_receipt.go), retaining domain receipts and the catalogue's refund intent/reservation owner. Do not create another journal. Describe local commit, outbox delivery and external completion separately; a timeout must not turn an uncertain refund into available funds. |
 | Payment subject | The traced payment contract's `SubjectKind`/`Subject` supports cart and subscription; the actual payers use cart. No traced reservation or Work operation needs another payable kind. | Retain that closed set. “PaymentSubject” is a description, not a new type or generic entity reference. A named consumer must justify another subject before the shared contract grows. |
@@ -310,7 +310,23 @@ database-free reader of manifests appeared.
 
 A consumer imports another module's `contracts/`, not its `internal/` or
 constructor. Application composition is the place that connects them.
-[scripts/check_imports.sh](scripts/check_imports.sh) checks this boundary.
+[scripts/check_imports.sh](scripts/check_imports.sh) checks Go's direct production
+and test imports. Production contracts have an exact dependency policy, and test
+suites composing foreign constructors declare their targets and reason in
+`scripts/imports-integration.txt`. A contract dependency the published surface
+already carries is recorded per edge, with the frozen exported name that keeps it,
+in `scripts/imports-contract-baseline.txt`; a row whose import has gone is refused,
+so that list only shrinks. Every module is also placed in one of four layers —
+`platform`, `identity`, `generic`, `product` — whose order belongs to the gate
+itself, while each repository assigns only its own modules in its own
+`scripts/imports-layers.txt`. A production import may not climb that order, and a
+declared port prevents such an import rather than excusing it, so the rule carries
+no exemption; a pair that imports each other in production states its reason in a
+justification row, and a row for a pair that stopped being reciprocal is refused.
+[docs/MODULE-GRAPH.md](docs/MODULE-GRAPH.md) is the generated aggregate module
+graph, composition edges printed apart from Go imports. The
+[import gate](tools/importgate/README.md)
+documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
@@ -353,15 +369,15 @@ describes the constraint.
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for
 a subscription in the handler's transaction.
-[Spec](kit/rest/rest.go) shares create, update and delete mutations between JSON
-routes and registered resources. Updates and deletes lock the live row before merging,
+[Spec](kit/rest/rest.go) shares its [create, update and delete core](kit/rest/write.go)
+between JSON routes and registered resources. Updates and deletes lock the live row before merging,
 validation, hooks and event snapshots. This serializes server-side decisions;
 it does not reject an old form based on the revision its user originally saw.
 Use [rest.Operation](kit/rest/operation.go) for typed service projections with
 custom paths or response bodies; it shares transaction and error handling with
 commands while the service keeps its domain authorization. Resource counts use
 one read guard; standard Specs issue a COUNT without loading entity rows.
-[kit/app](kit/app/app.go) defaults to an in-memory transport for the combined
+[kit/app](kit/app/dependencies.go) defaults to an in-memory transport for the combined
 `all` role and JetStream for separate `web` and `worker` roles, unless the
 application supplies a transport. The application also supplies the two
 constructors (`app.Transports`); the kernel selects by name and imports no
@@ -418,7 +434,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme: design.Default()`, `apps/platformkit/app.go:167`), one
+composition (`Theme(design.Default())`, `apps/platformkit/app.go:325`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -426,10 +442,10 @@ database, and a stylesheet adds none of it.
 one stylesheet per pair rather than recomposing per request
 (`design/design.go:165-166`); no span opens and no event publishes.
 
-**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:440`) a `Pair` of its
-own, plus a `ui.Extra` (`ui/ui.go:103`) for rules. The reference product's own
-line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
+**How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
+own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
+line is `apps/platformkit/fault.go:113`: `ui.Compose(design.Default())`, the same
+pair the composition hands the shell at `apps/platformkit/app.go:325`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
@@ -438,8 +454,8 @@ a role.
 **Where it lives.** `ui/css` is the stylesheet's IR — `Sheet`
 (`ui/css/css.go:130`), `AddRule` (`ui/css/css.go:142`) — and `ui/style` compiles
 tokens into it (`ThemeVars`, `ui/style/theme.go:24`). Behaviour is controllers
-served as static files beside the API (`ui/ui.go:2`), mounted by `ui.Assets`
-(`ui/ui.go:529`) in `modules/web/internal/mount.go:78` and
+served as static files beside the API ([ui/assets.go](ui/assets.go)), mounted by `ui.Assets`
+([ui/assets.go](ui/assets.go)) in `modules/web/internal/mount.go:78` and
 `modules/admin/internal/mount.go:146`.
 
 **Builds on.** `maragu.dev/gomponents` v1.3.0 (MIT) for the DOM the controllers
@@ -469,44 +485,46 @@ layer.
 
 ### Authorization: OPA
 
-**Where it lives.** `kit/tenancy` owns the port — `Policy`
-(`kit/tenancy/policy.go:14`) deciding over a `PolicyResource` (`:36`) and a
-`PolicyRequest` (`:43`) — and `RequirePolicy` (`:90`) is the boundary a service
-calls. The adapter sits beside it: `kit/tenancy/providers/opa` builds a policy
-from Rego source (`New`, `kit/tenancy/providers/opa/opa.go:45`) and answers
-(`Decide`, `:74`).
+**Where it lives.** [kit/tenancy](kit/tenancy/policy.go) owns `Policy`, `PolicyRequest` and `RequirePolicy`; [Task](modules/task/README.md) is the consumer.
 
-**Builds on.** Open Policy Agent embedded as a library,
-`github.com/open-policy-agent/opa` v1.21.0 (Apache-2.0): a composition writes its
-rules in Rego and they run in process, with no policy server to deploy, reach or
-keep in step (`kit/tenancy/providers/opa/opa.go:3-5`). Input is
-`input.tenant.id`, `input.actor.kind`, `input.resource.*` (`:13`).
-`kit/tenancy/providers/topaz` implements the same port over
-`github.com/aserto-dev/go-authorizer` v0.24.1 (Apache-2.0) for a deployment whose
-relations are served elsewhere.
+**Builds on.** Embedded OPA uses `github.com/open-policy-agent/opa` v1.21.0;
+Topaz uses `github.com/aserto-dev/go-authorizer` v0.24.1 (both Apache-2.0).
 
-**How the tenant crosses it.** Twice, both load-bearing:
-`PolicyRequest.Validate` refuses a request whose resource carries another
-tenant's id as an invalid request rather than a denial
-(`kit/tenancy/policy.go:65`), and row-level security answers afterwards anyway —
-a policy refines the database's constraint and never replaces it
-(`docs/adr/0003-tenancy-by-postgres.md:1`).
+**How the tenant crosses it.** [The service](modules/task/internal/service.go) locks under [RLS](docs/adr/0003-tenancy-by-postgres.md)
+in `db.Tx[db.Tenant]`; `RequirePolicy` then validates tenant equality and explicit actor identity.
 
-**How it is traced and audited.** `kit/tenancy` starts no span of its own, so a
-decision is seen inside the operation span the transport opened
-(`kit/httpx/traced.go:86`) and in the refusal counter (`:140`, classed by
-`RefusalClass`, `kit/telemetry/telemetry.go:212`), and reaches the trail through
-the owning module's event. Each decision carries `sha256:` of the policy source
-(`kit/tenancy/providers/opa/opa.go:19-20`), so the rules that answered are
-nameable afterwards.
+**How it is traced and audited.** Decisions run within [the HTTP span](kit/httpx/traced.go);
+[the refusal hook](kit/httpx/authorize.go) records authenticated denials as `security.denied`.
+OPA hashes its source; Topaz Revision is configuration, not server freshness.
+Refusal silence concerns task domain effects; audit and receipts have separate paths.
 
-**How an app extends it.** It implements `tenancy.Policy`, and composition names
-which one: `var taskPolicy = opa.MustNew(…)` at `apps/platformkit/product.go:220`,
-put for the task module to take at `:109`, with the rules in the application's own
-`apps/platformkit/policy/task.rego:1`. A denial (`ErrPolicyDenied`,
-`kit/tenancy/policy.go:61`) belongs to the caller; a nil provider, a failing one,
-or an answer that is not `{"allow": bool}` is an outage and never a permissive
-default (`ErrPolicyUnavailable`, `:62`, refused by `RequirePolicy`).
+**How an app extends it.** [The product](apps/platformkit/product.go) provides `tenancy.Policy` through pkit;
+[task.Module](modules/task/provider.go) consumes it optionally. [cloud.profile](pkit/cloud.go) does not select policy.
+Deliberate absence retains route grants; configured failure never becomes that absence.
+
+#### Policy substitution boundary
+
+The consumer is `POST /api/v1/task/tasks/{id}/resolve`, with `assign` beside it.
+HTTP checks account and `task:update` in the request transaction; task locks and asks policy before domain checks/retries.
+`task:assign`/`task:resolve` are policy actions. Direct service callers own current account/grant checks.
+
+| Dimension | Supported boundary | Evidence and limits |
+|---|---|---|
+| Inputs | [Task facts](modules/task/internal/policy.go): transaction tenant ID/slug, principal user ID, action, locked resource kind/ID/tenant and status/priority/assignee_id; assignment adds requested_assignee_id. | OPA receives tenant/actor/action/resource directly; Topaz nests them under input.resource, adds tenant.operator/resource.tenant_id and sends MANUAL identity (NONE for public). OPA omits those two extra fields; Task uses user actors/string attributes only. |
+| Decisions | RequirePolicy rejects invalid facts before evaluation and discards any decision accompanying an error. Denial is 403 POLICY_DENIED; invalid facts/provider failure are sanitized 503 POLICY_UNAVAILABLE. | Denial is distinct from outage; a fresh call evaluates current policy and resource facts. A command refused by policy returns no task and changes no task state or domain event. |
+| OPA | [The adapter](kit/tenancy/providers/opa/opa.go) evaluates compiled rules per call, with caller context, no default timeout or decision cache; undefined denies, malformed/conflicting results fail. | [Library tests](kit/tenancy/providers/opa/opa_test.go) and [reference HTTP journey](apps/platformkit/object_scope_test.go) exist. Direct Decide validation parity with Topaz remains unverified; the consumer uses RequirePolicy. |
+| Topaz | [The adapter](kit/tenancy/providers/topaz/topaz.go) requires one correctly named boolean decision; RPC/encoding errors or missing/duplicate/wrong decisions fail. No local decision cache; timeout defaults to two seconds, with earlier caller deadlines honored. | [Real client/protobuf tests](kit/tenancy/providers/topaz/topaz_test.go) use a disposable gRPC protocol double, not a Topaz service certification. Application owns connection/close, deployment and directory synchronization. Server caches/freshness remain unverified. |
+| Local ports | Task Service.Assign/Resolve/CheckSLA, Creator.Create, Writer.Save, LockedReader.TaskForUpdate and Reader.TaskByID share the caller's local tenant transaction; the plain reader has no write lock. Mutations/outbox commit together. | [Contracts](modules/task/contracts/task.go) support local SQL participation, not a remote clone of db.Tx. Row locks serialize task commands; no expected-revision argument exists. Remote allow and concurrent grant/directory revocation are not atomic with local commit. |
+| Fresh retries / cancellation | A fresh invocation reloads locked facts and evaluates again before returning an idempotent result. Cancelled or expired evaluation refuses without task effects; OPA checks context before and after evaluation. | [Common consumer cases](modules/task/contracts/tasktest/policy_conformance.go), [scope probes](modules/task/provider_scope_test.go), [cancellation](modules/task/provider_cancellation_test.go) and [SQL boundaries](modules/task/provider_transaction_test.go) exercise both adapters. Cancellation racing COMMIT can leave an uncertain outcome; it does not prove rollback. |
+| Cached answers | [HTTP recovery](kit/httpx/operation_receipt.go) can bypass the task handler; route grants still run. | Task declares no [RecheckingReplay](kit/httpx/auth.go) policy hook. The [reference-app characterization](apps/platformkit/policy_recovery_test.go) confirms cached replies bypass policy revocation for both adapters, while revoked route grants refuse them. This is an unsupported authority guarantee, not a safe retry claim. |
+| Other substitutions | The task row/outbox are local effects; external policy is a bounded remote decision. | Other providers, arbitrary attribute types, remote transaction services and deployed directory behavior remain unverified. |
+
+The [common suite](modules/task/provider_consumer_test.go) runs the same cases against the existing fake, SQL service and mounted HTTP commands.
+It uses real embedded OPA and the official Topaz client over a disposable gRPC protocol double; no Topaz process is certified.
+The fake carries the service's trusted attributes and shares [domain.Resolve](modules/task/domain/resolve.go), but proves no RLS/rollback. Compare adapters under equal rules:
+the [Topaz example](modules/auth/policies/README.md) allows self-claim; the reference rule allows reassignment/unassigned resolution.
+`Choose` selects whole modules. The reference fixture supplies its policy through the same product declarations at construction,
+retaining the product's other provisions; it adds no cloud-profile policy selector or runtime reload.
 
 ### Authentication: sessions, TOTP, and WebAuthn
 
@@ -535,7 +553,7 @@ only non-test importer is `modules/auth/internal/passkeys.go`, the soft
 authenticator that exercises it being a test fixture that speaks the SDK's own
 CBOR at that seam (`modules/auth/internal/passkey_authenticator_test.go`), so
 CBOR and COSE reach no handler, no event and no contract
-(`modules/auth/README.md:199-201`).
+(`modules/auth/README.md:220-222`).
 
 **How the tenant crosses it.** `sessions.tenant_id` under row-level security
 (`modules/auth/migrations/000008_auth.up.sql:15`, `:41-48`) and the same for
@@ -544,7 +562,7 @@ CBOR and COSE reach no handler, no event and no contract
 secret column is sealed rather than hashed, because verification needs the value
 and a backup must not carry a spendable factor (`:24-31`), and only the
 deployment's key opens it — `svc.EnableFactors([]byte(deps.FactorKey))`,
-`modules/auth/module.go:265`. Without a key the TOTP and recovery-code doors
+`modules/auth/module.go:270`. Without a key the TOTP and recovery-code doors
 answer 503 rather than the routes going missing (`Deps.FactorKey`, `:120`). The
 passkey tables carry the same column and the same policy —
 `passkey_credentials`, `passkey_challenges`, and the usernameless door's own
@@ -552,7 +570,7 @@ passkey tables carry the same column and the same policy —
 (`modules/auth/migrations/000035_passkeys.up.sql:20`, `:76`, `:144`, `:103`,
 `:109`, `:152`) — and nothing in them is sealed, because a public key is public
 and those doors mount whether or not a factor key exists
-(`modules/auth/module.go:267-278`).
+(`modules/auth/module.go:272-283`).
 
 **How it is traced and audited.** Enrolment and withdrawal are events —
 `auth.factor_enrolled` and `auth.factor_withdrawn`
@@ -568,7 +586,7 @@ router's.
 here: a passkey answers the second factor, `github.com/go-webauthn/webauthn`
 plus its CBOR/COSE tree priced as a module dependency in its own `build(budget)`
 commit, written down beside what stays out
-(`modules/auth/README.md:192-194`, `:227-230`). What the library leaves to
+(`modules/auth/README.md:213-215`, `:248-251`). What the library leaves to
 the relying party is decided where it is enforced: the config is
 built per request from the host that already chose the tenant, so a credential
 minted at one tenant's host cannot answer at another's (`:205-208`), and whether
@@ -585,11 +603,11 @@ and a second factor offered without its first
 **Where it lives.** `kit/locale` — `Messages` (`kit/locale/locale.go:9`),
 `Formatter` (`:16`), `Locale` (`:21`), `SelectLocale` (`:29`) — with one
 adapter, `kit/locale/providers/xtext`: `Load` builds a catalogue from ordered
-sources (`kit/locale/providers/xtext/load.go:57`), `Catalog` and `Source`
-describe what goes in (`:131`, `:138`), and `FromCatalog` hands back a
+sources (`kit/locale/providers/xtext/load.go:33`), `Catalog` and `Source`
+describe what goes in (`:107`, `:114`), and `FromCatalog` hands back a
 `locale.Messages` (`kit/locale/providers/xtext/catalog.go:16`).
 
-**Builds on.** `golang.org/x/text` v0.42.0 (BSD-3-Clause) for language matching
+**Builds on.** `golang.org/x/text` v0.43.0 (BSD-3-Clause) for language matching
 and message catalogues (`kit/locale/providers/xtext/catalog.go:7-9`) — BCP 47
 matching and CLDR plural rules. Nothing here is a service.
 
@@ -597,8 +615,8 @@ matching and CLDR plural rules. Nothing here is a service.
 hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
-(`ui/page/serve.go:101`, `ui/page/locale.go:61`). Why a refusal may not answer in
-an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
+([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
+an undeclared language is the comment at `kit/httpx/tenant.go:262-275` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
 (`migrations/000029_tenant_locale.up.sql:1`).
@@ -610,7 +628,7 @@ answer in a language this tenant refused. The declaration is a row
 **How an app extends it.** Append an `xtext.Source` to the ordered list
 `catalogues()` builds (`apps/platformkit/catalog.go:40`); the order *is* the merge
 rule, and the comment above that function says why each source sits where it does
-(`apps/platformkit/catalog.go:22-38`). Owner modules ship their own
+(`apps/platformkit/catalog.go:26-39`). Owner modules ship their own
 `messages/<tag>.json`; `modules/notification` deliberately ships none, because its
 words belong to the module that raised the notice. A reader who asks in a language
 its tenant never declared is not served in that language and is not refused for
@@ -637,7 +655,7 @@ its only dependency is the kernel.
 **How it is traced and audited.** Two trails, and the distinction is the point.
 The *write* is the owner's: an accepted proposal is applied through the subject's
 `Save` (`modules/change/contracts/change.go:254-266`), which the composition
-implements over the owner's own service (`apps/platformkit/change.go:164-172`),
+implements over the owner's own service (`apps/platformkit/change.go:157-165`),
 so the domain audit row is the owner's event — `site.settings_updated` for the
 reference subject (`modules/site/contracts/events.go:15`). The
 *decision* is this module's, one event per transition and no fifth name
@@ -651,24 +669,24 @@ waits for `change.proposal_applied` in the trail and checks whose name it credit
 the other, and a save that fails publishes nothing: the write errors out before the
 event is built (`modules/change/internal/service.go:296-300`). No span of its own.
 
-**How an app extends it.** Implement `Subject` and bind it: `changeSubjects`
-(`apps/platformkit/change.go:188`) and the one line that calls it
-(`apps/platformkit/product.go:200`) are the whole of what the reference product
+**How an app extends it.** Implement `Subject` and bind it: `siteSubjectBinding`
+(`apps/platformkit/change.go:185`) and the one line that calls it
+(`apps/platformkit/product.go:334`) are the whole of what the reference product
 adds. A refusal carries the owner module's answer in `Refusal`
 (`modules/change/contracts/change.go:284`), which is why this module needs no
 vocabulary of its own.
 
 ### Events: CloudEvents, the outbox, JetStream
 
-**Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
-`PublishFor` (`:80`) for a system transaction that has to name its tenant,
-`Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
+**Where it lives.** `kit/events` — [`Publish` and `PublishFor`](kit/events/events.go)
+record tenant and system writes; [`Consume`](kit/events/consume.go) delivers them
+through the [claim and dead-letter paths](kit/events/events.go). The
 wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
-(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+(`kit/events/transport/transport.go:174-185`) is the other door onto the same stream:
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
 and holding no history — what a live connection is built on (`kit/stream`), and
 what an app opens for its own events by declaring `Streams`
-(`kit/module/module.go:96`).
+([Module.Streams](kit/module/module.go)).
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
 envelope (`kit/events/transport/cloudevents.go:41`) is what crosses a broker, so
@@ -681,7 +699,7 @@ against the `nats:2-alpine` container (`compose.yaml:52`).
 
 **How the tenant crosses it.** Three ways, all load-bearing: `Publish` takes a
 `db.Tx[db.Tenant]`, so no call publishes without a tenant transaction
-(`kit/events/events.go:61`); the `tenantid` extension is required here, because an
+([publication](kit/events/events.go)); the `tenantid` extension is required here, because an
 event with no tenant has no transaction to deliver it in
 (`kit/events/transport/cloudevents.go:50-54`); and the outbox rows are filtered by
 row-level security (`migrations/000002_outbox.up.sql:15`, `:37-38`).
@@ -691,16 +709,17 @@ and `tracestate` (`kit/events/transport/cloudevents.go:56-62`), plus a PlatformK
 owned `baggage` carrying the publisher's request id, because the specification fixes
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
-(`kit/events/relay.go:281`), `<event> publish` and `<event> deliver`
-(`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
+([relay batches](kit/events/relay.go)), `<event> publish` and `<event> deliver`
+(`kit/events/trace.go:109`, `:134`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
 **How an app extends it.** Declare in the manifest — `Declared` and
-`Subscriptions` (`kit/module/module.go:87`, `:91`) — and write one transport line
+`Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:227`), in the function the application calls the one
-place it names an event provider (`:226`). `kit/app` selects by name and imports
-no provider (`kit/app/app.go:195-203`). An unknown `specversion` is refused rather
+(`apps/platformkit/product.go:382`), in the function the application calls the one
+place it names an event provider (`:381`). `kit/app` selects by name and imports
+no provider ([Transports.constructor](kit/app/app.go) and
+[App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
 that is already handled is a no-op, so delivery is at-least-once and an external
 effect still needs its provider's idempotency contract.
@@ -735,8 +754,8 @@ it has (`FromDeployment`, `modules/notification/provider.go:40-43`): SMTP when t
 process names a host, port and from-address, the mailbox when not (`:60-62`), and
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
-(`apps/platformkit/main.go:84`). A refusal a person must see raises a `Notice`
-(`apps/platformkit/product.go:292`). A nil lookup writes every row and sends no
+(`apps/platformkit/main.go:96-102`). A refusal a person must see raises a
+`Notice` (`apps/platformkit/product.go:473`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -778,12 +797,12 @@ rule (`:51-52`).
 
 ### Cache: kit/cache over Valkey
 
-**Where it lives.** `kit/cache`: `Scope` (`kit/cache/cache.go:98`), built only by
-`Of` (`:112`) or `Shared` (`:128`), `Key` (`:154`), `Cache` (`:186`) and `Value`
-(`:240`); the adapter is `kit/cache/providers/valkey` (`New`
-`kit/cache/providers/valkey/valkey.go:67`, `Connect` `:78`). What may be cached at
+**Where it lives.** `kit/cache`: `Scope` (`kit/cache/cache.go:87`), built only by
+`Of` (`:101`) or `Shared` (`:117`), `Key` (`:143`), `Cache` (`:175`) and `Value`
+(`:243`); the adapter is `kit/cache/providers/valkey` (`New`
+`kit/cache/providers/valkey/valkey.go:57`, `Connect` `:71`). What may be cached at
 all is the package comment: values a replica may recompute, and never sessions,
-permission grants or entitlements (`kit/cache/cache.go:22-27`).
+permission grants or entitlements (`kit/cache/cache.go:12-14`).
 
 **Builds on.** `github.com/redis/go-redis/v9` v9.22.0 (BSD-2-Clause) against
 `valkey/valkey:8-alpine` run with `--maxmemory-policy noeviction`
@@ -801,14 +820,14 @@ caller cannot forge one, and every request warms the shared host index through
 no audit row, `kit/cache` imports no `kit/telemetry`, and the cache is never a
 second source of truth. `kit/cache/cachetest/conformance.go` is the suite both the
 in-process store and the Valkey adapter run, over two fixed tenants
-(`kit/cache/cachetest/conformance.go:29-34`) so a key that lets one customer reach
+([tenant fixtures](kit/cache/cachetest/conformance.go)) so a key that lets one customer reach
 another is reproducible from the failure message alone.
 
-**How an app extends it.** Add a field to `app.Caches` (`kit/app/app.go:173`,
-selected at `:448`); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
+**How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
+selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
+else (`apps/platformkit/product.go:409`, in `caches()` at `:408`). A selected
 adapter with no constructor is refused before anything opens
-(`kit/app/app.go:185-192`). `noeviction` is a requirement and not politeness: the
+([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
 generation 0, and what `Move` closed reopens (`compose.yaml:99-103`) — a deployment
 fault, not a caller's.
@@ -816,13 +835,13 @@ fault, not a caller's.
 ### Metrics and traces: OpenTelemetry
 
 **Where it lives.** `kit/telemetry` names the attributes and the instruments and
-holds no provider: `Scope` (`kit/telemetry/telemetry.go:68`), `Tracer` (`:88`),
-the attribute names (`:94-97`), `WithRequestID` and `RequestID` (`:136`, `:153`),
-`SpanAttrs` (`:160`), `MetricAttrs` (`:188`), `RefusalClass` (`:212`), and
+holds no provider: `Scope` (`kit/telemetry/telemetry.go:31`), `Tracer` (`:47`),
+the attribute names (`:53-56`), `WithRequestID` and `RequestID` (`:85`, `:102`),
+`SpanAttrs` (`:109`), `MetricAttrs` (`:137`), `RefusalClass` (`:161`), and
 `Instruments` (`kit/telemetry/instruments.go:34`). `kit/trace` carries the
-context — `Context` (`kit/trace/trace.go:59`), `Parent` (`:70`), `Parse` (`:100`) —
-with the header names written once (`:27-31`). `kit/app` installs the one
-`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:325`, `:326`).
+context — `Context` (`kit/trace/trace.go:56`), `Parent` (`:67`), `Parse` (`:97`) —
+with the header names written once (`:24-28`). `kit/app` installs the one
+`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:302`, `:303`).
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
@@ -831,16 +850,16 @@ collector is a separate program (`compose.yaml:86`).
 **How the tenant crosses it.** Every span and number is stamped from the context:
 `SpanAttrs` puts `pkit.tenant` — the slug a person recognises — and
 `pkit.tenant.id` on a span, with `pkit.request.id` on spans only
-(`kit/telemetry/telemetry.go:94-97`, `:160`), and `MetricAttrs` is the same list
+(`kit/telemetry/telemetry.go:53-56`, `:109`), and `MetricAttrs` is the same list
 without the request id, because a value unique per request makes one series per
-request (`:188`, `:174-186`). The tenant is never a resource attribute: one
+request (`:137`, `:123-135`). The tenant is never a resource attribute: one
 process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
-(`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
-span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
-the relay batch (`kit/events/relay.go:281`), and the job run with one span per
-tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
+(`kit/httpx/traced.go:44`), named after the operation id (`:80`), the transaction
+span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:109`, `:134`),
+the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
+tenant (`kit/jobs/jobs.go:194`, `:313`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
 The instruments are the three named at `kit/telemetry/instruments.go:61-69`,
 with latency buckets that run to a minute because the work slow enough to matter
@@ -849,10 +868,10 @@ the measured figures; this page quotes none.
 
 **How an app extends it.** A module never holds a provider. A deployment writes
 `telemetry.otlp_endpoint` and `telemetry.sample_ratio`
-(`kit/config/config.go:108-127`), whose zero value exports nothing
-(`kit/config/config.go:39-41`), and any package names attributes through
-`SpanAttrs`. An unreachable collector must not stop serving, so OpenTelemetry's
-own error handler keeps serving (`kit/config/config.go:105-107`).
+([config.Telemetry](kit/config/config.go)), whose empty endpoint exports
+nothing ([planTelemetry](kit/app/telemetry.go)); any package names attributes
+through `SpanAttrs`. An unreachable collector must not stop serving; the
+[telemetry plan](kit/app/telemetry.go) keeps export failures out of request handling.
 
 ### Audit
 
@@ -934,9 +953,9 @@ flaky spec is a bug report, not a retry.
 **Where it lives.** The contract is a document. `ui/screens` publishes the screen
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
-`/api/v1/app/resources` (`kit/httpx/surfaces.go:77`); `kit/app` renders the event
-half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
-`:161`), pinned by the golden files in `apps/platformkit/testdata/`.
+`/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
+half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:41`, `CoveredEvents`
+`:169`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
 that `kit/wire` owns and lists (`kit/wire/README.md:28-35`) over the whole
 authorization declaration an operation emits, kind, permission and plan feature
@@ -952,9 +971,9 @@ dependency. Screens are derived from schemas rather than authored
 
 **How the tenant crosses it.** The document is reached behind host resolution, on
 the tenant's own address, so a shell never names a tenant
-(`kit/httpx/surfaces.go:77`), and every operation inside it carries the tenant
+([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
-(`kit/app/asyncapi.go:161`) counts the declared events the document names, which
+(`kit/app/asyncapi.go:169`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
 
 **How it is traced and audited.** Nothing new: the events a shell may see are the
@@ -966,7 +985,7 @@ renamed JSON tag fails `make check` rather than a shipped build.
 product's share is not to extend it but not to break it. Nothing overrides a
 refusal, including `UPDATE_GOLDEN=1` (`kit/wire/README.md:17-19`); a planned
 breaking change ships as a new
-address plus an alias row (`kit/httpx/aliases.go:87`,
+address plus an alias row (`kit/httpx/aliases.go:62`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
 strands a reader, a narrowed authorisation, a plan feature added, dropped or renamed —
@@ -1425,7 +1444,7 @@ every deployment topology safe: shared storage, schema compatibility, migration
 ownership and provider behavior need environment-specific verification.
 
 `Run` takes the address it serves on, so one process holds one composition per
-address. [kit/app](kit/app/app.go) also exports `Start`: the same migration,
+address. [kit/app](kit/app/lifecycle.go) also exports `Start`: the same migration,
 connection and boot gates, handing back a `Runtime` — its `Handler`, whose surface
 is the whole API for `web` and `all` and the two probes for `worker`, its `Work`
 half and its release — for an application that owns a listener of its own. Which

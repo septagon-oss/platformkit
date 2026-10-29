@@ -216,7 +216,7 @@ func emailRequest(ctx context.Context, svc *Service) error {
 	if !httpx.SameSite(r) {
 		return problem.New(http.StatusForbidden, "request an account email from this site itself")
 	}
-	if svc.mail.Mailer == nil || svc.mail.Hosts == nil {
+	if !svc.mail.deliversAccountMail() {
 		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 	}
 	if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP), "too many account requests from this address; wait and try again"); err != nil {

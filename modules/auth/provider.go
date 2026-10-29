@@ -1,66 +1,55 @@
 package auth
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"github.com/septagon-oss/platformkit/kit/config"
-	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
-// Module is the front door as the resolver sees it, for an application that
-// names it in Use: `Use(auth.Module)`.
-//
-// Three contracts come out of it, and they are the three a composition used to
-// answer for itself: Auth is the service, httpx.Authorizer is the answer every
-// route is enforced with, and pkit.Authenticator is who is calling. Before this
-// apps/platformkit put all three in a module of its own making; they are put
-// here, by the module that owns the service, by every application that composes
-// it — which is what makes "one provider each, named in the composition file"
-// true rather than a comment saying so.
-//
-// The one thing it reads that it does not consume is usercontracts.Granting.
-// Reading it is what places auth after the holder exists; filling its Ask is the
-// answer. That edge is late-bound rather than built — the user module is built
-// before auth, because auth looks people up — and a declaration in either
-// direction would be the cycle user → auth → user, which is a fact about the
-// graph and no composition edits it. The late-bound holder's own tests cover the
-// mechanism; refusing when nothing filled the holder is pinned here
-// rather than left to the first roles write.
+// Module declares session capabilities and their independent grant dependencies.
 var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Users](),
 	pkit.Needs[authcontracts.Provisioner](),
 	pkit.Needs[authcontracts.Notifier](),
 	pkit.Needs[authcontracts.Mailer](),
+	// Whether that sender delivers. Needed rather than Optional with a default of
+	// "yes": a composition that composes auth and forgets notification is a defect
+	// in the composition, and the plan refuses it at boot rather than booting a
+	// server that refuses every sign-up forever.
+	pkit.Needs[authcontracts.MailDelivery](),
 	pkit.Needs[authcontracts.Hosts](),
 	pkit.Needs[authcontracts.MailLedger](),
 	pkit.Needs[authcontracts.OIDCProviders](),
 	pkit.Needs[jobs.TenantLister](),
-	pkit.Needs[usercontracts.Granting](),
+	pkit.Needs[authcontracts.GrantAuthorizer](),
+	pkit.Needs[authcontracts.PermissionReader](),
 	pkit.Optional[usercontracts.Clock](),
-	pkit.Optional[usercontracts.InvitationAuthority](),
 	pkit.Optional[usercontracts.InvitationReader](),
+	pkit.Optional[usercontracts.InvitationAuthority](),
 	pkit.Optional[authcontracts.InvitationUsers](),
-	pkit.Provides[authcontracts.InvitationLinks](),
-	pkit.Provides[authcontracts.InvitationReadings](),
 	// Optional, not Needed: with no tenant module there is no tenant whose IdP could
 	// be resolved and no installation-level default to fall back to, so auth mounts
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
 	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[authcontracts.ConfirmationChrome](),
 	pkit.Optional[LinkPages](),
 	pkit.Provides[authcontracts.Auth](),
+	pkit.Provides[authcontracts.RoleEditor](),
+	pkit.Provides[authcontracts.SessionAdministration](),
+	pkit.Provides[authcontracts.RoleReader](),
+	pkit.Provides[authcontracts.RoleRepairer](),
+	pkit.Provides[authcontracts.InvitationLinks](),
+	pkit.Provides[authcontracts.InvitationReadings](),
+
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
 	pkit.Contributes[personaldata.Part](),
@@ -69,11 +58,9 @@ var Module = pkit.NewModule("auth", wire,
 func wire(w *pkit.Wiring) (module.Module, error) {
 	settings := pkit.Config(w, func(c config.Config) config.Auth { return c.Auth })
 	server := pkit.Config(w, func(c config.Config) config.Server { return c.Server })
-	granting := pkit.Get[usercontracts.Granting](w)
-	if granting == nil {
-		return module.Module{}, fmt.Errorf("auth: composes no usercontracts.Granting, which is the door a roles write hands out an administering role through: compose the user module's, or one of your own")
-	}
 	deps := Deps{
+		Authorization:    pkit.Get[authcontracts.GrantAuthorizer](w),
+		Permissions:      pkit.Get[authcontracts.PermissionReader](w),
 		Clock:            pkit.Get[usercontracts.Clock](w),
 		InvitationUsers:  pkit.Get[authcontracts.InvitationUsers](w),
 		InvitationReader: pkit.Get[usercontracts.InvitationReader](w),
@@ -84,7 +71,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else.
 		Mailer: pkit.Get[authcontracts.Mailer](w),
-		Hosts:  pkit.Get[authcontracts.Hosts](w),
+		// The same carrier's own answer, so that "a mailer is wired" cannot be read
+		// as "a mail will go out".
+		MailDelivery: pkit.Get[authcontracts.MailDelivery](w),
+		Hosts:        pkit.Get[authcontracts.Hosts](w),
 		// The same service Notify is resolved from, under the ledger's own key:
 		// the record of the two mails this module sends itself, so that a send
 		// leaves a row before the mail can be read back at the delivery door.
@@ -128,18 +118,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		LinkPages:  pkit.Get[LinkPages](w),
 		PublicHost: server.PublicHost,
 	}
-	// Which public signup door this installation mounted is a composed module of
-	// its own (Registration, EmailRegistration, ApprovalRegistration), because
-	// three mutually exclusive Deps fields were one decision written three ways.
-	// None composed means no door, which is what the empty field always meant.
-	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
-	case authcontracts.EmailRegistrationMode:
-		deps.EmailRegistration = mode.Policy
-	case authcontracts.ApprovalRegistrationMode:
-		deps.ApprovalRegistration = mode.Policy
-	case authcontracts.PasswordRegistration:
-		deps.Registration = mode.Users
-	}
+	mailedLinksOpen(&deps, w)
 	// A file-borne budget the counter cannot keep is the plan's refusal, not
 	// New's panic: the loader checked presence, and only the counter knows its
 	// horizon.
@@ -147,45 +126,51 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		return module.Module{}, fmt.Errorf("auth: auth.account_requests: %w", err)
 	}
 	svc, manifest := New(deps)
-	// The fill, and the whole of the late-bound edge. May the caller of a roles
-	// write hand out a role that administers the tenant is the authorizer's
-	// answer, asked of this module's own permission, in the request's own tenant
-	// transaction — the same question every route is asked, one line earlier and
-	// about a different act.
-	fillGranting(granting, svc)
-	fillInvitationAuthority(pkit.Get[usercontracts.InvitationAuthority](w), svc.(*internal.Service))
 	pkit.Put(w, svc)
+	if authority := pkit.Get[usercontracts.InvitationAuthority](w); authority != nil {
+		if holder, ok := authority.(*usercontracts.InvitationAuthorityFunc); ok && holder != nil {
+			holder.Ask = svc.(*internal.Service).InspectInvitationAuthority
+		}
+	}
 	pkit.Put[authcontracts.InvitationLinks](w, svc.(*internal.Service))
 	pkit.Put[authcontracts.InvitationReadings](w, svc.(*internal.Service))
+	pkit.Put[authcontracts.RoleEditor](w, svc)
+	pkit.Put[authcontracts.SessionAdministration](w, svc)
+	pkit.Put[authcontracts.RoleReader](w, svc)
+	pkit.Put[authcontracts.RoleRepairer](w, svc)
+
 	pkit.Put[httpx.Authorizer](w, svc)
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
 
-// fillGranting writes the one field of the composition's Granting holder that
-// only this module can answer. It is a fill and not a Put: the holder is read by
-// the user module, which is built before this one.
-//
-// A holder with no Ask refuses every promotion (contracts.GrantingFunc.May
-// answers the error), and this runs in the same build that mounts auth's routes,
-// so the refusal is a composition defect fixed at boot and not a door that opens
-// for whoever happens to be sitting in front of it.
-func fillGranting(g usercontracts.Granting, svc authcontracts.Auth) {
-	held, ok := g.(*usercontracts.GrantingFunc)
-	if !ok || held == nil {
-		// A hand-written Granting answers its own question; there is nothing
-		// here to fill, and the composition that wrote it decided who may
-		// promote in its own file.
-		return
-	}
-	held.Ask = func(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error) {
-		p, hasPrincipal := tenancy.PrincipalFrom(ctx)
-		t, hasTenant := tenancy.FromContext(ctx)
-		if !hasPrincipal || p.UserID == uuid.Nil || !hasTenant {
-			return false, nil
+// mailedLinksOpen writes the two Deps fields whose value is not a service the
+// composition resolved but a choice this installation made: the page a mailed link
+// opens, whose two addresses come from the composition — the only party that knows
+// what it mounted — and whose colours and words come from the skin the resolved
+// composition answered with, the same value the admin shell and the public site
+// draw themselves from; and which public signup door this installation mounted,
+// which is a composed module of its own (Registration, EmailRegistration,
+// ApprovalRegistration) because three mutually exclusive Deps fields were one
+// decision written three ways. Both halves are optional, and an installation that
+// named neither gets what an empty Deps field always gave: a bare document, and no
+// door.
+func mailedLinksOpen(deps *Deps, w *pkit.Wiring) {
+	chrome := pkit.Get[authcontracts.ConfirmationChrome](w)
+	if chrome.Assets != "" || chrome.SignIn != "" {
+		skin := w.Skin()
+		deps.Pages = Pages{
+			Theme: skin.Theme, Assets: chrome.Assets, SignIn: chrome.SignIn, Messages: skin.Copy,
 		}
-		return svc.Allowed(ctx, t, tenancy.Grant{Permission: authcontracts.PermissionRoleManage})
+	}
+	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
+	case authcontracts.EmailRegistrationMode:
+		deps.EmailRegistration = mode.Policy
+	case authcontracts.ApprovalRegistrationMode:
+		deps.ApprovalRegistration = mode.Policy
+	case authcontracts.PasswordRegistration:
+		deps.Registration = mode.Users
 	}
 }
 
@@ -211,7 +196,7 @@ func MailedLinksOpen(pages LinkPages) *pkit.Module {
 // provisions is the one each names.
 
 // Registration is member signup with emailed password setup.
-var Registration = door("registration", func(users usercontracts.Service) authcontracts.RegistrationMode {
+var Registration = door("registration", func(users usercontracts.RegistrationUsers) authcontracts.RegistrationMode {
 	return authcontracts.PasswordRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}
 })
 
@@ -219,7 +204,7 @@ var Registration = door("registration", func(users usercontracts.Service) authco
 // confirmation. A composition that turns it off takes the three inquiry aliases
 // out with it — /api/v1/auth/register, /resend-verification and /verify-email —
 // and the case that asks the running server each one answers says so.
-var EmailRegistration = door("emailregistration", func(users usercontracts.Service) authcontracts.RegistrationMode {
+var EmailRegistration = door("emailregistration", func(users usercontracts.EmailRegistrar) authcontracts.RegistrationMode {
 	policy, err := (&authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}).Checked()
 	if err != nil {
 		panic(err)
@@ -229,7 +214,7 @@ var EmailRegistration = door("emailregistration", func(users usercontracts.Servi
 
 // ApprovalRegistration accepts a password, a confirmation and a terms consent
 // and keeps the account pending for review. It needs no mail delivery.
-var ApprovalRegistration = door("approvalregistration", func(users usercontracts.Service) authcontracts.RegistrationMode {
+var ApprovalRegistration = door("approvalregistration", func(users usercontracts.PendingRegistrar) authcontracts.RegistrationMode {
 	policy, err := (&authcontracts.ApprovalRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}).Checked()
 	if err != nil {
 		panic(err)
@@ -240,18 +225,12 @@ var ApprovalRegistration = door("approvalregistration", func(users usercontracts
 // door is the shape all three share: the people it writes through come from the
 // user module, and what it puts is the finished policy, so no half-filled door
 // is ever mounted.
-func door(name string, mode func(usercontracts.Service) authcontracts.RegistrationMode) *pkit.Module {
+func door[T any](name string, mode func(T) authcontracts.RegistrationMode) *pkit.Module {
 	return pkit.NewModule(name, func(w *pkit.Wiring) (module.Module, error) {
-		pkit.Put[authcontracts.RegistrationMode](w, mode(pkit.Get[usercontracts.Service](w)))
+		pkit.Put[authcontracts.RegistrationMode](w, mode(pkit.Get[T](w)))
 		return module.Module{Name: name}, nil
 	},
-		pkit.Needs[usercontracts.Service](),
+		pkit.Needs[T](),
 		pkit.Provides[authcontracts.RegistrationMode](),
 	)
-}
-
-func fillInvitationAuthority(authority usercontracts.InvitationAuthority, svc *internal.Service) {
-	if holder, ok := authority.(*usercontracts.InvitationAuthorityFunc); ok && holder != nil {
-		holder.Ask = svc.InspectInvitationAuthority
-	}
 }

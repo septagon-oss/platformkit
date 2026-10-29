@@ -21,7 +21,7 @@ The traced consumer at `ba21b010357a4a07898bcd175bae116e96378f74` is
 [Task's rest.Spec](../../modules/task/module.go) →
 [guarded resource reads](../../kit/rest/screens.go) →
 [generated screens](../screens/screens.go) →
-[resource.List](../resource/resource.go) → [TableWithSlots](table.go).
+[resource.List](../resource/list.go) → [TableWithSlots](table.go).
 Admin's [authorized gallery](../../modules/admin/internal/gallery.go) is the
 existing catalogue consumer. The trace's focused tests passed before this phase.
 Table already owns rich cells and sorting links, but its selection hooks lack a

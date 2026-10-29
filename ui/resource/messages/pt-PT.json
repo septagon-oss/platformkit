@@ -91,13 +91,18 @@
   },
   "screens.history.restored": {
     "references": ["ui/resource/history.go"],
-    "translation": "Restaurado de",
-    "plural": { "": "Restaurado de" }
+    "translation": "Restaurada desde a versão %[1]d",
+    "plural": { "": "Restaurada desde a versão %[1]d" }
   },
   "screens.history.unchanged": {
     "references": ["ui/resource/history.go"],
     "translation": "Nenhum campo alterado.",
     "plural": { "": "Nenhum campo alterado." }
+  },
+  "screens.command_in_locale": {
+    "references": ["ui/resource/commands.go"],
+    "translation": "%[1]s (%[2]s)",
+    "plural": { "": "%[1]s (%[2]s)" }
   },
   "screens.command_saved": {
     "references": ["ui/screens/command_output.go"],
@@ -108,5 +113,187 @@
     "references": ["ui/screens/command_output.go"],
     "translation": "Continuar",
     "plural": { "": "Continuar" }
+  },
+  "screens.missing": {
+    "references": ["ui/screens/catalog.go"],
+    "translation": "—",
+    "plural": { "": "—" }
+  },
+  "screens.true": {
+    "references": ["ui/screens/catalog.go"],
+    "translation": "Sim",
+    "plural": { "": "Sim" }
+  },
+  "screens.false": {
+    "references": ["ui/screens/catalog.go"],
+    "translation": "Não",
+    "plural": { "": "Não" }
+  },
+  "screens.empty_title": {
+    "references": ["ui/screens/catalog.go"],
+    "translation": "—",
+    "plural": { "": "—" }
+  },
+  "screens.now": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "agora",
+    "plural": {
+      "": "agora"
+    }
+  },
+  "screens.remove_filter": {
+    "references": [
+      "ui/resource/list.go"
+    ],
+    "translation": "Remover filtro %s",
+    "plural": {
+      "": "Remover filtro %s"
+    }
+  },
+  "screens.relative.second_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundo",
+    "plural": {
+      "": "há %d segundo"
+    }
+  },
+  "screens.relative.second_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundo",
+    "plural": {
+      "": "dentro de %d segundo"
+    }
+  },
+  "screens.relative.seconds_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundos",
+    "plural": {
+      "": "há %d segundos"
+    }
+  },
+  "screens.relative.seconds_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundos",
+    "plural": {
+      "": "dentro de %d segundos"
+    }
+  },
+  "screens.relative.minute_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minuto",
+    "plural": {
+      "": "há %d minuto"
+    }
+  },
+  "screens.relative.minute_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minuto",
+    "plural": {
+      "": "dentro de %d minuto"
+    }
+  },
+  "screens.relative.minutes_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minutos",
+    "plural": {
+      "": "há %d minutos"
+    }
+  },
+  "screens.relative.minutes_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minutos",
+    "plural": {
+      "": "dentro de %d minutos"
+    }
+  },
+  "screens.relative.hour_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d hora",
+    "plural": {
+      "": "há %d hora"
+    }
+  },
+  "screens.relative.hour_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d hora",
+    "plural": {
+      "": "dentro de %d hora"
+    }
+  },
+  "screens.relative.hours_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d horas",
+    "plural": {
+      "": "há %d horas"
+    }
+  },
+  "screens.relative.hours_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d horas",
+    "plural": {
+      "": "dentro de %d horas"
+    }
+  },
+  "screens.relative.day_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dia",
+    "plural": {
+      "": "há %d dia"
+    }
+  },
+  "screens.relative.day_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dia",
+    "plural": {
+      "": "dentro de %d dia"
+    }
+  },
+  "screens.relative.days_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dias",
+    "plural": {
+      "": "há %d dias"
+    }
+  },
+  "screens.relative.days_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dias",
+    "plural": {
+      "": "dentro de %d dias"
+    }
   }
 }

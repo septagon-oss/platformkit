@@ -1,5 +1,26 @@
 # Auth module
 
+## Composition
+
+Compose `auth.Grants` before `user.Module` and `auth.Module` in the application's
+`Use` list. The resolver orders the independent `authgrants` provider before both
+consumers. It publishes `contracts.GrantAuthorizer` and `contracts.PermissionReader`,
+`usercontracts.Granting` and `usercontracts.Administration`; it opens no resources
+and owns no migrations. The role tables remain in Auth's migration set.
+
+**Reused** — `kit/tenancy`, the existing role queries, `usercontracts.CheckedAdministration`,
+request transactions and pkit's typed declarations carry the policy and composition.
+**Added** — [the grant decision](contracts/grants.go) separates permission decisions
+from session construction, which previously prevented User from constructing independently.
+**Made reusable** — provider-owned [capabilities](contracts/capabilities.go), a shared
+fake/SQL grant suite and `RepairSeededRolesWith` let consumers request only their operations.
+
+`New` accepts `Authorization` and `Permissions` together; omitting both creates the
+same independent policy locally for compatible callers, while a partial pair panics.
+The policy reads the explicit tenant transaction, honors a non-nil credential ceiling,
+and requires explicit permissions for operator grants. `Service` and `Auth` remain
+deprecated aggregates. Registration providers request only their chosen User capability.
+
 `modules/auth` is signing in: sessions and passwords, single sign-on through
 each tenant's own OpenID Connect or SAML provider (the installation may name one
 of its own over OIDC, and a tenant's row names another of either kind), the roles
@@ -97,6 +118,44 @@ loop is gone and its caller moved to `Grants` rather than a second one being
 written. Two other walks of `m.Permissions` remain, and they are different
 questions: `validatePermissions` wants a kind per key and `module.Valid` wants an
 owner and a duplicate check, neither of which `Grants` produces.
+
+## Composition
+
+**Reused** — the module's own `503 "account email delivery is unavailable"` refusal and its
+no-write path, which is the whole of what every door now answers with; `contracts.Mailer`,
+`contracts.Hosts` and `contracts.MailLedger` as the capabilities they are; and the
+`pkit.Needs` / `pkit.Get` edge the module already declared for the sender.
+
+**Added** — `contracts.MailDelivery` in `Deps` and one predicate,
+`internal.Delivery.deliversAccountMail()`, because a composition holds a `Mailer` whether or
+not the deployment named a mail host, so the nil check these doors read could no longer be
+true and an installation that can never mail was answering 202, committing an account and an
+address-bearing event. The predicate is fail-closed: a port nobody wired reads as "nothing is
+delivered", the same answer as a deployment with no mail host.
+
+**Made reusable** — `authtest.Delivers` and `authtest.Undelivers`, `Mailbox.Undeliverable`
+and `authtest.NoMailDetail`, and one conformance case that the fake and the SQL-backed
+service must answer alike: the next fixture says which installation it stands in, and the
+promise a mail-less installation cannot keep is refused by both implementations or by neither.
+
+Which doors ask it: sign-up at `POST /api/v1/public/auth/register` (both the email-confirmation
+mode and the invitation mode), `POST /api/v1/public/auth/resend-verification`, and the
+forgotten-password request. The last is refused by `Service.Forget` itself, before it
+publishes: the acknowledgment that route answers with promises a mail, and an outbox row no
+installation can discharge is a promise kept in a table and broken in the world. The refusal
+rolls the caller's transaction back and publishes nothing — the event lives in that
+transaction, so a refused request leaves no token and no ledger row either. It is asked inside
+the command rather than on the route because the route is mounted against the frozen
+`contracts.Service`, which every installation's own wiring already answers.
+What is deliberately left alone: approval sign-up, which commits a pending account and promises
+an operator's decision rather than a mail. The password travels to the user owner inside that
+request, so the account it commits already holds the credential its person chose, and
+`Service.Offer` sends a set-password link only to a person in `user.invited` — nothing in this
+module ever mails the approved one, so the door is asked nothing it cannot keep. Refusing it
+would turn down a promise the installation can honour; the same installation still refuses the
+three emailed doors beside it, which is the boundary a case holds. Also left alone: the redeem
+doors, which consume a credential somebody was already sent, and the mails raised inside a
+transaction, which still reach the carrier and are recorded `suppressed` where nothing delivers.
 
 ## Authorization
 
@@ -700,6 +759,20 @@ answers `crud.ErrNotFound`, where `RevokeToken` answers success —
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and
   that it was stopped.
+
+## The two mails this module sends itself
+
+Decision 0022, for this delivery. **Reused:** `events.Defer` for the hand-off,
+`db.ConnFrom` for the connection a post-commit write needs (the same position
+`forget` already used through `httpx.ConnFrom`), `pendingLinkOf` and the
+compare-and-delete that protects a link the person already holds, `recordMail` and
+its redaction unchanged, and `created_at` as the column both resend caps read: the
+hand-off moved the send out of the minting transaction, but a cap that read a stamp
+written by a *later* transaction would stop binding for the work still inside the
+minting one, and one transaction that minted twice would mail twice. What answers a
+refused send is the withdraw, not a column. **Made reusable:** `linkMail`, the one
+shape of "everything read inside the transaction, only the send deferred", which any
+future credential link in this module takes instead of rediscovering the ordering.
 
 ## Invitation credentials and readings
 

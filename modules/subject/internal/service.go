@@ -41,9 +41,9 @@ import (
 // "which requests exist", and the request rows are a door's business — the door
 // this module has no opinion about yet.
 type service struct {
-	invitationRetention usercontracts.InvitationRetention
 	parts               []personaldata.Part
-	people              usercontracts.Service
+	people              usercontracts.RetainedLookup
+	invitationRetention usercontracts.InvitationRetention
 	now                 func() time.Time
 
 	// bundles and notifier are the two ports the door needs and the two commands do not:
@@ -56,11 +56,11 @@ type service struct {
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
-	InvitationRetention usercontracts.InvitationRetention
 	// Parts are the contributions every owner of a person's rows handed over.
 	Parts []personaldata.Part
 	// People is the one read across the boundary: the address and the name.
-	People usercontracts.Service
+	People              usercontracts.RetainedLookup
+	InvitationRetention usercontracts.InvitationRetention
 	// Now is the clock the bundle's manifest, the receipt and the link's expiry are
 	// stamped with; nil means db.Now. A command that reads its own watch is a command a
 	// test cannot stop at one instant.
@@ -97,7 +97,7 @@ func NewService(d Deps) contracts.Service {
 		}
 		seen[p.Module] = true
 	}
-	return &service{invitationRetention: d.InvitationRetention, parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}
+	return &service{parts: own, people: people, invitationRetention: d.InvitationRetention, now: now, bundles: d.Bundles, notifier: d.Notes}
 }
 
 // person reads the strings the contributors must stop finding, and is the reason

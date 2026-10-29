@@ -31,7 +31,14 @@ func reviewResource() httpx.Resource {
 
 func TestDeckCatalogueGolden(t *testing.T) {
 	r := reviewResource()
-	doc := screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{screens.Describe1(r, true)}}
+	// A stepped form is a member a client reads out of the served document, so one is
+	// recorded here beside the hints this entry already declares: the shape stays a
+	// resolution of a declared hint rather than a hand-written answer, and a reader of
+	// the published components can ask the forms members about a body that holds one.
+	r.Present.Forms = &entity.FormsHints{Update: &entity.FormHints{Layout: "steps",
+		Steps: []entity.FormStepHints{{PrimaryLabel: "Save the note"}}}}
+	entry := screens.Describe1(r, true)
+	doc := screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{entry}}
 	got, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -50,8 +57,14 @@ func TestDeckCatalogueGolden(t *testing.T) {
 	if string(got) != string(want) {
 		t.Fatalf("deck catalogue differs from %s:\n%s", golden, got)
 	}
-	if strings.Contains(string(got), "undoable") || strings.Contains(string(got), "resolved") {
-		t.Fatal(string(got))
+	// A deck that cannot undo prints no `undoable` among the declared hints; the
+	// resolved block states every key, so only `presentation` is checked.
+	declared, err := json.Marshal(entry.Presentation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(declared), "undoable") {
+		t.Fatal(string(declared))
 	}
 }
 

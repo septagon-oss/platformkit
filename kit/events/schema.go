@@ -1,21 +1,7 @@
-// schema.go projects an event's payload type into JSON Schema 2020-12 and
-// checks a payload against that projection.
-//
-// The schema is derived, never written. A checked-in document beside a Go type
-// is a second source of truth, and the two drift in the direction that is not
-// caught: the Go type moves, the document does not, and the outbox then refuses
-// the payload the program actually means to publish. So the projection reads
-// reflect.Type and reads it the way encoding/json will: same json tags, same
-// omitempty, same embedded-flattening, same unexported-field rule. What a
-// publisher can produce and what a validator accepts are then one description.
-//
-// The subset is deliberate and small: the six JSON types, formats for the three
-// shapes this program puts in a payload (uuid, date-time, and the base64 a byte
-// string marshals to), no enum inference, and additionalProperties stays open. An
-// open object is not laziness — a payload that gained a field is a payload whose
-// subscriber reads the field it came for, while a payload whose email is a
-// number or that lost its userId is a subscriber that guessed. Refusing the
-// second and admitting the first is the whole job here.
+// Payload schemas project Go types using encoding/json field semantics. The
+// supported JSON types and uuid, date-time and byte formats constrain known
+// members; unknown projections and additional object properties stay open.
+// See README.md for the published payload contract.
 package events
 
 import (
@@ -154,25 +140,9 @@ func project(t reflect.Type) *Schema {
 				continue
 			}
 			if f.Tag.Get("hidden") == "true" && f.Tag.Get("readOnly") == "true" {
-				// The pair, and not hidden alone. hidden is huma's own tag, the
-				// one that keeps a member out of the OpenAPI document; readOnly
-				// is the one that says no caller's body ever writes it either.
-				// Together they name a member the kernel fills in on a read path
-				// — entity.Base's `_i18n` — which is text no publisher ever
-				// promises, and a projection that read only `json:` would put it
-				// into the payload schema of every event whose payload embeds an
-				// entity.
-				//
-				// hidden alone does not say that, and the diff member proves it:
-				// `changes` is hidden because no REST response body ever holds
-				// it (kit/events/change.go's Recorder), and the CRUD door does
-				// write it into the payload it publishes, so a projection that
-				// dropped every hidden member would take a promise the
-				// integration contract already makes.
-				//
-				// What is skipped stays marshalled: encoding/json reads no such
-				// tag, so a payload that carries the member is still accepted —
-				// additionalProperties is open — it is simply not promised.
+				// Only hidden plus readOnly excludes a member from the promised payload.
+				// A hidden writable diff is still published. Exclusion does not reject extra
+				// JSON members because additional properties remain open.
 				continue
 			}
 			if f.Anonymous && name == "" {
@@ -308,12 +278,6 @@ func (s *Schema) check(path string, v any) error {
 		// a nil dereference inside the publisher's own transaction.
 		return nil
 	}
-	at := func(field string) string {
-		if path == "" {
-			return "$." + field
-		}
-		return path + "." + field
-	}
 	if v == nil {
 		// A null that reached here arrived as a declared, present field whose
 		// value was null, or as the whole payload. Either way the schema says
@@ -324,83 +288,18 @@ func (s *Schema) check(path string, v any) error {
 	case "":
 		return nil
 	case "object":
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return fmt.Errorf("%s is %s, want an object", orRoot(path), jsonKind(v))
-		}
-		for _, p := range s.Properties {
-			got, present := obj[p.Name]
-			if !present {
-				if p.Required {
-					return fmt.Errorf("%s is missing, and %s must be there", at(p.Name), p.Name)
-				}
-				continue
-			}
-			if got == nil {
-				continue // an explicit null in an optional field is its absent form
-			}
-			if err := p.Schema.check(at(p.Name), got); err != nil {
-				return err
-			}
-		}
-		if s.Values != nil {
-			for k, got := range obj {
-				if err := s.Values.check(at(k), got); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return s.checkObject(path, v)
 	case "array":
-		items, ok := v.([]any)
-		if !ok {
-			return fmt.Errorf("%s is %s, want an array", orRoot(path), jsonKind(v))
-		}
-		for i, item := range items {
-			if err := s.Items.check(fmt.Sprintf("%s[%d]", orRoot(path), i), item); err != nil {
-				return err
-			}
-		}
-		return nil
+		return s.checkArray(path, v)
 	case "string":
-		text, ok := v.(string)
-		if !ok {
-			return fmt.Errorf("%s is %s, want a string", orRoot(path), jsonKind(v))
-		}
-		switch s.Format {
-		case "uuid":
-			if _, err := uuid.Parse(text); err != nil {
-				return fmt.Errorf("%s %q is not a UUID", orRoot(path), text)
-			}
-		case "date-time":
-			if _, err := time.Parse(time.RFC3339Nano, text); err != nil {
-				return fmt.Errorf("%s %q is not an RFC 3339 timestamp", orRoot(path), text)
-			}
-		case "byte":
-			// encoding/json writes a []byte as padded standard base64, which is
-			// what the document promises; anything else in that member arrived
-			// by another route and is not the bytes the type declared.
-			if _, err := base64.StdEncoding.DecodeString(text); err != nil {
-				return fmt.Errorf("%s %q is not base64, which is how a byte string marshals", orRoot(path), text)
-			}
-		}
-		return nil
+		return s.checkString(path, v)
 	case "boolean":
 		if _, ok := v.(bool); !ok {
 			return fmt.Errorf("%s is %s, want a boolean", orRoot(path), jsonKind(v))
 		}
 		return nil
 	case "integer", "number":
-		num, ok := v.(json.Number)
-		if !ok {
-			return fmt.Errorf("%s is %s, want %s", orRoot(path), jsonKind(v), s.Type)
-		}
-		if s.Type == "integer" {
-			if _, err := num.Int64(); err != nil {
-				return fmt.Errorf("%s %s is not an integer", orRoot(path), num)
-			}
-		}
-		return nil
+		return s.checkNumber(path, v)
 	}
 	return nil
 }
@@ -439,4 +338,91 @@ func jsonKind(v any) string {
 		return "a number"
 	}
 	return "JSON " + fmt.Sprintf("%T", v)
+}
+
+func (s *Schema) checkObject(path string, v any) error {
+	at := func(field string) string {
+		if path == "" {
+			return "$." + field
+		}
+		return path + "." + field
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s is %s, want an object", orRoot(path), jsonKind(v))
+	}
+	for _, p := range s.Properties {
+		got, present := obj[p.Name]
+		if !present {
+			if p.Required {
+				return fmt.Errorf("%s is missing, and %s must be there", at(p.Name), p.Name)
+			}
+			continue
+		}
+		if got == nil {
+			continue // an explicit null in an optional field is its absent form
+		}
+		if err := p.Schema.check(at(p.Name), got); err != nil {
+			return err
+		}
+	}
+	if s.Values != nil {
+		for k, got := range obj {
+			if err := s.Values.check(at(k), got); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Schema) checkArray(path string, v any) error {
+	items, ok := v.([]any)
+	if !ok {
+		return fmt.Errorf("%s is %s, want an array", orRoot(path), jsonKind(v))
+	}
+	for i, item := range items {
+		if err := s.Items.check(fmt.Sprintf("%s[%d]", orRoot(path), i), item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Schema) checkString(path string, v any) error {
+	text, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("%s is %s, want a string", orRoot(path), jsonKind(v))
+	}
+	switch s.Format {
+	case "uuid":
+		if _, err := uuid.Parse(text); err != nil {
+			return fmt.Errorf("%s %q is not a UUID", orRoot(path), text)
+		}
+	case "date-time":
+		if _, err := time.Parse(time.RFC3339Nano, text); err != nil {
+			return fmt.Errorf("%s %q is not an RFC 3339 timestamp", orRoot(path), text)
+		}
+	case "byte":
+		// encoding/json writes a []byte as padded standard base64, which is
+		// what the document promises; anything else in that member arrived
+		// by another route and is not the bytes the type declared.
+		if _, err := base64.StdEncoding.DecodeString(text); err != nil {
+			return fmt.Errorf("%s %q is not base64, which is how a byte string marshals", orRoot(path), text)
+		}
+	}
+	return nil
+}
+
+func (s *Schema) checkNumber(path string, v any) error {
+	num, ok := v.(json.Number)
+	if !ok {
+		return fmt.Errorf("%s is %s, want %s", orRoot(path), jsonKind(v), s.Type)
+	}
+	if s.Type == "integer" {
+		if _, err := num.Int64(); err != nil {
+			return fmt.Errorf("%s %s is not an integer", orRoot(path), num)
+		}
+	}
+	return nil
 }

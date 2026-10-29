@@ -328,25 +328,18 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 
 	// Every need is resolved for every living module, the module that runs
 	// after everything included: it is built last, so whatever it needs is
-	// already placed when it is asked for. Skipping it is how its own need
-	// went unanswered — built with the zero value, and no sentence about it.
+	// already placed when it is asked for, and skipping it is how its own need
+	// went unanswered — built with the zero value, no sentence.
 	//
-	// A need with one supplier is an edge; with none it is the missing
-	// sentence, unless the supplier exists but could not itself be resolved,
-	// which is the follow-on error that stays unsaid. With several suppliers it
-	// is the ambiguity sentence, said once for the contract. Nothing changes
-	// until the composition settles, so an unmet need withdraws its supplier's
-	// takers too: a module whose settled supplier died under a refusal that
-	// named it is not built either, and says nothing, because the composition
-	// said that once already. An optional need of such a supplier simply goes
-	// unfilled, the way it does when no provider is composed at all.
+	// One supplier is an edge, none is the missing sentence (unless the supplier
+	// exists but could not itself be resolved, the follow-on that stays unsaid),
+	// several is the ambiguity sentence, said once for the contract. An unmet
+	// need withdraws its supplier's takers too, and an optional need of such a
+	// supplier goes unfilled, the way it does when no provider is composed.
 	//
-	// Refused in the same sweep is any dependency on the module that runs
-	// after everything, whichever way it is spelled. 0074's table carries two
-	// rows no one module can both hold — "built after every other module" and
-	// "many contribute to it, and the one is built after all of them":
-	// whoever depends on the module that runs after everything would have to
-	// be built after it, which no order holds.
+	// Refused in the same sweep is any dependency on the module that runs after
+	// everything, whichever way it is spelled: whoever depended on it would have
+	// to be built after it, which no order holds.
 	for {
 		changed := false
 		for _, m := range lives {

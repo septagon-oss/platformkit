@@ -22,8 +22,8 @@ package internal_test
 // permanent would fail it too, and a door belonging to one registration policy
 // and not the other would fail the third. The third composition is the one the
 // reference application runs — apps/platformkit/modules.go chooses
-// EmailRegistration — so the two mailbox doors its sign-up page posts to are
-// named here instead of being mounted in a composition no record reads.
+// EmailRegistration — so the doors its own mailbox confirmation adds are named
+// here instead of being mounted in a composition no record reads.
 
 import (
 	"sort"
@@ -108,24 +108,29 @@ var issuerLegs = map[string]bool{
 	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String(): true,
 }
 
-// mailboxDoors are the three public operations the email-confirmation policy adds
-// beside the /register address it shares with the open policy, and which the
-// open policy does not mount at all. The third is the read of the notification
-// module's record of the mail the other two asked for: it answers the caller's
-// own request id with one word, and the same policy mounts it because a delivery
-// record no door reads is a table nobody will consult.
+// mailboxDoors are the five public operations the email-confirmation policy adds beside
+// the /register address it shares with the open policy, and which the open policy does
+// not mount at all: the two JSON doors its sign-up page posts to, and the page the
+// mailed link opens with the form on it — the module mounts both in that policy's mount
+// alone, because the credential the page spends is that policy's, and wholeSurface is
+// what the open policy answers. The fifth is the read of the notification module's
+// record of the mail those two asked for: it answers the caller's own request id with
+// one word, and the same policy mounts it because a delivery record no door reads is a
+// table nobody will consult.
 var mailboxDoors = []route{
 	{"public", "POST", "/api/v1/public/auth/resend-verification", "public"},
 	{"public", "POST", "/api/v1/public/auth/verify-email", "public"},
+	{"public", "GET", "/auth/verify-email", "public"},
+	{"public", "POST", "/auth/verify-email", "public"},
 	{"public", "POST", "/api/v1/public/auth/mail-delivery", "public"},
 }
 
 // TestTheMailboxRegistrationPolicyMountsItsOwnDoors reads the composition the
 // reference application actually runs: the email-confirmation policy rather than
-// the open register door, and no issuer. It answers with 24 operations again, of
-// which three are mailbox doors the table above does not carry and the two OIDC
-// legs are absent. This is the case that sees a route written into
-// email_registration.go, which neither of the other two compositions mounts.
+// the open register door, and no issuer. It answers with 34 operations — wholeSurface
+// less the two OIDC legs, plus the five mailbox doors. This is the case that sees a
+// route written into email_registration.go, and the page internal/ui writes beside it,
+// neither of which the other two compositions mount.
 func TestTheMailboxRegistrationPolicyMountsItsOwnDoors(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	_, _, _, api := mountRecorded(t, conn, auth.OIDC{}, false, emailSignup)

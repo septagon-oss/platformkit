@@ -1,53 +1,16 @@
 // Package telemetry is the kernel's measurement vocabulary: the attribute keys a
-// span carries, the request id every span can name, and the instruments the
-// three numbers this runtime promises are made of.
+// span carries, the request id every span can name, and the instruments the three
+// numbers this runtime promises are made of.
 //
-// It holds no provider, no exporter and no sampler. Those are chosen once, by
-// the composition, in kit/app — which is the package the brief of this runtime
-// names as the home of one TracerProvider and one MeterProvider. The split is
-// the reason this package exists: a kernel package that makes a span must not be
-// able to install the process's tracer, and it must not link an exporter it was
-// not chosen for. kit/httpx, kit/db, kit/events and kit/jobs import this one and
-// the OpenTelemetry API beside it; scripts/check_packages.sh is what refuses the
-// day that stops being true.
+// It holds no provider, no exporter and no sampler: those are chosen once, by the
+// composition, in kit/app. A kernel package that makes a span must not be able to
+// install the process's tracer or link an exporter it was not chosen for, and
+// scripts/check_packages.sh refuses the day that stops being true.
 //
-// # The two tenant keys
-//
-// pkit.tenant is the slug — the name a person reading a trace recognises — and
-// pkit.tenant.id is the UUID. Two keys, because a delivery has only the id its
-// event names and a request has both: one key carrying a slug on one span and a
-// UUID on the other cannot be filtered on by anybody who does not already know
-// which span they are looking at, which is the whole use of an attribute. A span
-// writes the slug only where the slug was learned, and never an invented one: a
-// host the resolver does not know has neither key, which is the honest answer.
-//
-// # Why the tenant is a span attribute and never a resource attribute
-//
-// A resource describes the *process*. This kernel is one process serving many
-// tenants (0028's shared-instance mode resolves a tenant per request, from the
-// host), so a tenant in the resource would either be a lie for every request but
-// one or a provider per tenant, which is the unpickable singleton the pillar
-// contract refuses. pkit.client is the one exception, and it is a deployment's
-// own fact rather than a request's: an installation that serves exactly one client
-// may name it in telemetry.client and get it on every span of that process; a
-// shared installation names nothing and reads the client off the tenant.
-//
-// # The request id travels as W3C Baggage
-//
-// Every span this kernel opens is a child of the span the request arrived with —
-// the SQL transaction, the tenant's share of a job, the publish — so the request
-// id is already one hop away on any trace viewer. It is *stamped* as well, on the
-// spans this kernel opens itself, because a job run has no request span to sit
-// under and an operator joins a log line to a trace by quoting the id the response
-// header carried. Baggage is the standard carrier for a correlation
-// value that is not a trace parent, it rides the composite propagator this package
-// installs, and nothing here puts a header, a query value or a body in it.
-//
-// One boundary has a request span to sit under and no way to inherit from it: a
-// delivery happens in another process, so the member is stored on the outbox row
-// beside the two W3C trace members (migrations/000028 and 000041) and read back
-// where the delivery's span is opened. A delivery span with a parent and no request
-// id on it is the half-measure this comment used to be.
+// The two tenant keys, why the tenant is a span attribute and never a resource one,
+// and what is deliberately absent are reasoned in README.md. The short forms: never
+// invent a slug, never put a tenant in the resource of a process that serves many,
+// and stamp the request id rather than escape it.
 package telemetry
 
 import (
@@ -72,19 +35,15 @@ const Scope = "github.com/septagon-oss/platformkit/kit/telemetry"
 //
 // It is a call and not a `var tracer = otel.Tracer(Scope)` in each package that
 // opens a span, because a tracer taken from the OpenTelemetry global before any
-// provider exists rebinds to the installed one exactly once — otel's
-// internal/global states it in those words, "It is guaranteed by the caller that
-// this happens only once". A kernel package that held such a tracer in a variable
-// would go on writing its spans to the *first* provider the process installed,
-// whatever the composition installs afterwards. For the process that boots
-// telemetry once before anything else touches it, that is the same answer as
-// asking each time; everywhere else it is silent and wrong: the spans the caller
-// opened arrive somewhere it cannot read, and nothing reports the difference. The
-// reader that installs a provider to see what this kernel emits is the common case
-// for the difference — a span recorder in a test, or a second boot in one process.
+// provider exists rebinds to the installed one exactly once: a package that held
+// such a tracer would go on writing spans to the *first* provider the process
+// installed. For a process that boots telemetry before anything touches it that is
+// the same answer as asking each time; everywhere else the spans arrive somewhere
+// the caller cannot read and nothing reports the difference — a span recorder in a
+// test, or a second boot in one process, is that elsewhere.
 //
-// Asking costs one lookup of the global and one small allocation beside the span
-// itself, which a transaction that costs a database round trip does not notice.
+// Asking costs one global lookup and one small allocation, which a transaction
+// that costs a database round trip does not notice.
 func Tracer() trace.Tracer { return otel.Tracer(Scope) }
 
 // The attribute keys this runtime writes. They are constants because an
@@ -114,25 +73,15 @@ func Propagators() propagation.TextMapPropagator {
 // request that caused it without the id being an argument.
 //
 // It writes a bag, not a member into whatever bag was already there, and every
-// answer it gives is a bag: the one member this kernel minted, or an empty one.
-// That is the point of the shape rather than its accident. Baggage is a *request*
-// header, and the propagator this package installs propagates it, so by the time
-// a router middleware calls this, ctx already holds the bag the caller sent — and
-// `baggage.New(m)` replaces that bag rather than adding to it. A version of this
-// function that handed back `ctx` unchanged when it had nothing to write left the
-// caller's own pkit.request.id as the only one below the router: every span
-// `RequestID` then stamped named a request nobody was answered for, and
-// kit/events injected the same value into the member migrations/000041 stores on
-// the outbox row and reads back onto the delivery span in another process.
+// answer it gives is a bag. That is the point of the shape: baggage is a request
+// header this package propagates, so by the time a router middleware calls this,
+// ctx already holds the bag the caller sent, and baggage.New(m) replaces that bag.
+// A version that returned ctx unchanged when it had nothing to write would leave
+// the caller's own id as the only one below the router, and every span stamped
+// below would name a request nobody was answered for.
 //
-// An id W3C will not carry is left uncarried rather than escaped — the value set
-// excludes ",", ";" and DQUOTE, and kit/httpx answers any printable ASCII a client
-// sends, so the two sets disagree for exactly those characters and for `\`. The
-// response header and the request's own span still name it; a correlation value
-// silently rewritten in transit would name a request nobody asked about, and a
-// caller's value standing in its place is the same lie with the sign reversed.
-// Nothing on the row is the ordinary case there, which is what
-// migrations/000041's "NULL is the ordinary case" is for.
+// An id W3C will not carry is left uncarried rather than escaped; the response
+// header and the request's own span still name it.
 func WithRequestID(ctx context.Context, id string) context.Context {
 	empty := baggage.Baggage{}
 	if id == "" {

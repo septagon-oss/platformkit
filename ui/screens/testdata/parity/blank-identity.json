@@ -1,0 +1,80 @@
+{
+ "name": "blank-identity",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:684bf83bfaf2ed72b140c65967ff523301a30c5e12047495c6b8b4dab31af152",
+  "expectedHash": "sha256:089a2027361023899bf1b203d09b688e538dd8e79f43220c02d907aaed29aa18"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "display": true
+    },
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [
+   {
+    "id": "r1",
+    "title": "  ",
+    "name": "Ada"
+   },
+   {
+    "id": "r2",
+    "title": null,
+    "name": ""
+   },
+   {
+    "id": "r3",
+    "title": "T",
+    "name": "N"
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "titles": {
+    "listCandidates": [
+     "title",
+     "name"
+    ],
+    "recordCandidates": [
+     "title",
+     "name"
+    ],
+    "emptyTitle": "—"
+   }
+  },
+  "rows": {
+   "r1": {
+    "listTitle": "Ada",
+    "recordTitle": "Ada"
+   },
+   "r2": {
+    "listTitle": "r2",
+    "recordTitle": "r2"
+   },
+   "r3": {
+    "listTitle": "T",
+    "recordTitle": "T"
+   }
+  }
+ }
+}

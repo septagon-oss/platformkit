@@ -1,0 +1,69 @@
+{
+ "name": "pictures-cover-thumbnail",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:8fdd679c783d69024cf8b51acd3453c988f3e41ca4c9176f7ba11f5e9d32b051",
+  "expectedHash": "sha256:d491c7f599bf1d44149dcab131b8d66c8c2adc1c4276e68ebfeaf11ea8b96b84"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "photo",
+     "type": "picture"
+    },
+    {
+     "name": "side",
+     "type": "picture"
+    }
+   ]
+  },
+  "hints": {
+   "CoverField": "photo"
+  },
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "titles": {
+    "cover": "photo",
+    "thumbnail": "photo"
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title"
+    },
+    {
+     "name": "photo",
+     "kind": "picture",
+     "control": ""
+    },
+    {
+     "name": "side"
+    }
+   ],
+   "layout": {
+    "information": [
+     "side"
+    ]
+   }
+  }
+ }
+}

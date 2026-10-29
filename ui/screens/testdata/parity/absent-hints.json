@@ -1,0 +1,139 @@
+{
+ "name": "absent-hints",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-25",
+  "inputHash": "sha256:a4aff6f0f1ba3a0dd6bcfce986475b972132bd82addb2e9ff37241fd9ab25bca",
+  "expectedHash": "sha256:ac1d4614bf9518f50972b7632b7cd52de4ecf73c9611da7bafdd65a1531a92f6"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "createdAt",
+     "type": "time",
+     "readOnly": true
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [
+   {
+    "id": "r1",
+    "title": "Hello"
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "policyVersion": 1,
+   "language": "en",
+   "identity": {
+    "singular": "note",
+    "plural": "notes",
+    "icon": "",
+    "order": 0
+   },
+   "titles": {
+    "listCandidates": [
+     "title"
+    ],
+    "recordCandidates": [
+     "title"
+    ],
+    "emptyTitle": "—",
+    "summary": []
+   },
+   "layout": {
+    "columns": [
+     "title",
+     "createdAt"
+    ],
+    "create": [
+     "title"
+    ],
+    "update": [
+     "title"
+    ]
+   },
+   "fields": [
+    {
+     "name": "id",
+     "label": "Id",
+     "editable": {
+      "create": false,
+      "update": false
+     }
+    },
+    {
+     "name": "title",
+     "label": "Title",
+     "control": "text",
+     "kind": "text"
+    },
+    {
+     "name": "createdAt",
+     "label": "Created at",
+     "control": "datetime",
+     "reading": {
+      "format": "datetime",
+      "time": {
+       "kind": "instant",
+       "relative": false
+      }
+     }
+    }
+   ],
+   "list": {
+    "defaultSort": "-createdAt",
+    "sorts": [
+     {
+      "query": "id"
+     },
+     {
+      "query": "-id",
+      "desc": true
+     },
+     {
+      "query": "title"
+     },
+     {
+      "query": "-title",
+      "desc": true
+     },
+     {
+      "query": "createdAt"
+     },
+     {
+      "query": "-createdAt",
+      "desc": true
+     }
+    ]
+   },
+   "commands": []
+  },
+  "rows": {
+   "r1": {
+    "listTitle": "Hello",
+    "recordTitle": "Hello",
+    "cells": {
+     "title": "Hello"
+    }
+   }
+  }
+ }
+}

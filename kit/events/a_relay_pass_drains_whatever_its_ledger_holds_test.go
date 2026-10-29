@@ -55,7 +55,7 @@ func TestARelayPassDrainsAQueueItsLedgerIsLargerThanOneStatement(t *testing.T) {
 	restore := swapLedger(map[lagKey]struct{}{})
 	t.Cleanup(restore)
 	for i := 0; i < 40000; i++ {
-		reportedSeries.remember(lagKey{tenant: uuid.New(), event: "review.round5_seeded." + strconv.Itoa(i)})
+		reportedSeries.remember(lagKey{tenant: uuid.New(), event: "series.seeded." + strconv.Itoa(i)})
 	}
 
 	transport := memory.New()
@@ -90,7 +90,7 @@ func TestStillWaitingAnswersALedgerLargerThanOneStatementCanName(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	reported := make(map[lagKey]struct{}, 40000)
 	for i := 0; i < 40000; i++ {
-		reported[lagKey{tenant: uuid.New(), event: "review.round5_seeded." + strconv.Itoa(i)}] = struct{}{}
+		reported[lagKey{tenant: uuid.New(), event: "series.seeded." + strconv.Itoa(i)}] = struct{}{}
 	}
 	err := db.RunSystem(t.Context(), conn, relayToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		waiting, err := stillWaiting(ctx, tx, reported)

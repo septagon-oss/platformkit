@@ -3,6 +3,7 @@ package authtest
 import (
 	"context"
 	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -55,6 +57,13 @@ type Fake struct {
 	// with none writes no token and sends nothing, exactly as the real service
 	// does.
 	Mailer contracts.Mailer
+
+	// MailDelivery is the carrier's own answer to whether it delivers, the same
+	// port internal.Delivery carries. The two fields are one object put twice in
+	// every real composition, which is what a fixture that wires one and not the
+	// other should read as: the fake asks this field and nothing else, so it and
+	// the real service can never answer the same Deps differently.
+	MailDelivery contracts.MailDelivery
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]contracts.Session
@@ -244,10 +253,28 @@ func (f *Fake) MayRedeem(ctx context.Context, ip string) contracts.Decision {
 
 // Forget mirrors internal.Service.Forget: it publishes and does nothing else,
 // which is what makes the public route cost the same for an address somebody
-// has and one nobody has.
+// has and one nobody has — and it refuses where no mail is delivered, because an
+// acknowledgment that promises a link is a promise this installation cannot keep.
 func (f *Fake) Forget(_ context.Context, _ db.Tx[db.Tenant], _ string) error {
+	if !f.deliversAccountMail() {
+		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
+	}
 	f.record(contracts.EventResetRequested)
 	return nil
+}
+
+// deliversAccountMail is the fake's read of the two ports the real service asks
+// — internal.Delivery.deliversAccountMail: a sender that could reach a mailbox
+// must exist (contracts.MailDeliverable), and the MailDelivery port must exist
+// and say it attempts what it is handed. It asks
+// the port rather than type-asserting the sender because the real service does:
+// a fake that asked the sender would answer a hand-built Deps by one rule and be
+// run against it by another, the disagreement the conformance case catches. A
+// port nobody wired reads as "nothing is delivered" — the service's own
+// fail-closed answer. The service also asks whether a host can build the link's
+// address; that half is the composition's, and the fake holds no Hosts to ask.
+func (f *Fake) deliversAccountMail() bool {
+	return contracts.MailDeliverable(f.Mailer) && f.MailDelivery != nil && f.MailDelivery.Available()
 }
 
 // Reissue mirrors internal.Service.Reissue: the lookup, in the worker.
@@ -646,6 +673,15 @@ func (n *Notices) Sent() []notificationcontracts.Notice {
 	return slices.Clone(n.sent)
 }
 
+// Delivers and Undelivers name the two installations a fixture can stand in, for
+// a caller that has no carrier to ask — a hand-built Deps, a composition that
+// answers the port itself. A carrier answers for itself instead: the SMTP sender
+// says yes and notification.Mailbox says no.
+var (
+	Delivers   contracts.MailDelivery = notificationcontracts.MailDeliveryFunc(func() bool { return true })
+	Undelivers contracts.MailDelivery = notificationcontracts.MailDeliveryFunc(func() bool { return false })
+)
+
 // Mailbox is a contracts.Mailer that records instead of sending, which is where
 // a conformance case reads the link an implementation mailed.
 //
@@ -655,7 +691,24 @@ func (n *Notices) Sent() []notificationcontracts.Notice {
 type Mailbox struct {
 	mu   sync.Mutex
 	sent []notificationcontracts.Message
+
+	// Undeliverable makes this recorder answer about itself the way a deployment
+	// with no mail host does: it keeps the message, and nothing leaves. A fixture
+	// that means "a relay is running" leaves it false, which is why every existing
+	// case that reads Mailed says nothing about it.
+	Undeliverable bool
 }
+
+// Available answers contracts.MailDelivery about this recorder, so a fixture that
+// wires one is saying which installation it is standing in rather than leaving a
+// caller to guess from the fact that a sender exists.
+func (m *Mailbox) Available() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.Undeliverable
+}
+
+var _ notificationcontracts.MailDelivery = (*Mailbox)(nil)
 
 // Send records the message.
 func (m *Mailbox) Send(_ context.Context, msg notificationcontracts.Message) error {

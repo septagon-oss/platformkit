@@ -6,15 +6,12 @@
 // clock is here (docs/adr/0004).
 //
 // Every replica in the worker role schedules every job and takes a Postgres
-// advisory lock named after it before running it. Whoever gets the lock runs;
-// the others log at Debug and go back to sleep. There is no leader election to
-// configure, no lease to renew and no split brain: the lock lives on the
-// connection that holds it, so a worker that dies releases it.
+// advisory lock named after it before running: whoever gets the lock runs and the
+// others sleep. There is no leader election to configure and no lease to renew,
+// because the lock lives on the connection that holds it and a worker that dies
+// releases it. A Parallel job skips the lock and brings its own control.
 //
-// A job that says Parallel skips the lock, because it has a concurrency control
-// of its own. There is one, and the reason is worth stating: a locked job that
-// blocks stops that job on every replica, so a job that does not need the lock
-// must not take it.
+// The [Job] example validates a schedule and invokes its work once.
 package jobs
 
 import (
@@ -208,20 +205,20 @@ func (s *Scheduler) run(ctx context.Context, j Job) {
 		span.End()
 	}()
 	if !j.Parallel {
-		unlock, ok, err := db.TryLock(ctx, s.conn, appname.JobLock(s.app, j.Name))
+		unlock, err := db.TryLockErr(ctx, s.conn, appname.JobLock(s.app, j.Name))
+		// The visible half of what an advisory lock costs, and the one no log level
+		// shows during an incident: this replica wanted to run the job and another
+		// one holds it. ErrHeld is that answer; any other error is the lock failing.
+		if errors.Is(err, db.ErrHeld) {
+			outcome = "another replica"
+			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
+			return
+		}
 		if err != nil {
 			outcome = "lock refused"
 			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return
-		}
-		if !ok {
-			// The visible half of what an advisory lock costs, and the one no log
-			// level shows during an incident: this replica wanted to run the job and
-			// another one holds it.
-			outcome = "another replica"
-			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
 			return
 		}
 		defer unlock()
@@ -246,30 +243,19 @@ type TenantLister interface {
 
 var listToken = syscap.NewSystemToken("list the tenants for periodic work")
 
-// PerTenant runs fn once per tenant, with the tenant already on the context it
-// is given, so fn opens as many transactions as it needs by calling db.Run and
-// never touches kit/tenancy itself.
+// PerTenant runs fn once per tenant, with the tenant already on the context it is
+// given, so fn opens its own transactions through db.Run and never touches
+// kit/tenancy itself. A job over every row of every tenant wants a transaction per
+// row, so one bad row does not roll back the good ones beside it, and db.Run joins
+// an enclosing tenant transaction rather than opening a second: handing fn a
+// transaction would force two passes and a tenancy.WithTenant of its own.
 //
-// That is the whole of it, and it is the shape periodic work actually has. A
-// job that visits every row of every tenant wants a transaction per row — one
-// bad row must not roll back the good ones beside it — and db.Run joins an
-// enclosing tenant transaction rather than opening a second, so a helper that
-// handed fn a transaction forced the module into two passes and a
-// tenancy.WithTenant of its own. Handing over the context and the connection
-// instead makes the per-row transaction the obvious thing to write.
+// The list is read and its transaction closed before the first tenant's work: a
+// tenant transaction cannot nest inside a system one, and a cross-tenant
+// transaction held for a whole job is the widest lock in the system.
 //
-// The list is read and its transaction closed before the first tenant's work
-// begins: a tenant transaction cannot nest inside a system one, and holding a
-// cross-tenant transaction open for the length of the whole job would be the
-// widest lock in the system.
-//
-// Partial progress is the intended outcome. One tenant's failure does not stop
-// the others: returning at the first meant a single tenant with bad data
-// stopped every tenant after it in the list, on every tick, forever, and the
-// order is whatever the lister returns, so which tenants those were was
-// arbitrary. Every failure is logged where it happened and they come back
-// joined, so the job still reports as failed and the work that could be done
-// was done.
+// Partial progress is the outcome: one tenant's failure does not stop the others,
+// each is logged where it happened and they come back joined.
 func PerTenant(ctx context.Context, conn *db.Conn, lister TenantLister,
 	fn func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error,
 ) error {

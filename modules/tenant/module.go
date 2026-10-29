@@ -12,7 +12,9 @@
 package tenant
 
 import (
+	"context"
 	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -108,7 +110,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// The one call in the application that takes cross-tenant access, at
 		// the one moment the kernel offers it, in the manifest a reviewer is
 		// already reading. See docs/adr/0006.
-		Routes: func(s httpx.Surfaces) { internal.RegisterRoutes(s.Ops, svc, deps.Invite, s.SystemToken()) },
+		Routes: func(s httpx.Surfaces) {
+			internal.RegisterRoutes(s.Ops, internal.RouteServices{Directory: svc, Creation: svc, Lifecycle: svc, Hosts: svc, Locale: svc, OIDC: svc, SAML: svc}, deps.Invite, s.SystemToken())
+		},
 	}
 }
 
@@ -116,4 +120,13 @@ func New(deps Deps) (contracts.Service, module.Module) {
 // there already is one. `platformkit bootstrap` is its only caller; it is
 // exported here rather than reached through Service so that "the write with no
 // caller to authorize" is one name a reviewer can grep for.
-var Bootstrap = internal.Bootstrap
+// Deprecated: use BootstrapWith with a Bootstrapper.
+var Bootstrap = func(ctx context.Context, tx db.Tx[db.System], svc contracts.Service, in contracts.NewTenant) (*contracts.Tenant, error) {
+	return BootstrapWith(ctx, tx, svc, in)
+}
+
+// BootstrapWith creates the operator tenant only in an empty installation.
+// The caller must hold the kernel bootstrap lock in its system transaction.
+func BootstrapWith(ctx context.Context, tx db.Tx[db.System], svc contracts.Bootstrapper, in contracts.NewTenant) (*contracts.Tenant, error) {
+	return internal.Bootstrap(ctx, tx, svc, in)
+}

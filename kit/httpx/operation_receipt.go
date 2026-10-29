@@ -50,26 +50,9 @@ func (a *API) operationAdmission(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	r, _ := humachi.Unwrap(ctx)
-	ceiling := int64(maxKeyedBody)
-	if raw == "" {
-		ceiling = max(ceiling, a.opts.MaxUpload)
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, ceiling+1))
-	if err != nil {
-		if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
-			a.refuse(ctx, http.StatusInternalServerError, "")
-			return
-		}
-		a.refuse(ctx, http.StatusBadRequest, "the write body could not be read")
+	body, ok := a.operationBody(ctx, r, raw)
+	if !ok {
 		return
-	}
-	if int64(len(body)) > ceiling {
-		a.refuse(ctx, http.StatusRequestEntityTooLarge, CodeIdempotencyTooLarge)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
-		carried.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	p, _ := tenancy.PrincipalFrom(ctx.Context())
 	caller := p.UserID
@@ -84,47 +67,10 @@ func (a *API) operationAdmission(ctx huma.Context, next func(huma.Context)) {
 		a.operationUnavailable(ctx, err)
 		return
 	}
-	if v.OperationRef != uuid.Nil {
-		ctx.SetHeader(OperationIDHeader, key)
-		if b, ok := bufferFrom(ctx.Context()); ok {
-			b.header.Set(OperationIDHeader, key)
-		}
-		if p.UserID != uuid.Nil {
-			location := "/api/v1/app/operations/me/" + v.OperationRef.String()
-			ctx.SetHeader(OperationLocationHeader, location)
-			if b, ok := bufferFrom(ctx.Context()); ok {
-				b.header.Set(OperationLocationHeader, location)
-			}
-		}
-	}
+	operationHeaders(ctx, key, v.OperationRef, p.UserID)
 	switch v.Kind {
 	case idempotency.First:
-		if v.OperationRef == uuid.Nil {
-			a.refuse(ctx, http.StatusConflict, CodeIdempotencySpent)
-			return
-		}
-		receipt := idempotency.Receipt{Ref: v.OperationRef, ID: key, Tenant: t.ID, Caller: caller, Person: p.UserID, Method: scope.Method, Route: scope.Route, Revision: 1, StartedAt: v.StartedAt}
-		detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx.Context())), 5*time.Second)
-		err = db.Run(detached, a.opts.Conn, func(c context.Context, tx db.Tx[db.Tenant]) error { return a.opts.Operations.Reserve(c, tx, receipt) })
-		cancel()
-		if err != nil {
-			a.operationUnavailable(ctx, err)
-			return
-		}
-		if err = a.opts.Idempotency.Begin(ctx.Context(), scope, v.Claim, at); err != nil {
-			a.operationUnavailable(ctx, err)
-			return
-		}
-		ctx = huma.WithContext(ctx, request.WithOperationClock(ctx.Context(), receipt.Operation(), a.opts.Clock))
-		noteClaim(ctx, a.opts.Idempotency, scope, v.Claim)
-		if n, ok := ctx.Context().Value(claimKey{}).(*claimNote); ok {
-			n.operation = true
-			n.noReplay = mintsACredential(ctx.Operation()) || !keyedMethod(ctx.Method()) || !keyedSurface(ctx.Context())
-		}
-		if b, ok := bufferFrom(ctx.Context()); ok {
-			b.mutation = true
-		}
-		next(ctx)
+		a.beginOperation(ctx, next, scope, v, p.UserID, at)
 	case idempotency.Replay:
 		a.replay(ctx, v.Stored)
 	case idempotency.ConflictBody:
@@ -184,4 +130,74 @@ func (a *API) failedOperation(n *claimNote) error {
 		}
 		return events.RecordOutcome(c, tx, r.Revision, request.Failed, a.opts.Clock())
 	})
+}
+
+func (a *API) operationBody(ctx huma.Context, r *http.Request, raw string) ([]byte, bool) {
+	ceiling := int64(maxKeyedBody)
+	if raw == "" {
+		ceiling = max(ceiling, a.opts.MaxUpload)
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, ceiling+1))
+	if err != nil {
+		if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
+			a.refuse(ctx, http.StatusInternalServerError, "")
+			return nil, false
+		}
+		a.refuse(ctx, http.StatusBadRequest, "the write body could not be read")
+		return nil, false
+	}
+	if int64(len(body)) > ceiling {
+		a.refuse(ctx, http.StatusRequestEntityTooLarge, CodeIdempotencyTooLarge)
+		return nil, false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
+		carried.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	return body, true
+}
+
+func operationHeaders(ctx huma.Context, key string, ref, person uuid.UUID) {
+	if ref != uuid.Nil {
+		ctx.SetHeader(OperationIDHeader, key)
+		if b, ok := bufferFrom(ctx.Context()); ok {
+			b.header.Set(OperationIDHeader, key)
+		}
+		if person != uuid.Nil {
+			location := "/api/v1/app/operations/me/" + ref.String()
+			ctx.SetHeader(OperationLocationHeader, location)
+			if b, ok := bufferFrom(ctx.Context()); ok {
+				b.header.Set(OperationLocationHeader, location)
+			}
+		}
+	}
+}
+
+func (a *API) beginOperation(ctx huma.Context, next func(huma.Context), scope idempotency.Scope, v idempotency.Verdict, person uuid.UUID, at time.Time) {
+	if v.OperationRef == uuid.Nil {
+		a.refuse(ctx, http.StatusConflict, CodeIdempotencySpent)
+		return
+	}
+	receipt := idempotency.Receipt{Ref: v.OperationRef, ID: scope.Key, Tenant: scope.Tenant, Caller: scope.Caller, Person: person, Method: scope.Method, Route: scope.Route, Revision: 1, StartedAt: v.StartedAt}
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx.Context())), 5*time.Second)
+	err := db.Run(detached, a.opts.Conn, func(c context.Context, tx db.Tx[db.Tenant]) error { return a.opts.Operations.Reserve(c, tx, receipt) })
+	cancel()
+	if err != nil {
+		a.operationUnavailable(ctx, err)
+		return
+	}
+	if err = a.opts.Idempotency.Begin(ctx.Context(), scope, v.Claim, at); err != nil {
+		a.operationUnavailable(ctx, err)
+		return
+	}
+	ctx = huma.WithContext(ctx, request.WithOperationClock(ctx.Context(), receipt.Operation(), a.opts.Clock))
+	noteClaim(ctx, a.opts.Idempotency, scope, v.Claim)
+	if n, ok := ctx.Context().Value(claimKey{}).(*claimNote); ok {
+		n.operation = true
+		n.noReplay = mintsACredential(ctx.Operation()) || !keyedMethod(ctx.Method()) || !keyedSurface(ctx.Context())
+	}
+	if b, ok := bufferFrom(ctx.Context()); ok {
+		b.mutation = true
+	}
+	next(ctx)
 }

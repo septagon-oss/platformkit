@@ -116,13 +116,13 @@ func MountReviews(s httpx.Surfaces, p Pages) {
 	propose := httpx.Permission(contracts.PermissionChangePropose)
 	decide := httpx.Permission(contracts.PermissionChangeDecide)
 
-	page.Serve(s.App, p.Shell, page.Route{ID: "change-proposal-queue", Method: http.MethodGet,
+	page.Serve(s.App, p.Shell, page.Route{View: contracts.Screen("queue"), ID: "change-proposal-queue", Method: http.MethodGet,
 		Path: "/proposals", Summary: "The changes waiting for a decision", Errors: queueFaults}, read,
 		func(ctx context.Context, r page.Request, in *queueInput) (page.View, error) {
 			return p.queue(ctx, r, where, in.Page)
 		})
 
-	page.Serve(s.App, p.Shell, page.Route{ID: "change-proposal-read", Method: http.MethodGet,
+	page.Serve(s.App, p.Shell, page.Route{View: contracts.Screen("proposal"), ID: "screen-change-proposal-read", Method: http.MethodGet,
 		Path: "/proposals/{id}", Summary: "One proposed change, to decide", Errors: decisionFaults}, read,
 		func(ctx context.Context, r page.Request, in *proposalInput) (page.View, error) {
 			return p.detail(ctx, r, where, in.ID, "")
@@ -132,7 +132,7 @@ func MountReviews(s httpx.Surfaces, p Pages) {
 	// gives: kit/httpx refuses an unsafe request carrying a session cookie unless it is
 	// same-site, and a <form> cannot send the verb the API route uses. The JSON commands
 	// stay exactly as they are for a client that can.
-	page.Serve(s.App, p.Shell, page.Route{ID: "change-proposal-review", Method: http.MethodPost,
+	page.Serve(s.App, p.Shell, page.Route{View: contracts.Screen("proposal"), ID: "screen-change-proposal-review", Method: http.MethodPost,
 		Path: "/proposals/{id}/review", Summary: "Approve or decline a proposed change",
 		Errors: decisionFaults}, decide, func(ctx context.Context, r page.Request, in *decisionForm) (page.View, error) {
 		sent, err := url.ParseQuery(string(in.RawBody))
@@ -152,7 +152,7 @@ func MountReviews(s httpx.Surfaces, p Pages) {
 		})
 	})
 
-	page.Serve(s.App, p.Shell, page.Route{ID: "change-proposal-apply", Method: http.MethodPost,
+	page.Serve(s.App, p.Shell, page.Route{View: contracts.Screen("proposal"), ID: "screen-change-proposal-apply", Method: http.MethodPost,
 		Path: "/proposals/{id}/apply", Summary: "Apply an approved change",
 		Errors: decisionFaults}, decide, func(ctx context.Context, r page.Request, in *decisionForm) (page.View, error) {
 		sent, err := url.ParseQuery(string(in.RawBody))
@@ -169,7 +169,7 @@ func MountReviews(s httpx.Surfaces, p Pages) {
 		})
 	})
 
-	page.Serve(s.App, p.Shell, page.Route{ID: "change-proposal-withdraw", Method: http.MethodPost,
+	page.Serve(s.App, p.Shell, page.Route{View: contracts.Screen("proposal"), ID: "screen-change-proposal-withdraw", Method: http.MethodPost,
 		Path: "/proposals/{id}/withdraw", Summary: "Take a proposal back",
 		Errors: decisionFaults}, propose, func(ctx context.Context, r page.Request, in *decisionForm) (page.View, error) {
 		sent, err := url.ParseQuery(string(in.RawBody))
@@ -437,16 +437,16 @@ func decisions(where string, row *contracts.Proposal, mayDecide bool) g.Node {
 	switch {
 	case mayDecide && row.State == contracts.StateApproved:
 		body = append(body, postForm(at+"/apply", row.Revision, "Apply the approved change",
-			h.Button(h.Type("submit"), g.Text("Apply"))))
+			h.Button(g.Attr("data-screen-anchor", string(contracts.Screen("proposal"))+"#action.apply"), h.Type("submit"), g.Text("Apply"))))
 	case mayDecide && open:
 		body = append(body,
 			postForm(at+"/review", row.Revision, "Approve this change",
 				hidden("verdict", "approved"),
-				h.Button(h.Type("submit"), g.Text("Approve"))),
+				h.Button(g.Attr("data-screen-anchor", string(contracts.Screen("proposal"))+"#action.approve"), h.Type("submit"), g.Text("Approve"))),
 			postForm(at+"/review", row.Revision, "Decline this change",
 				hidden("verdict", "declined"),
 				commentField(at),
-				h.Button(h.Type("submit"), g.Text("Decline"))),
+				h.Button(g.Attr("data-screen-anchor", string(contracts.Screen("proposal"))+"#action.decline"), h.Type("submit"), g.Text("Decline"))),
 		)
 	case open:
 		// A watcher watches. The controls are absent rather than disabled, because a
@@ -460,7 +460,7 @@ func decisions(where string, row *contracts.Proposal, mayDecide bool) g.Node {
 		// and lets the command refuse: who wrote a proposal is a fact the row holds, and
 		// a page that guessed would be a page with its own actor rule.
 		body = append(body, postForm(at+"/withdraw", row.Revision, "Take this proposal back",
-			h.Button(h.Type("submit"), g.Text("Withdraw"))))
+			h.Button(g.Attr("data-screen-anchor", string(contracts.Screen("proposal"))+"#action.withdraw"), h.Type("submit"), g.Text("Withdraw"))))
 	}
 	return h.Section(g.Attr("aria-labelledby", "change-decision"), h.Div(body...))
 }
@@ -486,7 +486,7 @@ func hidden(name, value string) g.Node {
 func commentField(at string) g.Node {
 	return h.Div(
 		h.Label(g.Attr("for", at+"-comment"), g.Text("Comment")),
-		h.Input(h.Type("text"), h.Name("comment"), g.Attr("id", at+"-comment"),
+		h.Input(g.Attr("data-screen-anchor", string(contracts.Screen("proposal"))+"#field.comment"), h.Type("text"), h.Name("comment"), g.Attr("id", at+"-comment"),
 			h.MaxLength("2000"), h.Placeholder("Why, in the reviewer's own words")),
 	)
 }

@@ -1,0 +1,67 @@
+{
+  "record": "platformkit.supported-sources.v1",
+  "target_line": "v2.0.0",
+  "required_roles": [
+    "oldest_supported",
+    "later_installed_supported"
+  ],
+  "sources": [
+    {
+      "ref": "v1.1.0",
+      "commit": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
+      "roles": [
+        "oldest_supported"
+      ],
+      "why": "RELEASE.md names v1.1.0 as the stable contract the line is measured from, and it is the oldest revision this promise reaches back to."
+    },
+    {
+      "ref": "v1.1.1",
+      "commit": "13d2691a2db9bc38c18828e81994ae57e699c84a",
+      "roles": [
+        "later_installed_supported"
+      ],
+      "why": "A patch of the stable contract, which docs/COMPATIBILITY.md puts inside the line, so an installation that took it is an installation this release has to take too."
+    }
+  ],
+  "refused": [
+    {
+      "ref": "v1.0.0",
+      "commit": "48975fe4367296f4b7fa9be7a50eab9b71500fa0",
+      "reason": "RELEASE.md excludes v1.0.0 -> v1.1.0 as an upgrade path, so the line this release upgrades from does not reach it."
+    },
+    {
+      "ref": "v1.1.2-proof.20261018.b8f82e073f67",
+      "commit": "b8f82e073f67a2fcee0f05a9c5bb26ad0ea9a6e3",
+      "reason": "docs/COMPATIBILITY.md gives a proof build no compatibility claim, and two audit files applied in it carry checksums the restored ledger does not, so its applied history cannot be upgraded by this release; the consumer pinned there moves by its own pin bump."
+    },
+    {
+      "ref": "5ac6c060783ebc9587d4b9c23c030f371b4d7e9d",
+      "commit": "5ac6c060783ebc9587d4b9c23c030f371b4d7e9d",
+      "reason": "not a release, and its own ledger cannot be built on: it applied auth/000035 at a position the numbering later moved, so the runner refuses it as an earlier insertion ('precedes applied version 47; append a new version'); the bytes it shipped are still owed, and applied_bytes is where they are owed"
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "scripts/testdata/rehearse/seed.sql",
+      "sha256": "0c00bb48a0eb2ae5e80f15897c904e50d4a070ca25e08054fe25d1321399565f",
+      "why": "the volume every duration is measured against, written in the shape every supported source's own schema already holds"
+    },
+    {
+      "path": "scripts/testdata/rehearse/populated.sql",
+      "sha256": "70f1dc5be057afb8c0fa8cb48340bbfd3375b84eda2c4edfbe4c4789103d7385",
+      "why": "the second tenant, the page text, the file records and the queued events the upgrade has to carry"
+    }
+  ],
+  "applied_bytes": [
+    {
+      "path": "modules/audit/migrations/000048_audit_history_append_only.up.sql",
+      "sha256": "cc72b6deb6d2a3aa5ec568e88ba7e40ec56e83a7711214ad14b9114df364c47a",
+      "why": "the bytes first shipped as main, which an installation already holds applied; the runner compares whole files, so this release must keep these exact ones or every installed ledger rejects it"
+    },
+    {
+      "path": "modules/audit/migrations/000049_audit_retention_marks.up.sql",
+      "sha256": "0a8260d12bd8fb98e3babb522967a287e3219a682fcf762a3e28fd0b7a752564",
+      "why": "the companion file applied in the same release, held to the same rule"
+    }
+  ]
+}

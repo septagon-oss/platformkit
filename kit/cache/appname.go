@@ -1,20 +1,7 @@
 package cache
 
-// appname.go holds the one spelling of a shared name.
-//
-// CacheKey is appname.CacheKey and Slug is the grammar appname.Parse accepts, in
-// the shape decision 0074 rule 7 names for "cache keys": every shared name this
-// kernel writes — a cache key, a metric name, a stream subject — starts with the
-// application that wrote it, because a fleet that shares a Valkey has one
-// keyspace and two clients named "acme". kit/appname carries the same two
-// declarations; this package carries them because kit/httpx needs a shared
-// cache before that package lands.
-//
-// Adoption is a deletion, not a rewrite: parse with appname.Parse, build the key
-// with appname.CacheKey, and TestTheKeySpellingIsOneSpelling must not notice —
-// that case pins the bytes of a formed key, so a merge that changed a separator,
-// dropped the app segment or shortened the uuid would be found there rather than
-// as every entry written before it orphaned.
+// Cache namespaces retain their legacy grammar and key spelling, including
+// digit-first names. See README.md for why typed constructors use these owners.
 
 import (
 	"errors"
@@ -42,8 +29,7 @@ const grammar = `an application name is lower-case letters, digits and single da
 // It takes no shortcut with the tenant: a uuid is thirty-six fixed characters,
 // which is what makes a name appended after it unable to shift an earlier
 // segment of the key. An empty app yields the empty first segment — the spelling
-// of "this process named no application", which New refuses but this function,
-// the one place the spelling lives, does not.
+// of "this process named no application", accepted by NewFor and refused by New.
 func CacheKey(app string, tenant uuid.UUID, name string) string {
 	return strings.Join([]string{app, tenant.String(), name}, separator)
 }

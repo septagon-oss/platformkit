@@ -2,9 +2,18 @@
 # The rehearsal: apply this tree's pending migrations to a *copy* of a
 # production-shaped database, and report what each one cost.
 #
-#	scripts/rehearse_migrations.sh (--dump FILE | --base-ref REF)
+#	scripts/rehearse_migrations.sh (--dump FILE | --base-ref REF | --supported)
 #	                              [--seed FILE] [--max-file-seconds N]
 #	                              [--max-lock-ms N] [--keep]
+#	scripts/rehearse_migrations.sh --check-source REF
+#
+# `--supported` is the mode a release is certified by, and it is
+# scripts/rehearse_supported_matrix.sh: this step once per supported source in
+# scripts/testdata/rehearse/supported-sources.json, into one aggregated receipt. Each
+# case is this file with that revision as its --base-ref, so the copy, the fixtures,
+# the drain, the watcher and both budgets are the ones a single case measures and the
+# mode carries no second implementation of them. `--check-source REF` asks the support
+# record about one revision and touches no database.
 #
 # ADR 0011 and migrations/README.md make this the step a release requires: the
 # runner refuses a shape of statement, a `lock_timeout` bounds a wait, and neither
@@ -112,19 +121,27 @@ prefix="platformkit_rehearse_"
 
 die() { local code="$1"; shift; echo "rehearse: $*" >&2; exit "$code"; }
 note() { echo "rehearse: $*"; }
-usage() { echo "usage: rehearse_migrations.sh (--dump FILE | --base-ref REF) [--seed FILE] [--max-file-seconds N] [--max-lock-ms N] [--keep]"; }
+usage() { echo "usage: rehearse_migrations.sh (--dump FILE | --base-ref REF | --supported) [--seed FILE] [--max-file-seconds N] [--max-lock-ms N] [--keep]; or --check-source REF"; }
 
 dump="${REHEARSE_DUMP:-}"
 ref="${REHEARSE_BASE_REF:-}"
 seed="${REHEARSE_SEED-$root/scripts/testdata/rehearse/seed.sql}"
+populated="${REHEARSE_POPULATED-$root/scripts/testdata/rehearse/populated.sql}"
+declaration="${REHEARSE_DECLARATION-$root/scripts/testdata/rehearse/candidate.yaml}"
+supported=0
+check_source=""
+seed_given=0
+subset_given=""
 max_file="${REHEARSE_MAX_FILE_SECONDS:-30}"
 max_lock="${REHEARSE_MAX_LOCK_MS:-5000}"
 keep=0
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--dump) [ $# -ge 2 ] || die 2 "--dump wants a file"; dump="$2"; shift 2 ;;
-	--base-ref) [ $# -ge 2 ] || die 2 "--base-ref wants a revision"; ref="$2"; shift 2 ;;
-	--seed) [ $# -ge 2 ] || die 2 "--seed wants a file (or the empty string for none)"; seed="$2"; shift 2 ;;
+	--dump) [ $# -ge 2 ] || die 2 "--dump wants a file"; dump="$2"; subset_given="--dump"; shift 2 ;;
+	--base-ref) [ $# -ge 2 ] || die 2 "--base-ref wants a revision"; ref="$2"; subset_given="--base-ref"; shift 2 ;;
+	--seed) [ $# -ge 2 ] || die 2 "--seed wants a file (or the empty string for none)"; seed="$2"; seed_given=1; shift 2 ;;
+	--supported) supported=1; shift ;;
+	--check-source) [ $# -ge 2 ] || die 2 "--check-source wants a revision"; check_source="$2"; shift 2 ;;
 	--max-file-seconds) [ $# -ge 2 ] || die 2 "--max-file-seconds wants a number"; max_file="$2"; shift 2 ;;
 	--max-lock-ms) [ $# -ge 2 ] || die 2 "--max-lock-ms wants a number"; max_lock="$2"; shift 2 ;;
 	--keep) keep=1; shift ;;
@@ -135,7 +152,23 @@ done
 
 # Argument refusals come first, so they are answerable on a machine with no
 # database and no client tools — which is also what makes them testable.
-[ -n "$dump" ] || [ -n "$ref" ] || die 2 "say where the copy comes from: --dump FILE or --base-ref REF"
+# The support record answers this before any database is involved: a revision that is
+# not supported gets the record's refusal, and a revision that is named by no one gets
+# the sentence that says so. Both are exit 1, because the refusal is the answer.
+if [ -n "$check_source" ]; then
+	"$root/scripts/supported_sources.sh" verdict "$check_source"
+	exit $?
+fi
+
+if [ "$supported" = 1 ]; then
+	[ "$#" -eq 0 ] || die 2 "supported mode takes no per-case arguments; $1 would rehearse a subset"
+	[ -z "$subset_given" ] || die 2 "supported mode is certified by the whole matrix; $subset_given names one case and a receipt for one case certifies nothing"
+	[ "$seed_given" -eq 0 ] || die 2 "supported mode seeds every case from scripts/testdata/rehearse/seed.sql; --seed replaces the data the promise is about"
+	[ "$keep" -eq 0 ] || die 2 "supported mode drops each case's copies itself; --keep would leave one pair per supported source behind"
+fi
+
+[ -n "$dump" ] || [ -n "$ref" ] || [ "$supported" = 1 ] ||
+	die 2 "say where the copy comes from: --dump FILE, --base-ref REF, or --supported for every source the release promises"
 [ -z "$dump" ] || [ -z "$ref" ] || die 2 "--dump and --base-ref are alternatives; the copy is either an operator's dump or the previous release's own migration"
 if [ -n "$dump" ] && [ ! -r "$dump" ]; then die 2 "no dump readable at $dump"; fi
 if [ -n "$ref" ] && ! git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
@@ -144,6 +177,36 @@ fi
 [[ "$max_file" =~ ^[0-9]+$ ]] || die 2 "--max-file-seconds is $max_file, which is not a number of seconds"
 [[ "$max_lock" =~ ^[0-9]+$ ]] || die 2 "--max-lock-ms is $max_lock, which is not a number of milliseconds"
 if [ -n "$seed" ] && [ ! -r "$seed" ]; then die 2 "no seed file readable at $seed (pass --seed '' to seed nothing)"; fi
+if [ -n "$populated" ] && [ ! -r "$populated" ]; then
+	die 2 "no populated fixture readable at $populated (pass REHEARSE_POPULATED='' to seed volume only)"
+fi
+if [ ! -r "$declaration" ]; then
+	die 2 "no candidate declaration readable at $declaration: the release under test would boot with no hosts named and place nothing"
+fi
+
+# The matrix is this step run once per supported source, and nothing else: the copy, the
+# fixtures, the drain, the lock watcher and both budgets are the ones a single case
+# already measures, so the mode adds no second implementation of them to keep honest.
+# What it adds is the obligation that every source the release promises was run, and that
+# each refused source was refused out loud.
+#
+# The hand-over is an exec, and it is here rather than further down because `exec` replaces
+# this shell and this shell owns the EXIT trap that removes $work: a mode that reached its
+# temp directory before the exec would leave one behind on every run. Every check a case
+# would make is made above this line or by the matrix itself, which names the same tools
+# and the same owner URL it refuses without.
+if [ "$supported" = 1 ]; then
+	# The two fixtures are part of the promise: scripts/supported_sources.sh owes them by
+	# digest and scripts/check_pin_rehearsal.sh --strict refuses a case that seeded anything
+	# else. An environment that swaps one out would make every case measure a database no
+	# installation holds, so the mode refuses the environment rather than noticing it in the
+	# receipt, downstream of the run that wasted the copy.
+	[ -z "${REHEARSE_SEED+set}" ] ||
+		die 2 "supported mode seeds the fixture the support record owes; REHEARSE_SEED replaces the data the promise is about"
+	[ -z "${REHEARSE_POPULATED+set}" ] ||
+		die 2 "supported mode seeds the fixture the support record owes; REHEARSE_POPULATED replaces the second tenant, the page text and the queued events the upgrade has to carry"
+	exec "$root/scripts/rehearse_supported_matrix.sh"
+fi
 
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
 if [ -z "$admin_url" ]; then
@@ -399,6 +462,15 @@ if [ -n "$seed" ]; then
 	psql_as "$run" -f "$seed" >/dev/null
 	note "seeded $seed into $run"
 fi
+# The second fixture is the one the promise is about: a second tenant, page text, file
+# records and queued events, so the upgrade is measured against an installation and not
+# against a schema. It lands on the copy at the *base* revision's shape, which is what
+# makes it evidence — SQL this tree wrote and that revision never had would fail here,
+# loudly, rather than rehearsing a database no installation holds.
+if [ -n "$populated" ]; then
+	psql_as "$run" -f "$populated" >/dev/null
+	note "populated $populated into $run"
+fi
 
 # The ledger the candidate inherits, read before it connects. The number that says whether this
 # step measured anything at all (`N file(s) applied`) sits in the same report as the legitimate
@@ -411,6 +483,52 @@ if ! ledger=$(psql_as "$run" -c "SELECT coalesce(count(*), 0) || ' applied versi
 	ledger=""
 else
 	note "ledger the copy starts from: $ledger"
+fi
+
+# What the copy holds before the candidate connects is the evidence the upgrade is
+# measured against, so it is written down here, once, and never retaken. Two facts:
+# the applied ledger row by row, and one digest of the rows the seed wrote. The
+# comparison happens after the candidate has run; a step that re-took its own "before"
+# afterwards could only ever compare a database with itself.
+#
+# The data digest is scoped to the seeded rows by the marker the seed itself writes
+# (`rehearse…@rehearse.localhost`, `task.created`), so a target that legitimately adds
+# rows of its own is not reported as having lost data, while a changed body, a changed
+# email or a dropped row changes the number. Rows the seed did not write are not this
+# assertion's, and no target is asked to leave them alone.
+ledger_snapshot() { # $1 = database, $2 = file
+	psql_as "$1" -F $'\t' -c "SELECT owner || '/' || version, name, checksum, coalesce(applied_at::text,'') FROM schema_migrations ORDER BY 1" >"$2"
+}
+# The facts scripts/rehearse_facts.sh answers for the copy, taken once, here. It reads
+# the per-tenant row digests, the pending outbox, the RLS state and — through the
+# application role — what each tenant's own session may see of every other tenant's
+# rows. Every one of those numbers has to be the same number after the candidate wrote.
+facts() { # $1 = file
+	"$root/scripts/rehearse_facts.sh" --admin-url "$admin_url" --database "$run" \
+		--app-url "${PLATFORMKIT_TEST_DATABASE_URL:-}" >"$1" 2>"$work/facts.err"
+}
+before_ledger="$work/before-ledger.tsv"
+before_facts="$work/before-facts.tsv"
+unreadable_facts=0
+# Counted once, on each side of the candidate, so that the receipt can name the figures the
+# run actually measured: what the installation arrived with, what it left with, and how many
+# of the arrived rows are still there row for row.
+before_ledger_rows=0
+applied_retained=0
+if ledger_snapshot "$run" "$before_ledger" 2>"$work/snapshot.err"; then
+	before_ledger_rows=$(grep -c '' <"$before_ledger")
+	note "retained before the candidate connects: $before_ledger_rows ledger row(s)"
+else
+	note "nothing retained before the candidate: $(head -1 "$work/snapshot.err") — the copy holds no ledger to compare against"
+fi
+if facts "$before_facts"; then
+	note "facts retained before the candidate: $(grep -c '' <"$before_facts") line(s), $(grep -c '^other/' <"$before_facts") of them tenant-boundary reads"
+else
+	# Not yet a finding about the release: a copy this step cannot read is a rehearsal that
+	# did not happen, which is exit 2 and never a pass. The sentence that says why is
+	# printed now, because it is the one an operator has to act on.
+	echo "FACTS UNREADABLE before the candidate ran: $(head -1 "$work/facts.err")"
+	unreadable_facts=1
 fi
 
 # The watcher: one session, one query, sampled every SAMPLE_MS milliseconds, and
@@ -437,30 +555,10 @@ watch_started=$(now_ms)
 psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
-write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
-  # The declaration this release asks an installation for, written the way an
-  # operator writes it: hosts and no nats.app, which is what this step has always
-  # handed the candidate, and the shape of a deployment that has not taken a slug.
-  # Read what that does to the one tenant the copy holds rather than assuming it.
-  # The migrate command of apps/platformkit always declares a slug, here the empty
-  # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
-  # and the empty-slug placement 000060 then finds nothing it may write and refuses
-  # nothing: a boot that named no app asserts nothing about whose anybody is, and a
-  # tenant left app-less belongs to nobody in particular. The guard, and its reason,
-  # are on that file. What this step measures is that upgrade: the release applies
-  # over an app-less database of the previous release size. An operator who names
-  # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
-  # account for gets the sentence 000059 puts there, which names the tenant and
-  # writes nothing.
-  hosts:
-    - "rehearse.localhost"
-# The composition of this release names webhook.Module, and that module refuses to
-# be composed without the key wrapping an endpoint signing secret, so the candidate
-# needs the line. The base revision above is given none: that loader has never heard
-# of the key, and kit/config refuses a key it does not know. Thirty-two bytes of
-# this run, which no receiver anywhere verifies a delivery against.
-webhook:
-  secret_key: "0123456789abcdef0123456789abcdef"'
+# The declaration the candidate boots with — the hosts it serves and the key its
+# composition needs — is data, so it sits beside the fixtures the copy is seeded from
+# rather than inside the run: scripts/testdata/rehearse/candidate.yaml.
+write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" "$(cat "$declaration")"
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
@@ -490,7 +588,8 @@ jq -R -r 'fromjson? // empty
 	| [.owner, (.version|tostring), .name, (.phase // "drain"), (.duration_ms|tostring)] | @tsv' \
 	"$work/run.log" >"$work/files.tsv"
 
-findings=0
+findings=$unreadable_facts
+if [ "$unreadable_facts" -gt 0 ] && [ "$code" -eq 0 ]; then code=2; fi
 total=0
 longest_ms=0
 longest="-"
@@ -559,6 +658,78 @@ if [ -n "$unfinished" ]; then
 	findings=$((findings + 1))
 fi
 
+# The retained facts, read again now that the candidate has written. Every ledger row the
+# copy started with must still be there with the same name, checksum and application time
+# — an applied migration that changed its bytes, lost its row or restamped its time is the
+# immutable refusal kit/db makes, and an upgrade that rewrote history is not an upgrade.
+# The fixtures' rows must digest to what they digested before, which is the sentence "the
+# data survived" turned into something a run can fail, and every tenant-boundary read must
+# still see nothing of its neighbours. Both sides are files this step wrote itself: one
+# before the candidate connected, one after it stopped.
+if [ -s "$before_ledger" ]; then
+	if ! ledger_snapshot "$run" "$work/after-ledger.tsv" 2>"$work/after.err"; then
+		echo "LEDGER UNREADABLE after the candidate ran: $(head -1 "$work/after.err")"
+		findings=$((findings + 1))
+		[ "$code" -ne 0 ] || code=1
+	else
+		lost_rows_file="$work/lost-rows.tsv"
+		comm -23 <(cut -f1,2,3,4 "$before_ledger" | sort) <(cut -f1,2,3,4 "$work/after-ledger.tsv" | sort) >"$lost_rows_file"
+		lost=$(head -3 "$lost_rows_file")
+		# Counted here, where the rows are being compared, so that the receipt can name the
+		# figure this fails on rather than a count of the after ledger called "retained".
+		applied_retained=$((before_ledger_rows - $(grep -c '' <"$lost_rows_file" || true)))
+		if [ -n "$lost" ]; then
+			echo "LEDGER LOST applied rows the copy started from: $(printf '%s' "$lost" | tr '\n' ' ')"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+	fi
+fi
+if [ -s "$before_facts" ]; then
+	if ! facts "$work/after-facts.tsv"; then
+		echo "FACTS UNREADABLE after the candidate ran: $(head -1 "$work/facts.err")"
+		findings=$((findings + 1))
+		[ "$code" -ne 0 ] || code=1
+	else
+		# A line that was there before and is not now, or says something else, is the finding.
+		# Two lines are allowed to move. `ledger` grows because the release applied files — the
+		# rows it must not lose are checked row by row above — and `rls` grows because a release
+		# that adds a tenant table adds a forced policy. A number that falls is the finding, and
+		# for the authority line that is the only direction worth reading.
+		changed=$(awk -F'\t' '
+			NR == FNR { before[$1] = $0; next }
+			{ after[$1] = $0 }
+			END {
+				for (k in before) {
+					if (!(k in after)) print "gone\t" before[k]
+					else if (after[k] != before[k] && k != "rls" && k != "ledger") { print "was\t" before[k]; print "now\t" after[k] }
+				}
+				for (k in after) if (!(k in before)) print "added\t" after[k]
+			}' "$before_facts" "$work/after-facts.tsv" | head -8)
+		if [ -n "$changed" ]; then
+			echo "FACTS CHANGED the copy started with, one line each (was before, now after):"
+			printf '%s\n' "$changed" | sed 's/^/  /'
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		lost_rls=$(awk -F'\t' '$1 == "rls" { print $2; exit }' "$before_facts")
+		now_rls=$(awk -F'\t' '$1 == "rls" { print $2; exit }' "$work/after-facts.tsv")
+		if [ -n "$lost_rls" ] && [ "$now_rls" != "$lost_rls" ] && [ "$now_rls" -lt "$lost_rls" ]; then
+			echo "AUTHORITY LOST $lost_rls tenant table(s) forced row-level security before the upgrade and $now_rls do after"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		leaks=$(awk -F'\t' '$1 ~ /^other\//' "$work/after-facts.tsv" |
+			awk -F'\t' '$3 != "0" { printf "%s sees %s row(s) of another tenant ", $1, $3; seen = 1 } END { if (seen) print "" }')
+		if [ -n "$leaks" ]; then
+			echo "TENANT LEAK after the upgrade: $leaks"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		[ -n "$changed" ] || note "facts retained: $(grep -c '' <"$before_facts") line(s) unchanged, $(grep -c '^other/' <"$work/after-facts.tsv") boundary read(s) all seeing one tenant"
+	fi
+fi
+
 applied=$(wc -l <"$work/files.tsv")
 note "$applied file(s) applied in ${total}ms; longest $longest at ${longest_ms}ms"
 if [ "$applied" -eq 0 ]; then
@@ -582,6 +753,16 @@ else
 	note "failed: $findings finding(s); exit $code"
 fi
 
+# count_of runs one counting command and answers a number for it: a receipt field that is
+# not a number refuses the write of the whole receipt, and the difference between "no facts
+# were taken" and "the count could not be taken" is not worth a broken artefact.
+count_of() {
+	local value
+	value=$("$@" 2>/dev/null) || value=""
+	[[ "$value" =~ ^[0-9]+$ ]] || value=0
+	printf '%s' "$value"
+}
+
 # The receipt. A consumer that pins this module owes the rehearsal — its own
 # migrations run against its own data on this module's upgrade — and the one
 # fact it can hand its CI is that *this revision* was rehearsed. So the step
@@ -597,17 +778,70 @@ if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		| {owner: .owner, version: (.version | tostring), name: .name,
 		   phase: (.phase // "drain"), seconds: (.duration_ms / 1000)}' \
 		"$work/run.log" | jq -s .)
-	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+	# The fixtures this case actually seeded, by digest, and the data half of what it
+	# measured. The support record owes the same fixture bytes (scripts/supported_sources.sh
+	# checks them against this tree every time it is read) and
+	# scripts/check_pin_rehearsal.sh --strict refuses a case whose seeded files or retained
+	# facts are not the ones the record and this run say: a fixture replaced by whatever SQL
+	# the current tree holds rehearses a database no installation has.
+	fixtures_json=$(printf '%s\n' "$seed" "$populated" |
+		while IFS= read -r f; do
+			[ -n "$f" ] && [ -r "$f" ] || continue
+			printf '%s\t%s\n' "${f#"$root"/}" "$(sha256sum "$f" | cut -d' ' -f1)"
+		done |
+		jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {path: .[0], sha256: .[1]})')
+	[ "$(jq -r 'length' <<<"$fixtures_json")" -gt 0 ] ||
+		die 2 "this case seeded no fixture it could name: a receipt with no fixture digest cannot be checked against the support record"
+	data_json=$(jq -n \
+		--argjson lines "$(count_of grep -c '' "$before_facts")" \
+		--argjson reads "$(count_of grep -c '^other/' "$work/after-facts.tsv")" \
+		--argjson foreign "$(count_of awk -F'\t' '$1 ~ /^other\// { s += $3 } END { print s + 0 }' "$work/after-facts.tsv")" \
+		--argjson before "$before_ledger_rows" \
+		--argjson after "$(count_of grep -c '' "$work/after-ledger.tsv")" \
+		--argjson retained "$applied_retained" \
+		--argjson pending "$(count_of awk -F'\t' '$1 == "outbox.pending" { print $2; exit }' "$work/after-facts.tsv")" \
+		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign,
+		  applied_rows_before: $before, applied_rows_after: $after, applied_rows_retained: $retained,
+		  pending_outbox_rows: $pending}')
+	# The bytes those figures came from, kept where a release reviewer can read them. The
+	# run's temp directory goes when this process does, so the four files the ledger and fact
+	# comparisons were made from are copied beside the receipt, and
+	# scripts/check_pin_rehearsal.sh --strict re-derives every figure in `data` from these
+	# files rather than trusting the run that wanted to pass. REHEARSE_EVIDENCE names where
+	# they go — scripts/rehearse_supported_matrix.sh gives every case its own directory under
+	# the aggregate receipt, so a case's evidence outlives the matrix's own temp directory —
+	# and the default is a directory beside this case's receipt.
+	evidence_dir="${REHEARSE_EVIDENCE:-${REHEARSE_RECEIPT}.d}"
+	case "$evidence_dir" in /*) ;; *) evidence_dir="$PWD/$evidence_dir" ;; esac
+	mkdir -p "$evidence_dir" || die 2 "cannot write the evidence directory $evidence_dir for $REHEARSE_RECEIPT"
+	evidence_json='{}'
+	for kept in "before_ledger:$before_ledger" "after_ledger:$work/after-ledger.tsv" \
+		"before_facts:$before_facts" "after_facts:$work/after-facts.tsv"; do
+		evidence_key="${kept%%:*}"
+		evidence_src="${kept#*:}"
+		[ -s "$evidence_src" ] ||
+			die 2 "the receipt would name $evidence_key with no bytes behind it ($evidence_src): a case that could not take its own before-and-after evidence writes no receipt"
+		cp "$evidence_src" "$evidence_dir/$evidence_key.tsv" ||
+			die 2 "the evidence for $evidence_key could not be copied into $evidence_dir"
+		evidence_json=$(jq -c --arg key "$evidence_key" --arg path "$evidence_dir/$evidence_key.tsv" \
+			'. + {($key): $path}' <<<"$evidence_json") ||
+			die 2 "the evidence path for $evidence_key could not be recorded"
+	done
+	note "evidence: $evidence_dir — the ledger and the facts, before and after, re-read by the release check"
 	jq -n --arg base_ref "$ref" \
 		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
 		--arg candidate_commit "$(git rev-parse HEAD)" \
 		--arg seed "$seed" \
+		--argjson fixtures "$fixtures_json" \
+		--argjson data "$data_json" \
+		--argjson evidence "$evidence_json" \
 		--argjson files "$files" \
 		--argjson max_lock_ms "$lock_ms" \
 		--argjson samples "$samples" \
 		'{base_ref: (if $base_ref == "" then null else $base_ref end),
 		  base_commit: (if $base_commit == "" then null else $base_commit end),
-		  candidate_commit: $candidate_commit, seed: $seed, files: $files,
+		  candidate_commit: $candidate_commit, seed: $seed, fixtures: $fixtures,
+		  data: $data, evidence: $evidence, files: $files,
 		  max_lock_ms: $max_lock_ms, lock_samples: $samples,
 		  tool: "scripts/rehearse_migrations.sh", exit: 0}' >"$REHEARSE_RECEIPT" ||
 		die 2 "the receipt could not be written to $REHEARSE_RECEIPT"

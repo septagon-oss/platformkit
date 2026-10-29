@@ -56,6 +56,765 @@
           "elem": "string"
         }
       ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": false,
+                "interactions": []
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "publish",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "at"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "publish"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "archive",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "archive"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "note",
+          "plural": "notes",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [
+            "title"
+          ],
+          "recordCandidates": [
+            "title",
+            "body"
+          ],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "title",
+            "createdAt",
+            "updatedAt",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "overview": [],
+          "information": [
+            "createdAt",
+            "updatedAt",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "sections": [],
+          "create": [
+            "title",
+            "body",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "update": [
+            "title",
+            "body",
+            "rank",
+            "pinned",
+            "tags"
+          ]
+        },
+        "fields": [
+          {
+            "figure": null,
+            "name": "id",
+            "label": "Id",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "createdAt",
+            "label": "Created at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "updatedAt",
+            "label": "Updated at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "title",
+            "label": "Title",
+            "help": "What this note is about",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "body",
+            "label": "Body",
+            "help": "",
+            "section": "",
+            "onList": false,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "textarea",
+            "kind": "longtext",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "status",
+            "label": "Status",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "select",
+            "kind": "enum",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "open",
+                "label": "Open",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "done",
+                "label": "Done",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          },
+          {
+            "figure": null,
+            "name": "rank",
+            "label": "Rank",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "pinned",
+            "label": "Pinned",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "checkbox",
+            "kind": "boolean",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "Yes",
+              "false": "No",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "tags",
+            "label": "Tags",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "list": {
+          "defaultSort": "-createdAt",
+          "sorts": [
+            {
+              "query": "id",
+              "label": "Id",
+              "field": "id",
+              "desc": false
+            },
+            {
+              "query": "-id",
+              "label": "Id",
+              "field": "id",
+              "desc": true
+            },
+            {
+              "query": "createdAt",
+              "label": "Created at",
+              "field": "createdAt",
+              "desc": false
+            },
+            {
+              "query": "-createdAt",
+              "label": "Created at",
+              "field": "createdAt",
+              "desc": true
+            },
+            {
+              "query": "updatedAt",
+              "label": "Updated at",
+              "field": "updatedAt",
+              "desc": false
+            },
+            {
+              "query": "-updatedAt",
+              "label": "Updated at",
+              "field": "updatedAt",
+              "desc": true
+            },
+            {
+              "query": "title",
+              "label": "Title",
+              "field": "title",
+              "desc": false
+            },
+            {
+              "query": "-title",
+              "label": "Title",
+              "field": "title",
+              "desc": true
+            },
+            {
+              "query": "body",
+              "label": "Body",
+              "field": "body",
+              "desc": false
+            },
+            {
+              "query": "-body",
+              "label": "Body",
+              "field": "body",
+              "desc": true
+            },
+            {
+              "query": "status",
+              "label": "Status",
+              "field": "status",
+              "desc": false
+            },
+            {
+              "query": "-status",
+              "label": "Status",
+              "field": "status",
+              "desc": true
+            },
+            {
+              "query": "rank",
+              "label": "Rank",
+              "field": "rank",
+              "desc": false
+            },
+            {
+              "query": "-rank",
+              "label": "Rank",
+              "field": "rank",
+              "desc": true
+            },
+            {
+              "query": "pinned",
+              "label": "Pinned",
+              "field": "pinned",
+              "desc": false
+            },
+            {
+              "query": "-pinned",
+              "label": "Pinned",
+              "field": "pinned",
+              "desc": true
+            }
+          ],
+          "filters": [
+            {
+              "field": "status",
+              "label": "Status",
+              "kind": "enum",
+              "values": [
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "open",
+                  "label": "Open",
+                  "tone": "neutral",
+                  "done": false
+                },
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "done",
+                  "label": "Done",
+                  "tone": "neutral",
+                  "done": false
+                }
+              ]
+            },
+            {
+              "field": "pinned",
+              "label": "Pinned",
+              "kind": "bool",
+              "values": [
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "true",
+                  "label": "Yes",
+                  "tone": "neutral",
+                  "done": false
+                },
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "false",
+                  "label": "No",
+                  "tone": "neutral",
+                  "done": false
+                }
+              ]
+            }
+          ]
+        },
+        "commands": [
+          {
+            "fields": [
+              {
+                "figure": null,
+                "name": "at",
+                "label": "At",
+                "help": "When it goes out; now if left empty",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "text",
+                "kind": "text",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": []
+              }
+            ],
+            "verb": "publish",
+            "label": "Publish a note",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          },
+          {
+            "fields": [],
+            "verb": "archive",
+            "label": "Archive every resolved note",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          }
+        ],
+        "summary": {
+          "trendField": ""
+        }
+      },
       "screen": "/app/note/notes",
       "immutable": [
         "status"
@@ -137,6 +896,686 @@
           "elem": "string"
         }
       ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "tag",
+          "plural": "tags",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [
+            "title"
+          ],
+          "recordCandidates": [
+            "title",
+            "body"
+          ],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "title",
+            "createdAt",
+            "updatedAt",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "overview": [],
+          "information": [
+            "createdAt",
+            "updatedAt",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "sections": [],
+          "create": [
+            "title",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "update": [
+            "title",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ]
+        },
+        "fields": [
+          {
+            "figure": null,
+            "name": "id",
+            "label": "Id",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "createdAt",
+            "label": "Created at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "updatedAt",
+            "label": "Updated at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "title",
+            "label": "Title",
+            "help": "What this note is about",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "body",
+            "label": "Body",
+            "help": "",
+            "section": "",
+            "onList": false,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "textarea",
+            "kind": "longtext",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "status",
+            "label": "Status",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "select",
+            "kind": "enum",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "open",
+                "label": "Open",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "done",
+                "label": "Done",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          },
+          {
+            "figure": null,
+            "name": "rank",
+            "label": "Rank",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "pinned",
+            "label": "Pinned",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "checkbox",
+            "kind": "boolean",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "Yes",
+              "false": "No",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "tags",
+            "label": "Tags",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "list": {
+          "defaultSort": "-createdAt",
+          "sorts": [
+            {
+              "query": "id",
+              "label": "Id",
+              "field": "id",
+              "desc": false
+            },
+            {
+              "query": "-id",
+              "label": "Id",
+              "field": "id",
+              "desc": true
+            },
+            {
+              "query": "createdAt",
+              "label": "Created at",
+              "field": "createdAt",
+              "desc": false
+            },
+            {
+              "query": "-createdAt",
+              "label": "Created at",
+              "field": "createdAt",
+              "desc": true
+            },
+            {
+              "query": "updatedAt",
+              "label": "Updated at",
+              "field": "updatedAt",
+              "desc": false
+            },
+            {
+              "query": "-updatedAt",
+              "label": "Updated at",
+              "field": "updatedAt",
+              "desc": true
+            },
+            {
+              "query": "title",
+              "label": "Title",
+              "field": "title",
+              "desc": false
+            },
+            {
+              "query": "-title",
+              "label": "Title",
+              "field": "title",
+              "desc": true
+            },
+            {
+              "query": "body",
+              "label": "Body",
+              "field": "body",
+              "desc": false
+            },
+            {
+              "query": "-body",
+              "label": "Body",
+              "field": "body",
+              "desc": true
+            },
+            {
+              "query": "status",
+              "label": "Status",
+              "field": "status",
+              "desc": false
+            },
+            {
+              "query": "-status",
+              "label": "Status",
+              "field": "status",
+              "desc": true
+            },
+            {
+              "query": "rank",
+              "label": "Rank",
+              "field": "rank",
+              "desc": false
+            },
+            {
+              "query": "-rank",
+              "label": "Rank",
+              "field": "rank",
+              "desc": true
+            },
+            {
+              "query": "pinned",
+              "label": "Pinned",
+              "field": "pinned",
+              "desc": false
+            },
+            {
+              "query": "-pinned",
+              "label": "Pinned",
+              "field": "pinned",
+              "desc": true
+            }
+          ],
+          "filters": [
+            {
+              "field": "status",
+              "label": "Status",
+              "kind": "enum",
+              "values": [
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "open",
+                  "label": "Open",
+                  "tone": "neutral",
+                  "done": false
+                },
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "done",
+                  "label": "Done",
+                  "tone": "neutral",
+                  "done": false
+                }
+              ]
+            },
+            {
+              "field": "pinned",
+              "label": "Pinned",
+              "kind": "bool",
+              "values": [
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "true",
+                  "label": "Yes",
+                  "tone": "neutral",
+                  "done": false
+                },
+                {
+                  "group": "",
+                  "noPreference": false,
+                  "value": "false",
+                  "label": "No",
+                  "tone": "neutral",
+                  "done": false
+                }
+              ]
+            }
+          ]
+        },
+        "commands": [],
+        "summary": {
+          "trendField": ""
+        }
+      },
       "screen": "/app/note/notes",
       "writable": false
     },
@@ -195,6 +1634,409 @@
           "elem": "string"
         }
       ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "setting",
+          "plural": "settings",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [
+            "title"
+          ],
+          "recordCandidates": [
+            "title",
+            "body"
+          ],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [],
+          "overview": [],
+          "information": [
+            "createdAt",
+            "updatedAt",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ],
+          "sections": [],
+          "create": [],
+          "update": [
+            "title",
+            "body",
+            "status",
+            "rank",
+            "pinned",
+            "tags"
+          ]
+        },
+        "fields": [
+          {
+            "figure": null,
+            "name": "id",
+            "label": "Id",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "createdAt",
+            "label": "Created at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "updatedAt",
+            "label": "Updated at",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": false,
+              "update": false
+            },
+            "control": "datetime",
+            "kind": "instant",
+            "reading": {
+              "format": "datetime",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": {
+                "kind": "instant",
+                "relative": false
+              }
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "title",
+            "label": "Title",
+            "help": "What this note is about",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "body",
+            "label": "Body",
+            "help": "",
+            "section": "",
+            "onList": false,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "textarea",
+            "kind": "longtext",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "status",
+            "label": "Status",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "select",
+            "kind": "enum",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "open",
+                "label": "Open",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": false,
+                "value": "done",
+                "label": "Done",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          },
+          {
+            "figure": null,
+            "name": "rank",
+            "label": "Rank",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "pinned",
+            "label": "Pinned",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "checkbox",
+            "kind": "boolean",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "Yes",
+              "false": "No",
+              "precision": null
+            },
+            "options": []
+          },
+          {
+            "figure": null,
+            "name": "tags",
+            "label": "Tags",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
+        "list": {
+          "defaultSort": "",
+          "sorts": [],
+          "filters": []
+        },
+        "commands": [],
+        "summary": {
+          "trendField": ""
+        }
+      },
       "screen": "/app/note/notes",
       "writable": true,
       "singleton": true

@@ -42,131 +42,6 @@ func (s Spec[T]) entryHintFault() string {
 	return ""
 }
 
-func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) string {
-	if !entity.ValidIcon(p.Icon) {
-		return fmt.Sprintf("icon %q is not an icon; entity.Icons admits %s", p.Icon, strings.Join(entity.Icons, ", "))
-	}
-	if p.Order < 0 {
-		return fmt.Sprintf("order %d is not a position; 0 means \"no opinion\"", p.Order)
-	}
-	if p.Group != nil {
-		if !lowerIdentifier(p.Group.Key) {
-			return fmt.Sprintf("group key %q is not a lower-case identifier", p.Group.Key)
-		}
-		if p.Group.Label == "" {
-			return fmt.Sprintf("group %q declares no label; a nav entry with no words is a nav entry nobody reads", p.Group.Key)
-		}
-	}
-	sections := map[string]bool{}
-	for _, sec := range p.Sections {
-		if sections[sec.Key] {
-			return fmt.Sprintf("section key %q is declared twice; one key names one block", sec.Key)
-		}
-		sections[sec.Key] = true
-		if sec.Label == "" {
-			return fmt.Sprintf("section %q declares no label; a block a person cannot name is a block they cannot ask for", sec.Key)
-		}
-	}
-	// A declared-but-empty list is the shape that reads as a decision and changes
-	// nothing, so it refuses; an absent one is silence and does not.
-	for _, list := range []struct {
-		key   string
-		field []string
-	}{
-		{"sortable", p.Sortable}, {"summaryFields", p.SummaryFields},
-	} {
-		if list.field != nil && len(list.field) == 0 {
-			return fmt.Sprintf("%s declares no field; say nothing rather than nothing", list.key)
-		}
-	}
-	if p.Sections != nil && len(p.Sections) == 0 {
-		return "sections declares no block; say nothing rather than nothing"
-	}
-	for _, named := range []struct {
-		key   string
-		field string
-		row   bool
-	}{
-		{"coverField", p.CoverField, false}, {"thumbnailField", p.ThumbnailField, true},
-	} {
-		// A picture a person cannot see is not a picture a screen opens on, and a
-		// thumbnail drawn from a field the entry keeps off the list is a declaration
-		// nothing honours: `detail` and `hidden` both take the column away from a row.
-		if named.field == "" {
-			continue
-		}
-		if bad := namedFieldFault(named.key, named.field, name, fields, false); bad != "" {
-			return bad
-		}
-		f, _ := entity.FieldNamed(fields, named.field)
-		if f.Present != "image" {
-			return fmt.Sprintf("%s %q is not a picture; present:image names the field that holds one", named.key, named.field)
-		}
-		if named.row && !f.OnList() {
-			return fmt.Sprintf("%s %q names a field kept off the list; a row cannot show what the entry hid from it", named.key, named.field)
-		}
-	}
-	// An empty name is silence, not a hint naming the empty string.
-	if p.PrimaryField != "" {
-		if bad := namedFieldFault("primaryField", p.PrimaryField, name, fields, false); bad != "" {
-			return bad
-		}
-	}
-	for _, named := range []struct{ key, field string }{
-		{"previewField", p.PreviewField}, {"statusField", p.StatusField},
-	} {
-		// previewField and statusField are optional, so an empty name is silence.
-		if named.field == "" {
-			continue
-		}
-		if bad := namedFieldFault(named.key, named.field, name, fields, false); bad != "" {
-			return bad
-		}
-	}
-	for _, field := range p.SummaryFields {
-		if field == p.PrimaryField {
-			return fmt.Sprintf("summaryFields repeats primaryField %q; a row says its name once", field)
-		}
-		if bad := namedFieldFault("summaryFields", field, name, fields, false); bad != "" {
-			return bad
-		}
-	}
-	for _, field := range p.Sortable {
-		f, ok := entity.FieldNamed(fields, field)
-		if !ok {
-			return fmt.Sprintf("sortable %q is not a field of %s", field, name)
-		}
-		// The same fact kit/crud refuses at query time, refused where it was
-		// written: a list is not something to sort a column on.
-		if f.Type == entity.TypeList {
-			return fmt.Sprintf("sortable %q is a list, which is not something to sort on", field)
-		}
-		if f.Type == entity.TypePicture {
-			return fmt.Sprintf("sortable %q is a derived picture, which cannot be sorted", field)
-		}
-		if f.Presentation.Hidden() {
-			return fmt.Sprintf("sortable %q names a hidden field; a column nobody sees is not a column to order by", field)
-		}
-	}
-	bounds, bad := declaredBoundsFault(name, p.Highlight, fields)
-	if bad != "" {
-		return bad
-	}
-	if bad := emptyWindowFault(bounds); bad != "" {
-		return bad
-	}
-	if p.TrendField != "" {
-		f, ok := entity.FieldNamed(fields, p.TrendField)
-		if !ok {
-			return fmt.Sprintf("trendField %q is not a field of %s", p.TrendField, name)
-		}
-		if f.Type != entity.TypeTime {
-			return fmt.Sprintf("trendField %q is a %s; a day breakdown reads a column of days", p.TrendField, f.Type)
-		}
-	}
-	return entity.DeckFault(p, fields)
-}
-
 // bounds is one field's declared window: the two instants it is bounded by, when
 // the declaration named an instant, and the anchor word it named otherwise. Kept
 // per field because a window is a question about one column.
@@ -174,6 +49,15 @@ type bounds struct {
 	from, to         time.Time
 	fromWord, toWord string
 	hasFrom, hasTo   bool
+}
+
+// declaredOps is what a declared sub-count may compare with. It is narrower than
+// crud.Ops on purpose: the rest of the grammar narrows a page a server builds, and a
+// declaration is a module's own sentence about a card, which is the promise worth
+// holding at mount. The list is named here rather than read from crud.Ops so the
+// refusal says what this gate admits and not what the statement grammar can spell.
+var declaredOps = []string{
+	string(crud.OpEq), string(crud.OpLt), string(crud.OpLte), string(crud.OpGt), string(crud.OpGte),
 }
 
 // declaredBoundsFault checks one declared sub-count: the words, the predicates,
@@ -201,7 +85,7 @@ func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Fi
 			return nil, fmt.Sprintf("highlight filter names %q, which is a list; a list holds many values and one of them is not what the count is about", pred.Field)
 		}
 		if !crud.ValidOp(pred.Op) {
-			return nil, fmt.Sprintf("highlight filter op %q is no operator; crud.Ops admits %s", pred.Op, strings.Join(crud.Ops, ", "))
+			return nil, fmt.Sprintf("highlight filter op %q is no operator; a declared count asks with %s", pred.Op, strings.Join(declaredOps, ", "))
 		}
 		switch crud.Op(pred.Op) {
 		case crud.OpEq:
@@ -210,7 +94,7 @@ func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Fi
 				return nil, fmt.Sprintf("highlight filter %s %q %q compares a %s, and only a count, an amount or a moment is asked about with an order", pred.Field, pred.Op, pred.Value, f.Type)
 			}
 		default:
-			return nil, fmt.Sprintf("highlight filter %s %q %q names an operator nothing asks with", pred.Field, pred.Op, pred.Value)
+			return nil, fmt.Sprintf("highlight filter %s %q %q is an operator a declared count does not ask with; it admits %s", pred.Field, pred.Op, pred.Value, strings.Join(declaredOps, ", "))
 		}
 		if _, err := crud.Declared(f, pred.Value, time.Time{}); err != nil {
 			return nil, fmt.Sprintf("highlight filter %s %q %q is refused: %s", pred.Field, pred.Op, pred.Value, err)
@@ -517,21 +401,9 @@ func confirmationLabel(p entity.CommandHints) string {
 	return p.Confirmation.ConfirmLabel
 }
 
-// CheckReferences is the boot gate for a `reference`: it answers whether every
-// `module/entity` a composed resource names is a resource this installation
-// actually registered, and "" when they all are. kit/app calls it once the whole
-// resource list exists, which is the first moment the question has an answer.
-//
-// Two declarations carry a reference: a field of the entity, and a field of a
-// command's argument. The first is the one a row holds and the second the one a
-// person sends, and the catalogue publishes both, so the gate reads both — a
-// target gate that walked only the entity's schema would let a command offer to
-// point a value at a resource nobody composed.
-//
-// One spelling throughout: `module/entity`, what `referenceTarget` refuses every
-// other shape of at mount and what the catalogue publishes. A gate that keyed the
-// registry by another spelling would refuse every reference a mounted Spec is
-// allowed to write, which is the same bug as not checking at all, told louder.
+// CheckReferences returns the first unresolved module/entity reference, or empty.
+// Call after all resources are registered; both entity fields and command
+// arguments must name a resource in that composed catalog.
 func CheckReferences(resources []httpx.Resource) string {
 	registered := map[string]bool{}
 	for _, r := range resources {

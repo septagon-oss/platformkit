@@ -30,7 +30,7 @@ instead of HTTP. The resource carries current status, priority and assignee;
 assignment separately supplies the requested assignee. Existing domain checks
 still run after an allow. The SLA sweep, CRUD operations, list scoping and command
 discovery retain their existing behavior; this example does not authorize those
-through Topaz. The reference app does not enable the external provider by default.
+through Topaz. The reference app does not enable the external provider by default; its different rules and the proof limits are in the [substitution matrix](../../../ARCHITECTURE.md#policy-substitution-boundary).
 
 Run the examples with the official OPA CLI, version 1.15.2, from the foundation
 repository root:

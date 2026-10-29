@@ -1,0 +1,51 @@
+{
+ "name": "singleton",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:050ccb3d0865137cd1ae0dbb7531701a748e2faa10bc1a0bbb0b3f7cdafab764",
+  "expectedHash": "sha256:8f5e4113913286ed5b1041b83018b123eb6408521408d7cce85c86147453b43b"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "status",
+     "type": "string",
+     "enum": [
+      "a",
+      "b"
+     ]
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [],
+  "singleton": true
+ },
+ "expected": {
+  "resolved": {
+   "list": {
+    "sorts": [],
+    "filters": [],
+    "defaultSort": ""
+   },
+   "layout": {
+    "columns": []
+   }
+  }
+ }
+}

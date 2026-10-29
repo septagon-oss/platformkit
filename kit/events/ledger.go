@@ -1,78 +1,10 @@
 package events
 
-// ledger.go is the move of the two delivery ledgers onto an app's durables.
-//
-// A deployment that starts naming its app changes the durable every subscription
-// answers to: `mod-ev` becomes `collect+mod-ev` (kit/appname.Durable), because the
-// durable is the JetStream consumer name, the deliver group its replicas join, and
-// half the primary key of platformkit_handled and platformkit_dead_letters. The
-// consumer name moves by itself, the first time the subscription is made. The two
-// ledgers do not: they still hold their rows under the old key, and a claim under
-// a name nothing subscribes to any more is a claim nobody will ever find.
-//
-// That is the double-handling window decision 0074's second round named, and its
-// shape is worth stating exactly, because the obvious shape is not reachable. A
-// scoped consumer's filter set still includes the pre-flip addresses
-// (appname.Filters), so DeliverAll does redeliver old-address messages to the new
-// durable — and transport.AddressMismatch refuses them at the transport, before any
-// handler runs (providers/nats/jetstream.go terminates them with an error log).
-// What *is* reachable is a re-publish after the flip: Replay nulls published_at
-// (replay.go), the relay carries the row again at the scoped address this build
-// publishes at (jetstream.Publish), and the claim the new consumer looks for —
-// (event_id, "collect+mod-ev") — is not the row that sits in the table
-// ((event_id, "mod-ev")). claim inserts the new key and returns true, and the
-// handler runs a second time for work it already committed. The same arrival is
-// a consumer remake, which replays from DeliverAll and relies on these rows to
-// stop it. Dead letters move for the same reason plus one: claim refuses to write a
-// claim while a dead letter exists for that (event_id, durable), so an un-moved
-// dead letter leaves the scoped name free to run a handler that was already
-// terminated.
-//
-// The move is a rename and not a copy. A durable row holds no module, no event name
-// and no app — only the durable — so the only rename expressible against the table
-// is a prefix (kit/appname's own comment on why the scoped durable is the unscoped
-// one with "<app>+" in front of it), and a copy would give every app the claims of
-// the others, which is an app skipping work it never did.
-//
-// Whose rows, then. A claim names no app, but it names its tenant, and a tenant
-// belongs to exactly one app (tenants.app, migrations/000043): the claim is work an
-// app's own consumer did in its own tenant. So the move renames the unscoped claims
-// of the tenants this app holds, and no others — which is kit/appname's plan for this
-// move (its Limits): "renaming durable for the tenants whose
-// tenants.app is this app's slug". A predicate on the durable alone would let the
-// first app to move rename the whole database's unscoped history, including the
-// claims the other app made in its own tenants; that other app's consumer would then
-// look for (event_id, "academy+mod-ev"), find nothing — its claim is sitting under
-// collect's durable — and run a handler for work its own tenant already committed.
-// An app that moves would thus cause in the other app exactly the double-handling it
-// moved to close in itself.
-//
-// A tenant whose tenants.app is empty belongs to no named app, and this move leaves
-// its claims where the app-less consumer looks for them: an app-less deployment on
-// this database is a real deployment (kit/appname §Limits), and taking its ledger
-// would be the write that takes the last claim away. The placement onto phase=data
-// (SPECIFY item 3, unbuilt) is what turns an empty app into a slug; until it has
-// run, those tenants are nobody's to move.
-//
-// Which is why the move cannot be what a delivery rests on, and does not have to be.
-// A placement is another replica's boot, and the write that names a tenant is also the
-// write that hands that tenant's pending rows to this app's relay — so a scoped
-// consumer that opened before the placement can be shown an event whose mark this
-// rename has not seen, and a rename that lands after the delivery cannot undo what the
-// delivery committed. The delivery therefore reads the tenant's own history under both
-// spellings of one subscription's durable (events.go's claim) and refuses on its own;
-// this move is what makes that history findable by the name the app now answers to —
-// the record a reviewer reads, the row events.Replay clears, the terminal mark claim
-// refuses beside. Renaming is tidiness and audit. Refusing the second handling is not
-// scheduled, and so cannot be late.
-//
-// Why this is not a migration: platformkit_tenant_match answers the empty set to a
-// schema file (migrations/README.md, "A file that writes rows"), and the phase=data
-// door refuses these two tables by name with the remedy that says what to do
-// instead — "a table keyed by something else needs a drain its owner owns, in a
-// job" (kit/db/backfill.go). This is that drain: the owning package, its own tables,
-// db.RunSystem with a capability whose reason names the act, one transaction, and an
-// event per tenant whose ledger moved so the account commits with the rows.
+// Ledger movement renames this app's tenants' handled and terminal claims onto
+// scoped durables in one system transaction. Tenant and durable locks protect
+// placement and active claims; each affected tenant receives an outbox record.
+// Delivery independently consults both durable spellings. See README.md for
+// rollout ordering, ownership and concurrency limits.
 
 import (
 	"context"
@@ -161,9 +93,10 @@ func durableSet(n int) string {
 //
 // One transaction, in this order, each step a statement a reviewer can read: name
 // the durables of this app's tenants that will move; take one lock per named
-// durable, refusing rather than waiting; copy each ledger's scoped twin; delete the
-// unscoped rows, whose twin the copy just provably made; and publish one record per
-// tenant. A refusal writes nothing and emits nothing.
+// durable, refusing rather than waiting; refuse again if any claim still owes an
+// effect; copy each ledger's scoped twin; delete the unscoped rows, whose twin the
+// copy just provably made; and publish one record per tenant. A refusal writes
+// nothing and emits nothing.
 func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedBy string) (MoveReport, error) {
 	// An app-less deployment has no scoped name to move to, so this is an answer
 	// rather than a refusal: nothing moves, nothing is emitted, and the ledgers
@@ -190,32 +123,24 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		if err := holdTenants(tx, app); err != nil {
 			return err
 		}
-		// The names this app's tenants still hold claims under, read before any lock
-		// is taken: of the un-scoped rows, only the ones in a tenant this app holds.
-		var from []string
-		if err := tx.DB().Raw(`SELECT DISTINCT durable FROM `+handled+` WHERE `+unscoped+`
-				AND `+ownTenant+`
-				UNION
-				SELECT DISTINCT durable FROM `+deadLetters+` WHERE `+unscoped+`
-				AND `+ownTenant+` ORDER BY durable`, string(app), string(app)).Scan(&from).Error; err != nil {
-			return fmt.Errorf("events: move the delivery ledger for app %s: name the durables: %w", app, err)
-		}
-		// One lock per named durable, refusing rather than waiting. A delivery takes
-		// the matching shared lock in claim before it writes its mark, so an
-		// exclusive try-lock that answers false says a claim under this durable is
-		// open right now. Nothing else needs excluding: a delivery under some *other*
-		// durable writes no row this move reads, and a delivery under the *scoped*
-		// twin takes no lock at all, because the move never renames a scoped row. A
-		// table lock here is simpler to write and wrong to run — with two apps on one
-		// database it lets the other app's ordinary traffic hold this app's boot in a
-		// refusal that never drains, which is the window this move exists to close.
-		// Both ledgers share the one key, because one durable's rows move together.
-		for _, d := range from {
-			if err := holdDurable(tx, d); err != nil {
-				return err
-			}
+		from, err := ledgerDurables(tx, app)
+		if err != nil {
+			return err
 		}
 		report.Subscriptions = len(from)
+		// A claim that still owes an effect does not change hands. The rename writes the
+		// scoped twin and deletes what it copied, and the copy carries the columns a
+		// finished delivery leaves behind; an outstanding effect would be left naming a
+		// durable this move just deleted, so the debt would be paid by moving it and the
+		// scoped consumer would read a claim that owes nothing — the acknowledgement this
+		// ledger exists to make impossible. Refusing is the whole remedy and it drains:
+		// the effect that is owed reaches this row by the name it was written under, and
+		// the run after it comes back finds the count at zero and moves it.
+		if owed, err := claimsOwing(tx, app); err != nil {
+			return err
+		} else if owed > 0 {
+			return fmt.Errorf("events: move the delivery ledger: %d of app %s's claims still owe an effect that has not run, so no ledger row moved; %w", owed, app, ErrLedgerMoveContended)
+		}
 		durables := make([]string, len(from))
 		for i, d := range from {
 			durables[i] = prefix + d
@@ -223,7 +148,6 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		var (
 			claims map[uuid.UUID]int64
 			dead   map[uuid.UUID]int64
-			err    error
 		)
 		if claims, err = renameLedger(tx, handled, prefix, []string{"handled_at"}, from, app); err != nil {
 			return err
@@ -232,19 +156,8 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 			return err
 		}
 		report.Claims, report.Dead = total(claims), total(dead)
-		// The membership re-check, last, in the transaction that did the renaming. The
-		// locks above describe the membership as of their own reading; this statement asks
-		// the same question of the state the rename ends in, and a difference is an answer
-		// the move cannot keep. It is what catches the tenant this move holds no key for
-		// because it did not exist when the entry read ran and was named anyway: the row it
-		// writes is unscoped, its claims arrive under a name its consumer is about to
-		// subscribe under, and the second handling has no other witness. The walk that names
-		// an app now declares the tenant's own key before it writes (migrations/000061), so a
-		// placement can no longer commit between this transaction's reads — refused over by
-		// the entry lock if it came first, serialized behind it if it came after, and owing
-		// the move its own boot runs next. Refusing is the whole remedy: nothing moved,
-		// nothing emitted, and the retry after this transaction ends reads a membership that
-		// cannot move again while it holds the keys.
+		// Recheck membership after both renames so an unscoped row appearing
+		// outside the entry lock set refuses the entire transaction.
 		if remains, err := unscopedRemains(tx, app); err != nil {
 			return err
 		} else if remains {
@@ -256,32 +169,8 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		if report.Claims == 0 && report.Dead == 0 {
 			return nil
 		}
-		// One record per tenant whose ledger moved, in the transaction that moved
-		// it, so the rows and their account commit together or not at all. The
-		// actor is PublishFor's to read off the context: a boot carries none, which
-		// is what "nobody did this" means in the envelope, and the installation's
-		// verb carries the operator's.
-		tenants := make([]uuid.UUID, 0, len(claims)+len(dead))
-		for id := range claims {
-			tenants = append(tenants, id)
-		}
-		for id := range dead {
-			if _, twice := claims[id]; !twice {
-				tenants = append(tenants, id)
-			}
-		}
-		report.Tenants = int64(len(tenants))
-		for _, id := range tenants {
-			rec := LedgerMovedRecord{App: app.String(), Durables: durables,
-				Claims: claims[id], Dead: dead[id], RequestedBy: requestedBy}
-			if err := SucceedFor(ctx, tx, db.Now()); err != nil {
-				return err
-			}
-			if err := PublishFor(ctx, tx, id, EventLedgerMoved, rec); err != nil {
-				return err
-			}
-		}
-		return nil
+		report.Tenants, err = publishLedgerMove(ctx, tx, app, requestedBy, durables, claims, dead)
+		return err
 	})
 	if err != nil {
 		return MoveReport{}, err
@@ -320,30 +209,9 @@ const tenantLockKey = `'events ledger tenant ' || id::text`
 // The argument is durableLock's, and the reason both halves of both keys sit here.
 func tenantLock(tenantID uuid.UUID) string { return "events ledger tenant " + tenantID.String() }
 
-// declareTenant takes the shared half of one tenant's ledger key for the rest of tx,
-// before that transaction reads or writes anything about a claim.
-//
-// The row trigger takes this key, and for a claim already inserted that is enough: the
-// mark and its key belong to one transaction. It is not enough for a claim that has not
-// reached its INSERT yet, and the wait is what says so — a SHARE table lock, the one
-// CREATE INDEX takes, or a queue behind any writer, holds the statement *before* the row
-// trigger runs, so the transaction declares nothing while it waits. A placement commits
-// under it, this tenant's move then finds no key held and no committed row, answers its
-// zero report as a success, and the claim that finally lands is a mark under a durable
-// the tenant's own app will never subscribe under — the second handling this key exists
-// to prevent, arriving by the door the key's own placement left open. Declaring the
-// tenant above the read the
-// placement can overtake is what makes that read an answer the move has to respect: from
-// this statement to the end of the transaction, the move of this tenant refuses. The
-// placement declares the same key before its own write, for the same reason and with the
-// same lifetime (migrations/000061), and that is the half that made this one enough: the
-// two writers that can change what a move is renaming are the claim and the naming, and
-// both are now visible from before the statement that decides to write.
-//
-// It waits rather than refuses, which is the direction a delivery wants: the only holder
-// it can wait behind is a move's own transaction, which asks the key exclusively, renames
-// or refuses, and ends — and the wait costs an app-less deployment nothing it does not
-// already pay at the claim's trigger for the same key, since both hold it to commit.
+// declareTenant holds the tenant's shared ledger lock until tx ends, before any
+// placement read or claim write. It waits behind an active move; placement takes
+// the same key before naming the tenant, so the following read is authoritative.
 func declareTenant(gdb *gorm.DB, tenantID uuid.UUID) error {
 	if err := gdb.Exec(`SELECT pg_advisory_xact_lock_shared(hashtextextended(?, 0))`, tenantLock(tenantID)).Error; err != nil {
 		return fmt.Errorf("events: declare the delivery ledger of tenant %s busy: %w", tenantID, err)
@@ -365,65 +233,10 @@ func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+
 // (migrations/000061), so membership cannot move underneath a running move at all.
 const placeable = "app = ? OR app = ''"
 
-// holdTenants takes the move's lock over every tenant that could still be this app's
-// by the end of the move, refusing rather than queueing, before a single ledger row is
-// read.
-//
-// The durable locks below are taken over the names this app's tenants hold
-// *committed* rows under, and a committed row is exactly what the first delivery of
-// a subscription does not have yet. An empty ledger therefore names nothing to lock,
-// and a move that discovers nothing returns its zero report as a success — while a
-// claim that is open right now, under a durable no row has ever named, commits a
-// mark under the unscoped name a moment later. Nothing then finds it: the scoped
-// consumer looks for (event_id, "collect+mod-ev"), the row says "mod-ev", and the
-// re-publish that a consumer remake or a replay makes runs the handler a second
-// time. That is the first invisible claim, and the durable locks cannot see it
-// because the durable is the thing being discovered.
-//
-// The tenant is the boundary that can. A claim always names the tenant it was
-// taken in, the placement makes a tenant belong to exactly one app (tenants.app,
-// migrations/000043), and the hazard is a claim in one of *this* app's tenants
-// outliving the rename of its ledger — so a claim takes the shared advisory lock of
-// its own tenant *first*, before the lock of its durable and so before it can queue
-// behind another move's, and the move asks for those tenants exclusively in the same
-// order — and the claim's transaction takes that key above its first read of all
-// (declareTenant, called by holdsUnscoped and deadLetter), so a claim is visible to its
-// app's move from before the statement that decides whether to write one, whatever the
-// INSERT itself then waits behind. A delivery of another app holds its own tenant's lock
-// and refuses nothing here, which is what the per-durable lock already buys and this keeps.
-//
-// The set is `placeable`, app's own tenants *and* the ones still naming nobody, because a
-// tenant is placed by a walk this transaction has no part in. Reading only this app's rows
-// describes the membership at the instant of the read and nothing after it: an unplaced
-// tenant's open claim declares a key this move never asks for, so the move takes no key for
-// it, reads no row for it (`ownTenant` below answers false while the row is still empty),
-// answers its zero report as a success, and the placement that commits while it is open puts
-// the tenant — and the claim that lands a statement later — inside this app, under a durable
-// its consumer will never subscribe under. The hazard is a claim in a tenant that *becomes*
-// this app's during the move, so the lock set has to be the set that can become this app's,
-// and the placement's own rule says that set: an app, once written onto a row, never moves
-// and never changes (migrations/000043, and 000059's write checks `app = ”` at the write
-// itself), so the only tenants that can join this app are the empty ones. A claim in one of
-// them is refused over with the app's own, which is the same refusal, written down where the
-// membership is what is in the way.
-//
-// The set was half of it; the placement tests cover the other half. A tenant holding an already-committed
-// unscoped claim declares nothing until its *next* claim, so a key held over the claim
-// excluded no walk that never claims one: the placement could write the row, commit, and
-// be gone before the move's final read, which answered false because the tenant was still
-// empty when it asked, and the move committed its success over a ledger it had never read.
-// The other half is the placement declaring this key before it names the row
-// (migrations/000061's trigger, the same expression as tenantLockKey below): the walk
-// either holds the key when the move asks, and the move refuses over it, or waits and
-// lands after the move committed — the order that owes a move, which is the order a boot
-// that places before it opens its scoped consumers actually pays.
-//
-// The widening costs an app's move a refusal whenever an app-less delivery is open
-// anywhere, and that is the direction that keeps rows: the traffic that refuses it is the
-// traffic whose claims this move would otherwise strand, and it is the traffic that stops by
-// the end of a rollout that names its app. It is not a wider lock over the other app, which
-// is the harm a table lock would dress up as safety: academy's tenant has an app and is not
-// in the set, and an app-less delivery holds a key only for the move that is running.
+// holdTenants exclusively try-locks this app's tenants and still-unplaced tenants
+// before discovering durable rows. Active claims or placements refuse the move;
+// locks on unplaced tenants cover membership that could join during the move.
+// Named tenants of other apps remain independent. See README.md for rollout costs.
 func holdTenants(tx db.Tx[db.System], app appname.Name) error {
 	var contended int64
 	if err := tx.DB().Raw(`SELECT count(*) FROM (
@@ -460,15 +273,68 @@ func unscopedRemains(tx db.Tx[db.System], app appname.Name) (bool, error) {
 	return remains, nil
 }
 
+// claimsOwing counts app's unscoped claims still counting an effect their delivery
+// deferred past its own commit — the rows the rename below is about to make a new
+// primary key of, and the reason that rename refuses while any of them stands.
+//
+// It is asked after the durable locks are held and of the same set of rows the rename
+// names (unscoped, in a tenant this app holds), so the answer is the one the rename
+// would act on. What it cannot be overtaken by is worth naming: a claim that grows its
+// count has inserted its row in the same transaction, and that INSERT takes this move's
+// durable key and its tenant key (migrations/000058) for as long as the delivery runs;
+// an effect coming back only ever lowers a count, and lowering one after this reading
+// costs a move a run it repeats, never a row it lost. A ledger that does not count owed
+// effects owes none: see ledgerCountsEffects.
+func claimsOwing(tx db.Tx[db.System], app appname.Name) (int64, error) {
+	counting, err := ledgerCountsEffects(tx)
+	if err != nil {
+		return 0, err
+	}
+	if !counting {
+		return 0, nil
+	}
+	var owing int64
+	if err := tx.DB().Raw(`SELECT count(*) FROM `+handled+` WHERE `+unscoped+` AND `+ownTenant+` AND effects_owed > 0`,
+		string(app)).Scan(&owing).Error; err != nil {
+		return 0, fmt.Errorf("events: move the delivery ledger: ask what app %s's claims still owe: %w", app, err)
+	}
+	return owing, nil
+}
+
+// ledgerCountsEffects reports whether this installation's delivery ledger carries the
+// owed-effect count column.
+//
+// The column is this release's own (migrations/000075), and the runner applies nothing of
+// an owner behind a phase=data file until that file's drain finishes, so an installation
+// upgrading through a release that ships both runs this code over the ledger as it was
+// before the column — and this move is the step that meets that state, because kit/app
+// holds every subscription and every job, that drain among them, until the move returns.
+// Absent, nothing has ever raised a count, so the answer is zero by the shape of the
+// write and the rename goes ahead; present, the count is asked and a claim that owes does
+// not change hands. kit/events/README.md states the window beside the move itself.
+func ledgerCountsEffects(tx db.Tx[db.System]) (bool, error) {
+	var columns int64
+	// to_regclass resolves the bare name through this session's search_path, which is the
+	// relation the count above would have read; a catalog row for a different table named
+	// the same in some other schema is not this answer.
+	if err := tx.DB().Raw(`SELECT count(*) FROM pg_attribute
+			WHERE attrelid = to_regclass(?) AND attname = 'effects_owed' AND attnum > 0 AND NOT attisdropped`,
+		handled).Scan(&columns).Error; err != nil {
+		return false, fmt.Errorf("events: move the delivery ledger: ask whether the ledger counts owed effects: %w", err)
+	}
+	return columns > 0, nil
+}
+
 // holdDurable takes the move's lock over one durable's rows, refusing rather than
 // queueing. The sentence names what is in the way and that nothing moved, because
 // the retry is correctable and the operator has to be able to tell this from a
 // failure that lost rows.
 // ErrLedgerMoveContended is the move's answer to a delivery in flight: one claim is
-// open under a durable this move is about to rename, so the whole move refuses and
-// writes nothing. It is a sentinel because the operator's door has to be able to tell
-// "ask again" from "something is broken" without matching a sentence — the refusal
-// reads as a conflict there, and as the same refusal in a log here.
+// open under a durable this move is about to rename, or one still counts an effect its
+// delivery has not carried out, so the whole move refuses and writes nothing. It is a
+// sentinel because the operator's door has to be able to tell "ask again" from
+// "something is broken" without matching a sentence — the refusal reads as a conflict
+// there, and as the same refusal in a log here.
 var ErrLedgerMoveContended = errors.New("no ledger row moved, run it again")
 
 func holdDurable(tx db.Tx[db.System], durable string) error {
@@ -482,36 +348,10 @@ func holdDurable(tx db.Tx[db.System], durable string) error {
 	return nil
 }
 
-// renameLedger moves one ledger's unscoped rows under prefix and answers how many
-// of them each tenant had.
-//
-// Two halves in one statement, because the second has to be provably safe rather than
-// probably: the delete removes the rows the copy read, keyed by the keys the copy read,
-// and not by a predicate asked a second time. Both halves used to spell the same
-// predicate — the unscoped name set the locks above were taken for, in the tenants this
-// app holds — and that was one assumption deep: a row's own durable never changes, but
-// `ownTenant` answers a question about another table, and a placement can commit between
-// the copy and the delete. A tenant that took this app in that gap has its unscoped rows
-// inside the delete's reading and outside the copy's, and the pair then removes a claim it
-// never copied — the mark that stops a handler running twice, taken away by the move whose
-// whole reason is to stop handlers running twice. So the delete asks for `src`'s
-// (event_id, durable) pairs, which are the primary key: one reading, one set, and no
-// statement in between that could change what the other means.
-//
-// The copy is INSERT ... SELECT over a MATERIALIZED CTE rather than a bare
-// INSERT ... SELECT against the same table: the CTE is evaluated once from the
-// statement's own snapshot, so the rows this statement inserts cannot re-enter the
-// set it is copying, and the delete, which reads the same CTE, cannot see a set wider
-// than the one the insert carried. ON CONFLICT DO NOTHING keeps the scoped row when a twin
-// is already there — the state a move leaves behind if it ever stopped between the two
-// statements — and the unscoped twin is still deleted, so the durable ends up named
-// one way. The timestamp is copied, not re-stamped: handled_at is what the purge
-// ages on (relay.go's purge), and a row that got a new handled_at would outlive its
-// own outbox row for the accident of being moved.
-//
-// The delete returns what it removed, grouped by tenant, so the record names the
-// tenants whose ledger moved rather than the tenant that ran the job — which is the
-// difference between an audit trail and a log line.
+// renameLedger copies and deletes the same materialized set of unscoped claims,
+// returning removed counts by tenant. Existing scoped twins survive conflicts,
+// and original timestamps are retained. Using exact source keys for deletion
+// prevents a newly visible claim from being deleted without a copied twin.
 func renameLedger(tx db.Tx[db.System], table, prefix string, columns, from []string, app appname.Name) (map[uuid.UUID]int64, error) {
 	// Nothing named, nothing to do: the caller read the names this app's tenants
 	// hold, and an empty reading is the second run of an idempotent move.
@@ -572,4 +412,54 @@ func total(counts map[uuid.UUID]int64) int64 {
 		n += c
 	}
 	return n
+}
+
+func ledgerDurables(tx db.Tx[db.System], app appname.Name) ([]string, error) {
+	// The names this app's tenants still hold claims under, read before any lock
+	// is taken: of the un-scoped rows, only the ones in a tenant this app holds.
+	var from []string
+	if err := tx.DB().Raw(`SELECT DISTINCT durable FROM `+handled+` WHERE `+unscoped+`
+			AND `+ownTenant+`
+			UNION
+			SELECT DISTINCT durable FROM `+deadLetters+` WHERE `+unscoped+`
+			AND `+ownTenant+` ORDER BY durable`, string(app), string(app)).Scan(&from).Error; err != nil {
+		return nil, fmt.Errorf("events: move the delivery ledger for app %s: name the durables: %w", app, err)
+	}
+	// Both ledgers share one durable lock. Refuse active claims under that
+	// legacy name without excluding unrelated durables or scoped deliveries.
+	for _, d := range from {
+		if err := holdDurable(tx, d); err != nil {
+			return nil, err
+		}
+	}
+	return from, nil
+}
+
+func publishLedgerMove(ctx context.Context, tx db.Tx[db.System], app appname.Name, requestedBy string, durables []string, claims, dead map[uuid.UUID]int64) (int64, error) {
+	// One record per tenant whose ledger moved, in the transaction that moved
+	// it, so the rows and their account commit together or not at all. The
+	// actor is PublishFor's to read off the context: a boot carries none, which
+	// is what "nobody did this" means in the envelope, and the installation's
+	// verb carries the operator's.
+	tenants := make([]uuid.UUID, 0, len(claims)+len(dead))
+	for id := range claims {
+		tenants = append(tenants, id)
+	}
+	for id := range dead {
+		if _, twice := claims[id]; !twice {
+			tenants = append(tenants, id)
+		}
+	}
+	count := int64(len(tenants))
+	for _, id := range tenants {
+		rec := LedgerMovedRecord{App: app.String(), Durables: durables,
+			Claims: claims[id], Dead: dead[id], RequestedBy: requestedBy}
+		if err := SucceedFor(ctx, tx, db.Now()); err != nil {
+			return 0, err
+		}
+		if err := PublishFor(ctx, tx, id, EventLedgerMoved, rec); err != nil {
+			return 0, err
+		}
+	}
+	return count, nil
 }

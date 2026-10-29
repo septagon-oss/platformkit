@@ -1,27 +1,7 @@
 package main
 
-// product.go is the reference application's share of its own composition, said
-// once, in the resolver's words.
-//
-// `Use` names the kernel modules; two modules here name what is this product's
-// rather than any module's. `product` is first in the list because it needs
-// nobody: it is the values this installation decides and no module can derive —
-// where uploads go, which flag gates a settings write, the object-scope policy,
-// the plan feature the trail is sold under, the two addresses the public site
-// links, the sign-in form the shell posts to, the languages a locale may be set
-// to, the roles a new tenant is seeded with, and the empty grant-check holder the
-// auth module fills. Before this file they were thirteen `Deps` literals in a
-// composition file that ran before the resolver did.
-//
-// `access` is second to last, because it is the first thing in the application
-// that can name a person, a notice and a site: the reach a refusal's ask has
-// here, and the one subject this product puts under change control. Both are
-// joins across modules this product composes, and neither belongs in any of them.
-//
-// The one edge neither module declares is the user module's promotion check,
-// answered by the auth service. Declaring it would be the cycle user → auth →
-// user, which is a fact about the graph; the holder `product` puts and `auth`
-// fills is the mechanism pkit tests for exactly that case.
+// product.go declares the reference application's own share of its composition.
+// Role-backed answers come from auth's grants provider, built before User and Auth.
 
 import (
 	"context"
@@ -51,7 +31,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	auditcontracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
-	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
@@ -92,11 +71,13 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 // productPictures uses the application's declared picture doors in its ordinary
 // provider, so fixture and production compositions share the same typed wiring.
 func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures) *pkit.Module {
+	return productWithPolicy(cfg, grants, pictures, taskPolicy)
+}
+
+// productWithPolicy supplies explicit policy rules through the same product
+// declarations as the reference composition. The caller owns the adapter.
+func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
 	decls := []pkit.Declaration{
-		pkit.Provides[usercontracts.Administration](),
-		pkit.Provides[usercontracts.Granting](),
-		pkit.Provides[usercontracts.InvitationAuthority](),
-		pkit.Provides[usercontracts.InvitationTiming](),
 		pkit.Provides[filecontracts.Storage](),
 		// The door to the deployment's secrets, opened once here: which store it is
 		// — the environment, a mounted directory, an OpenBao — is secrets.adapter's
@@ -122,6 +103,9 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[authcontracts.ConfirmationChrome](),
+		pkit.Provides[usercontracts.InvitationTiming](),
+		pkit.Provides[usercontracts.InvitationAuthority](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
@@ -142,14 +126,6 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		if err != nil {
 			return module.Module{}, err
 		}
-		// auth.AdministeringRoles is what makes "the last person who can still
-		// administer this tenant" answerable at all: the user module owns who
-		// holds a role, the auth module owns what a role grants, and neither reads
-		// the other's rows; the invitation doors meet here for the same reason.
-		pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles})
-		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
-		pkit.Put[usercontracts.InvitationAuthority](w, &usercontracts.InvitationAuthorityFunc{})
-		pkit.Put(w, usercontracts.InvitationTiming{Lifetime: authcontracts.TokenLifetime, ResendInterval: authcontracts.ResetInterval})
 		pkit.Put[filecontracts.Storage](w, store)
 		// The secret store, opened once and put under both halves of the port;
 		// `store` above is the object store, and the why sits with the Provides.
@@ -165,8 +141,8 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// this file's decision and not the audit module's: an installation that
 		// sells the trail to everybody composes no Plan and nothing is asked.
 		pkit.Put[auditcontracts.Plan](w, auditcontracts.Plan("audit-trail"))
-		// Object scope (decision 0011): tasks are decided by policy/task.rego.
-		pkit.Put[tenancy.Policy](w, taskPolicy)
+		// The product supplies object-scope rules; modules keep their lifecycle rules.
+		pkit.Put[tenancy.Policy](w, policy)
 		// The installation's flags, read by kit/config out of the flags block and
 		// answered once for the whole process: configFlags targets nobody, not even
 		// by tenant. One evaluator is built here, for the one door that asks it.
@@ -184,22 +160,16 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// The two addresses the public site links and does not serve. They are
 		// written here because they are this product's facts: which shell it
 		// composed, and which door of which module answers for a file a visitor may
-		// see. A module that named them would be naming a surface it does not serve,
-		// and a composition that writes one is pinning an address the kernel
-		// composed — which is only safe because a test asks the running server: the
-		// way in by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file
-		// by TestThePublicPageLinksOnlyAddressesTheInstallationServes, which uploads
-		// a public file, sets it as the tenant's logo, reads the src back off the
-		// public home page and fetches it.
+		// see. A module that named them would name a surface it does not serve, and a
+		// composition that writes one pins an address the kernel composed — safe only
+		// because a test asks the running server what it actually answers.
 		//
 		// The way in is the workspace root, not the sign-in page below it.
-		// pinnedSignIn stays the address the guard turns a refused caller towards,
-		// and the fault chrome keeps linking it; this line is what an anonymous
-		// visitor on a tenant's own host is offered, and a public frame may offer no
-		// address deeper into a workspace than its root. The root asks no permission
-		// of its own — httpx.SignedIn guards it — so the workspace decides whether
-		// the visitor gets a page or the form, and returns them to the root once
-		// they have signed in.
+		// pinnedSignIn stays the address the guard turns a refused caller towards, and
+		// the fault chrome keeps linking it; this is what an anonymous visitor on a
+		// tenant's own host is offered, and a public frame may offer no address deeper
+		// into a workspace than its root. The root asks no permission of its own, so
+		// the workspace decides whether the visitor gets a page or the form.
 		pkit.Put[webcontracts.Links](w, webcontracts.Links{
 			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
@@ -220,9 +190,9 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// offer what the other did not mount. The address is the public door as the
 		// surface composes it — see pinnedRegisterAPI.
 		pkit.Put[admincontracts.Signin](w, admincontracts.Signin{
-			Address: pinnedSignInAPI,
+			Address: pinnedSignInAPI, OperationID: "auth-login",
 			Registration: &admincontracts.Registration{
-				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
+				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI, OperationID: "auth-register",
 			},
 		})
 		// Where a stored picture's bytes are fetched from. The workspace catalogue
@@ -242,6 +212,18 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
+		// The two addresses the sheet a mailed confirmation link opens has to link.
+		// They are written here because every part of them is this product's fact:
+		// which mount hands out the stylesheet, and which sign-in page a person who
+		// has just confirmed their address is sent to. The module names the port and
+		// never an address — TestTheEmailedLinkOpensAPageThatConfirms asks the running
+		// application that the page the link opens answers, links the sheet named
+		// here, and returns the person to the page named here.
+		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
+			Assets: pinnedAssets, SignIn: pinnedSignIn,
+		})
+		pkit.Put(w, usercontracts.InvitationTiming{Lifetime: authcontracts.TokenLifetime, ResendInterval: authcontracts.ResetInterval})
+		pkit.Put[usercontracts.InvitationAuthority](w, &usercontracts.InvitationAuthorityFunc{})
 		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
@@ -268,20 +250,17 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 // objectStore is this product's reading of files.store: the directory the kernel
 // has always wired, or the object store the deployment named an address for.
 //
-// It branches on the setting and never on cloud.profile. A profile exists to pick
+// It branches on the setting and never on cloud.profile: a profile exists to pick
 // adapters for a deployment that did not write this line, and a product that
-// branched on the profile would be a product with a vendor in it — and one that
-// disagreed with its own configuration whenever an operator overrode the profile.
+// branched on it would have a vendor in it and would disagree with its own
+// configuration whenever an operator overrode the profile. What it refuses is the
+// input its adapter cannot build without — an endpoint and a bucket. It asks
+// nothing of the network: construction is not readiness, and whether the address
+// answers is what the first Put finds out.
 //
-// What it refuses is the input its adapter cannot build without: an endpoint and a
-// bucket. It asks nothing of the network — construction is not readiness, and
-// whether the address answers is what the first Put finds out, or /ready once the
-// installation asks it.
-//
-// An empty scheme means https, which is what config.Load already settled; http is
-// the one spelling that has to be written down on purpose, because a store inside a
-// private network is real and a store on the public internet reached in plain text
-// is not.
+// An empty scheme means https, as config.Load already settled; http is the one
+// spelling that must be written down on purpose, because a store inside a private
+// network is real and one on the public internet in plain text is not.
 func objectStore(files config.Files) (filecontracts.Storage, error) {
 	if files.Store != config.StoreS3 {
 		return file.Local(files.Dir), nil
@@ -330,7 +309,7 @@ func workspace() *pkit.Module {
 // so the application reads it off the resolved plan rather than a module.
 func access(ask *accessReach) *pkit.Module {
 	return pkit.NewModule("access", func(w *pkit.Wiring) (module.Module, error) {
-		users, notices := pkit.Get[usercontracts.Service](w), pkit.Get[notificationcontracts.Service](w)
+		users, notices := pkit.Get[usercontracts.RoleHolders](w), pkit.Get[notificationcontracts.Service](w)
 		sites := pkit.Get[sitecontracts.Service](w)
 		// Recipients joins the two modules that each own half the answer. Tell
 		// writes one notice through the notification module — the bell in the
@@ -342,7 +321,7 @@ func access(ask *accessReach) *pkit.Module {
 		// address the kernel composed for the user resource. It carries the person,
 		// not a token, so forwarding the notice grants nothing — the form behind it
 		// is guarded by the same door the API is.
-		*ask = accessReach{users: users, notify: notices, may: pkit.Get[usercontracts.Granting](w).May}
+		*ask = accessReach{users: users, notify: notices, may: pkit.Get[usercontracts.Granting](w).May, administration: pkit.Get[usercontracts.Administration](w)}
 		// The site settings the shell writes are the subject this module contributes:
 		// a subject is a row, and this is the first module in the composition with a
 		// site service to read one with. The flag that gates that write is this
@@ -372,16 +351,17 @@ func access(ask *accessReach) *pkit.Module {
 		// than the one the routes are mounted on.
 		pkit.Put[*change.ReviewChrome](w, &change.ReviewChrome{
 			Shell:     reviewShell(catalogues()),
-			Authorize: pkit.Get[authcontracts.Auth](w),
+			Authorize: pkit.Get[httpx.Authorizer](w),
 		})
 		return module.Module{Name: "access"}, nil
 	},
-		pkit.Needs[usercontracts.Service](),
+		pkit.Needs[usercontracts.RoleHolders](),
 		pkit.Needs[notificationcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
 		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),
-		pkit.Needs[authcontracts.Auth](),
+		pkit.Needs[usercontracts.Administration](),
+		pkit.Needs[httpx.Authorizer](),
 		pkit.Provides[changecontracts.Notifier](),
 		pkit.Provides[changecontracts.ProposalPage](),
 		pkit.Provides[*change.ReviewChrome](),
@@ -437,8 +417,14 @@ func caches() app.Caches {
 // inputs for. It is not an edge and it names no module: the key list is what
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
-// picked it. The one thing that can go wrong here is the pair disagreeing with
-// cfg.Mail.Enabled(); the composition tests refuse that.
+// picked it. Mail is the only port with three implementations, so this is the one
+// place the state a server answers for is named in the resolver's words; naming
+// nothing at all leaves the mail-less choice to the module itself — its simulated
+// mailbox in a development deployment, the sender that refuses every send
+// anywhere else. What can go wrong here is the list disagreeing with what
+// kit/config loaded, and the composition tests refuse that: one boots a running
+// production application that names no mail server, and every case that reads a
+// link out of this process's memory boots the development one that does not.
 func deploymentInputs(cfg config.Config) map[string]string {
 	if !cfg.Mail.Enabled() {
 		return nil
@@ -469,8 +455,9 @@ func operatorStorybook(dir string) func(context.Context) (export.Storybook, erro
 // accessReach is httpx.AskForAccess for this product, filled by the access module
 // once the two services it joins exist.
 type accessReach struct {
-	users  usercontracts.Service
-	notify notificationcontracts.Service
+	users          usercontracts.RoleHolders
+	administration usercontracts.Administration
+	notify         notificationcontracts.Service
 	// may is the composition's own way of asking the same question the kernel
 	// asks a request: may this caller manage roles. A request carries a principal
 	// and asks the authorizer; a caller with no principal on its context is not a
@@ -479,7 +466,7 @@ type accessReach struct {
 }
 
 func (a accessReach) Recipients(ctx context.Context, tx db.Tx[db.Tenant]) ([]uuid.UUID, error) {
-	roles, err := auth.AdministeringRoles(ctx, tx)
+	roles, err := a.administration.Administering(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

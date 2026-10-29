@@ -9,16 +9,12 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
-// AdministeringRoles is which of this tenant's roles grant
-// contracts.PermissionRoleManage. See auth.AdministeringRoles, which is the
-// exported door and says why this is a function rather than a method.
-//
-// The filter is contracts.Grants and not a SQL predicate, deliberately. The
-// wildcard grants every ordinary permission and no operator one, and that rule
-// belongs in one place — writing "'role:manage' = ANY(permissions) OR '*' =
-// ANY(permissions)" here would be a second copy of it, in a language where the
-// first copy cannot be seen from.
+// AdministeringRoles lists roles that can restore tenant administration.
+// It shares the ordinary/operator permission rule with the authorizer.
 func AdministeringRoles(ctx context.Context, tx db.Tx[db.Tenant]) ([]string, error) {
+	if err := grantTenant(ctx, tx); err != nil {
+		return nil, err
+	}
 	var roles []*contracts.Role
 	if err := tx.DB().WithContext(ctx).Order("name").Find(&roles).Error; err != nil {
 		return nil, fmt.Errorf("auth: read the roles: %w", err)
@@ -26,7 +22,7 @@ func AdministeringRoles(ctx context.Context, tx db.Tx[db.Tenant]) ([]string, err
 	manage := tenancy.Grant{Permission: contracts.PermissionRoleManage}
 	out := make([]string, 0, len(roles))
 	for _, role := range roles {
-		if contracts.Grants(role.Grants, manage) {
+		if contracts.Match(role.Grants, manage) {
 			out = append(out, role.Name)
 		}
 	}

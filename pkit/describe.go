@@ -29,35 +29,14 @@ const schemaV1 = "platformkit.composition.v1"
 // implementation FromDeployment picked, which configuration sections were read,
 // and the roles the app recorded.
 //
-// It is the resolved declarations and nothing else. Six things are deliberately
-// absent, each because this package does not own it:
-//
-//   - Not routes or mounted surfaces. A manifest registers its routes through a
-//     function rather than listing them, and kit/app mounts them; verifying what
-//     is mounted stays the consumer's. No routes, surfaces or path key exists
-//     here, and adding one would be a fabrication.
-//   - Not which module answers the kernel's three questions (the ports
-//     Server.Explain prints). Those are read off what each module *put*; this is
-//     a reading of the resolution, and it stops there.
-//   - Not tenant hosts, and no tenant data of any kind. A host claim belongs to
-//     a process, and which host is which tenant stays the tenant module's rows.
-//   - Not the built manifests. Permissions, emitted events and subscriptions are
-//     machine-readable through Planned.Modules and the AsyncAPI document, and a
-//     second encoding of them would be a second owner of facts another package
-//     owns. Explain prints them; this type does not carry them.
-//   - Not observed runtime behavior. It proves nothing about a boot, a
-//     migration, a transport or a served request: it never reaches the phase
-//     that opens one.
-//   - Not a timestamp. No generatedAt field, for the reason Explain gives for
-//     the file a client commits: a clock in the document would make every
-//     committed copy drift without the composition changing.
+// It is the resolved declarations and nothing else: routes, the kernel's three
+// ports, tenant hosts and any tenant data, the built manifests, observed runtime
+// behaviour and a timestamp are each absent because this package does not own
+// them — pkit/README.md names the six and why.
 //
 // The one rule about a refusal: when the composition does not resolve, the
-// document carries schema, app, environment, resolved:false and problems, and
-// no module, contract, provider, implementation or role. Each problem names the
-// module it is about, and suppressed names the modules not built because of one.
-// A caller that ignores the error still cannot read a composition out of it, and
-// there is no second, softer graph behind the first one.
+// document carries schema, app, environment, resolved:false and problems, and no
+// module, contract, provider, implementation or role.
 type Description struct {
 	Schema      string             `json:"schema"`
 	App         string             `json:"app"`
@@ -203,37 +182,18 @@ type DescribedProblem struct {
 }
 
 // Describe reads the composition the resolver settled, as values, for one
-// deployment. It is Describe's own reading of the same resolution Validate
-// answers and Explain prints: the build order, who supplies whose need, the
-// contributions, what Choose settled, the implementation the deployment picked,
-// the configuration sections each module read (names only) and the recorded
-// roles — and, when the composition does not resolve, the problems that are why,
-// with no graph beside them.
+// deployment: build order, suppliers, contributions, what Choose settled, the
+// implementation the deployment picked, the configuration sections each module
+// read (names only) and the recorded roles — and, when the composition does not
+// resolve, the problems that are why, with no graph beside them. The value is
+// non-nil on both paths: on refusal it is the machine-readable form of it.
 //
-// The value is non-nil on both paths: on success it is the answer, on refusal it
-// is the machine-readable form of that refusal, with resolved false.
-//
-// What runs during it, in words a caller can act on: every module's own build
-// function runs, in the build order, because what a module reads and puts is
-// only observable from inside its own build. That is Validate's phase, Explain's
-// phase and Plan's phase, and the acceptance line that comes with it — nothing
-// in this phase opens a pool, runs a migration, dials a broker, listens on a
-// port or starts a server, and a Deployment whose Transports, Transport and
-// Caches are all empty is described as readily as a full one, because the
-// resolution reads only Environment, Inputs and Config.
-//
-// What cannot be promised is stated rather than papered over: a build function
-// is the module's own code, and this package cannot bound it. A module that
-// opened a connection inside its build would do that here too. The kernel's
-// guarantee is the convention every module here follows — a build is a dry
-// construction — so this is a call into your own composition. It is not an
-// untrusted-code sandbox, and no module of yours should be run through it that
-// you would not run.
-//
-// Like Explain and Plan, and unlike Build, it takes no lifecycle and mutates no
-// App: a Describe after a Build is refused by the engine's own one-lifecycle
-// rule has nothing to do with this method, which neither consumes the App's one
-// build nor is refused by one having happened.
+// Every module's own build function runs, in build order, because what a module
+// reads and puts is observable only from inside its own build. Nothing in this
+// phase opens a pool, runs a migration, dials a broker, listens on a port or
+// starts a server, and a Deployment with no transports and no caches is described
+// as readily as a full one. A build function is the module's own code and this
+// package cannot bound it: see pkit/README.md.
 func (a *App) Describe(d Deployment) (*Description, error) {
 	p, _, _, err := a.compose(d)
 	if err != nil {

@@ -8,20 +8,18 @@ import (
 )
 
 // SealWith is the envelope for a store that holds the key material itself — the
-// environment, a mounted file, a test's map — rather than a service that keeps keys
-// and never shows them.
+// environment, a mounted file, a test's map — rather than a service that keeps
+// keys and never shows them.
 //
-// It exists so the local answer is written once: the material is base64 of exactly
-// 32 bytes, the address is the additional authenticated data, the nonce is drawn per
-// call and the bytes carry one version byte. An adapter that got any of that wrong
-// would produce ciphertexts its own next release could not open, which is the
-// expensive class of bug, so it is done here and every local store calls it. A store
-// that runs a key service (OpenBao's transit, a cloud KMS) does not: a crypto path in
-// front of a key store would be a second answer to which key a ciphertext sits under.
+// The local answer is written once so it cannot be got wrong twelve ways: the
+// material is base64 of exactly 32 bytes, the address is the additional
+// authenticated data, the nonce is drawn per call and the bytes carry one
+// version byte. A store that runs a key service takes no crypto path in front
+// of it — which key a ciphertext sits under stays that service's own answer.
 //
-// Key material of the wrong width, and ciphertext these bytes did not come from, are
-// ErrSealed with the address in the sentence: both are defects rather than
-// conditions, and neither is answered with a guess at what was inside.
+// Key material of the wrong width, and ciphertext these bytes did not come
+// from, are ErrSealed with the address in the sentence: defects, not
+// conditions, and never answered with a guess at what was inside.
 func SealWith(ref Ref, material, plaintext []byte) ([]byte, error) {
 	if len(plaintext) == 0 {
 		return nil, fmt.Errorf("secrets: sealing nothing under %s: %w", ref, ErrSealed)

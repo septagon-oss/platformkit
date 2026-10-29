@@ -35,7 +35,6 @@ import (
 // Deps is what this module cannot make for itself: a struct rather than a parameter
 // list, so adding one is a named field at every call site. Every module follows this.
 type Deps struct {
-	InvitationRetention usercontracts.InvitationRetention
 	// Service is the commands, for a composition that built them for its own reasons and
 	// hands the same value to its other modules; nil builds one from the fields below. It
 	// has to be the value this package built, because the worker job calls the walk beside
@@ -46,11 +45,15 @@ type Deps struct {
 	// the one read across the boundary, Bundles where a bundle's bytes go, and Notes
 	// how the person hears about them. Tenants is how the export walk reaches active
 	// tenants — the same lister modules/task's sweep is handed.
-	Parts   []personaldata.Part
-	People  usercontracts.Service
-	Bundles contracts.BundleSource
-	Notes   contracts.Notifier
-	Tenants jobs.TenantLister
+	Parts []personaldata.Part
+	// Deprecated: use Subjects.
+	People usercontracts.Service
+	// Subjects reads retained people; when present it takes precedence over People.
+	Subjects            usercontracts.RetainedLookup
+	InvitationRetention usercontracts.InvitationRetention
+	Bundles             contracts.BundleSource
+	Notes               contracts.Notifier
+	Tenants             jobs.TenantLister
 
 	// Files is the file module: where a bundle's bytes are stored and the only way to
 	// stream one back out of the public door. It is a module contract rather than a
@@ -114,7 +117,7 @@ func NewWith(deps Deps) module.Module {
 	svc := deps.Service
 	if svc == nil {
 		svc = internal.NewService(internal.Deps{
-			Parts: deps.Parts, People: deps.People, Now: deps.Now, InvitationRetention: deps.InvitationRetention,
+			Parts: deps.Parts, People: subjects(deps), InvitationRetention: deps.InvitationRetention, Now: deps.Now,
 			Bundles: deps.Bundles, Notes: deps.Notes,
 		})
 	}
@@ -168,4 +171,11 @@ func NewWith(deps Deps) module.Module {
 			internal.RegisterRoutes(s, svc, deps.Files)
 		},
 	}
+}
+
+func subjects(deps Deps) usercontracts.RetainedLookup {
+	if deps.Subjects != nil {
+		return deps.Subjects
+	}
+	return deps.People
 }

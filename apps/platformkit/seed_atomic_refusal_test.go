@@ -33,19 +33,19 @@ records:
     fields: {kind: page, title: " ", body: Refused write}
 `)}},
 		Root: "seed", Clock: seedClock{},
-		Writers: []seed.Writer{&contentSeeder{svc: c.contents}}, Authorize: seedGrants{auth: c.auth},
+		Writers: []seed.Writer{&contentSeeder{svc: c.contents}}, Authorize: seedGrants{auth: c.testAuth()},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	applyErr := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err = seedActor(ctx, c.users, tx, adminEmail)
+			ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail)
 			if err != nil {
 				return err
 			}
@@ -59,7 +59,7 @@ records:
 	}
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}

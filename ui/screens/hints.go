@@ -2,6 +2,7 @@ package screens
 
 import (
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
@@ -146,39 +147,23 @@ type DeckDirectionPresentation struct {
 	Skip    bool   `json:"skip,omitzero"`
 }
 
+// deckPresentation is the deck's wire form: present.Deck decides which
+// directions the caller may run and whether the deck can undo them.
 func deckPresentation(d *entity.DeckHints, commands []httpx.Command) *DeckPresentation {
-	if d == nil {
+	inputs := make([]present.CommandInput, 0, len(commands))
+	for _, c := range commands {
+		inputs = append(inputs, present.CommandInput{Verb: c.Verb, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
+	}
+	deck := present.Deck(d, inputs)
+	if deck == nil {
 		return nil
 	}
-	d = d.Clone()
-	out := &DeckPresentation{Queue: d.Queue, Order: d.Order, Directions: map[string]DeckDirectionPresentation{}, Undoable: d.Undoable}
-	allowed := map[string]bool{}
-	byName := map[string]httpx.Command{}
-	for _, c := range commands {
-		byName[c.Verb] = c
-		if !c.Present.System {
-			allowed[c.Verb] = true
-		}
+	out := &DeckPresentation{Queue: deck.Queue, Order: deck.Order, Undoable: deck.Undoable, Directions: map[string]DeckDirectionPresentation{}}
+	if len(out.Queue) == 0 {
+		out.Queue = nil
 	}
-	for key, v := range d.Directions {
-		if v.Skip {
-			out.Directions[key] = DeckDirectionPresentation{Skip: true}
-			continue
-		}
-		if allowed[v.Command] {
-			out.Directions[key] = DeckDirectionPresentation{Command: v.Command, Label: v.Label, Tone: v.Tone, Icon: v.Icon}
-			c := byName[v.Command]
-			if c.Undo != "" && allowed[c.Undo] && c.HasResult {
-				direction := out.Directions[key]
-				direction.Undo = c.Undo
-				out.Directions[key] = direction
-			} else {
-				out.Undoable = false
-			}
-		}
-	}
-	if len(out.Directions) == 0 {
-		out.Undoable = false
+	for key, v := range deck.Directions {
+		out.Directions[key] = DeckDirectionPresentation{Undo: v.Undo, Command: v.Command, Label: v.Label, Tone: v.Tone, Icon: v.Icon, Skip: v.Skip}
 	}
 	return out
 }

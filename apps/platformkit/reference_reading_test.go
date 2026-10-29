@@ -29,8 +29,8 @@ func referenceResources(t *testing.T) []httpx.Resource {
 	_, cfg := configure(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
-		Unwired: true, Tenants: c.tenants, Authorize: c.auth,
-		Authenticate: c.auth.Authenticate, Cache: cache.Memory("pkit"), Log: quiet(),
+		Unwired: true, Tenants: c.testTenants(), Authorize: c.testAuth(),
+		Authenticate: c.testAuth().Authenticate, Cache: cache.Memory("pkit"), Log: quiet(),
 	})
 	for _, m := range c.modules {
 		if m.Routes != nil {
@@ -68,7 +68,8 @@ func words(t *testing.T, language string) screens.Text {
 func TestTheReferenceTaskCatalogueReadsWellInEnglishAndPortuguese(t *testing.T) {
 	task := resourceAt(t, "task", "task")
 	for _, language := range []string{"en", "pt-PT"} {
-		entry := screens.Describe1(screens.Localise(task, words(t, language)), true)
+		text := words(t, language)
+		entry := screens.DescribeEntry(screens.Localise(task, text), true, text, language)
 		got, err := json.MarshalIndent(entry, "", "  ")
 		if err != nil {
 			t.Fatal(err)

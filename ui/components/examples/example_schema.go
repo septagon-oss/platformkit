@@ -142,15 +142,7 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 		return map[string]any{"type": "number"}, nil
 	}
 	if !definition && typ.Name() != "" && (typ.Kind() == reflect.Struct || typ.Kind() == reflect.Slice || typ.Kind() == reflect.Map) {
-		if ref, ok := b.refs[typ]; ok {
-			return map[string]any{"$ref": ref}, nil
-		}
-		name := fmt.Sprintf("type%d", len(b.refs))
-		ref := "#/$defs/" + name
-		b.refs[typ] = ref
-		value, err := b.build(typ, true)
-		b.defs[name] = value
-		return map[string]any{"$ref": ref}, err
+		return b.reference(typ)
 	}
 	schema := map[string]any{}
 	switch typ.Kind() {
@@ -158,72 +150,9 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 		item, err := b.build(typ.Elem(), false)
 		return map[string]any{"anyOf": []any{item, map[string]any{"type": "null"}}}, err
 	case reflect.Struct:
-		fields, err := exampleFields(typ)
-		if err != nil {
-			return nil, err
-		}
-		properties := map[string]any{}
-		var required []string
-		for _, field := range fields {
-			property, err := b.build(field.typ, false)
-			if err != nil {
-				return nil, fmt.Errorf("property %q: %w", field.name, err)
-			}
-			if field.quoted {
-				property = map[string]any{"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$", "description": "Exact signed 64-bit decimal integer."}
-				if field.typ.Kind() == reflect.Pointer {
-					property = map[string]any{"anyOf": []any{property, map[string]any{"type": "null"}}}
-				}
-			}
-			if field.doc != "" {
-				property["description"] = field.doc
-			}
-			if field.choices != "" {
-				var choices []any
-				for choice := range strings.SplitSeq(field.choices, ",") {
-					var value any = choice
-					if field.typ.Kind() != reflect.String {
-						if err := json.Unmarshal([]byte(choice), &value); err != nil {
-							return nil, fmt.Errorf("invalid enum for %s: %w", field.name, err)
-						}
-					}
-					choices = append(choices, value)
-				}
-				property["enum"] = choices
-			}
-			// A definite omitted string is its Go zero, not a renderer default.
-			if (field.omit || field.zero) && !field.optional && field.typ.Kind() == reflect.String && property["type"] == "string" {
-				property["default"] = ""
-			}
-			properties[field.name] = property
-			if !field.omit && !field.zero && !field.optional {
-				required = append(required, field.name)
-			}
-		}
-		schema = map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
-		if len(required) > 0 {
-			schema["required"] = required
-		}
+		return b.structure(typ)
 	case reflect.Slice, reflect.Array, reflect.Map:
-		if typ.Kind() == reflect.Map && typ.Key().Kind() != reflect.String {
-			return nil, fmt.Errorf("map key %s is not a string", typ.Key())
-		}
-		item, err := b.build(typ.Elem(), false)
-		if err != nil {
-			return nil, err
-		}
-		if typ.Kind() == reflect.Map {
-			schema = map[string]any{"type": []string{"object", "null"}, "additionalProperties": item}
-		} else if typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.Uint8 {
-			schema = map[string]any{"type": []string{"string", "null"}, "contentEncoding": "base64"}
-		} else {
-			schema = map[string]any{"type": "array", "items": item}
-			if typ.Kind() == reflect.Slice {
-				schema["type"] = []string{"array", "null"}
-			} else {
-				schema["minItems"], schema["maxItems"] = typ.Len(), typ.Len()
-			}
-		}
+		return b.collection(typ)
 	case reflect.String:
 		schema["type"] = "string"
 	case reflect.Bool:
@@ -243,6 +172,101 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 		return nil, fmt.Errorf("Props type %s is unsupported", typ)
 	}
 	return schema, nil
+}
+
+func (b exampleSchemaBuilder) reference(typ reflect.Type) (map[string]any, error) {
+	if ref, ok := b.refs[typ]; ok {
+		return map[string]any{"$ref": ref}, nil
+	}
+	name := fmt.Sprintf("type%d", len(b.refs))
+	ref := "#/$defs/" + name
+	b.refs[typ] = ref
+	value, err := b.build(typ, true)
+	b.defs[name] = value
+	return map[string]any{"$ref": ref}, err
+}
+
+func (b exampleSchemaBuilder) structure(typ reflect.Type) (map[string]any, error) {
+	var schema map[string]any
+	fields, err := exampleFields(typ)
+	if err != nil {
+		return nil, err
+	}
+	properties := map[string]any{}
+	var required []string
+	for _, field := range fields {
+		property, err := b.property(field)
+		if err != nil {
+			return nil, err
+		}
+		properties[field.name] = property
+		if !field.omit && !field.zero && !field.optional {
+			required = append(required, field.name)
+		}
+	}
+	schema = map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema, nil
+}
+
+func (b exampleSchemaBuilder) collection(typ reflect.Type) (map[string]any, error) {
+	var schema map[string]any
+	if typ.Kind() == reflect.Map && typ.Key().Kind() != reflect.String {
+		return nil, fmt.Errorf("map key %s is not a string", typ.Key())
+	}
+	item, err := b.build(typ.Elem(), false)
+	if err != nil {
+		return nil, err
+	}
+	if typ.Kind() == reflect.Map {
+		schema = map[string]any{"type": []string{"object", "null"}, "additionalProperties": item}
+	} else if typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.Uint8 {
+		schema = map[string]any{"type": []string{"string", "null"}, "contentEncoding": "base64"}
+	} else {
+		schema = map[string]any{"type": "array", "items": item}
+		if typ.Kind() == reflect.Slice {
+			schema["type"] = []string{"array", "null"}
+		} else {
+			schema["minItems"], schema["maxItems"] = typ.Len(), typ.Len()
+		}
+	}
+	return schema, nil
+}
+
+func (b exampleSchemaBuilder) property(field exampleField) (map[string]any, error) {
+	property, err := b.build(field.typ, false)
+	if err != nil {
+		return nil, fmt.Errorf("property %q: %w", field.name, err)
+	}
+	if field.quoted {
+		property = map[string]any{"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$", "description": "Exact signed 64-bit decimal integer."}
+		if field.typ.Kind() == reflect.Pointer {
+			property = map[string]any{"anyOf": []any{property, map[string]any{"type": "null"}}}
+		}
+	}
+	if field.doc != "" {
+		property["description"] = field.doc
+	}
+	if field.choices != "" {
+		var choices []any
+		for choice := range strings.SplitSeq(field.choices, ",") {
+			var value any = choice
+			if field.typ.Kind() != reflect.String {
+				if err := json.Unmarshal([]byte(choice), &value); err != nil {
+					return nil, fmt.Errorf("invalid enum for %s: %w", field.name, err)
+				}
+			}
+			choices = append(choices, value)
+		}
+		property["enum"] = choices
+	}
+	// A definite omitted string is its Go zero, not a renderer default.
+	if (field.omit || field.zero) && !field.optional && field.typ.Kind() == reflect.String && property["type"] == "string" {
+		property["default"] = ""
+	}
+	return property, nil
 }
 
 func portableExampleValue(v reflect.Value, active map[exampleCopyKey]bool) (any, error) {
@@ -271,75 +295,87 @@ func portableExampleValue(v reflect.Value, active map[exampleCopyKey]bool) (any,
 		}
 		return portableExampleValue(v.Elem(), active)
 	case reflect.Struct:
-		fields, err := exampleFields(v.Type())
-		if err != nil {
-			return nil, err
-		}
-		object := map[string]any{}
-		for _, field := range fields {
-			value, err := v.FieldByIndexErr(field.index)
-			if err != nil {
-				continue
-			}
-			empty := value.IsZero()
-			if value.Kind() == reflect.Struct || value.Kind() == reflect.Array {
-				empty = false
-			}
-			if value.Kind() == reflect.Map || value.Kind() == reflect.Slice || value.Kind() == reflect.String || value.Kind() == reflect.Array {
-				empty = value.Len() == 0
-			}
-			if (field.omit && empty) || (field.zero && value.IsZero()) {
-				continue
-			}
-			if field.quoted {
-				if value.Kind() == reflect.Pointer {
-					if value.IsNil() {
-						object[field.name] = nil
-						continue
-					}
-					value = value.Elem()
-				}
-				object[field.name] = strconv.FormatInt(value.Int(), 10)
-				continue
-			}
-			object[field.name], err = portableExampleValue(value, active)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return object, nil
+		return portableExampleStruct(v, active)
 	case reflect.Map:
-		if v.IsNil() {
-			return nil, nil
-		}
-		if v.Type().Key().Kind() != reflect.String {
-			return nil, fmt.Errorf("map key %s is not a string", v.Type().Key())
-		}
-		object := map[string]any{}
-		for iter := v.MapRange(); iter.Next(); {
-			value, err := portableExampleValue(iter.Value(), active)
-			if err != nil {
-				return nil, err
-			}
-			object[iter.Key().String()] = value
-		}
-		return object, nil
+		return portableExampleMap(v, active)
 	case reflect.Slice, reflect.Array:
-		if v.Kind() == reflect.Slice && (v.IsNil() || v.Type().Elem().Kind() == reflect.Uint8) {
-			return v.Interface(), nil
-		}
-		array := make([]any, v.Len())
-		for i := range v.Len() {
-			value, err := portableExampleValue(v.Index(i), active)
-			if err != nil {
-				return nil, err
-			}
-			array[i] = value
-		}
-		return array, nil
+		return portableExampleSequence(v, active)
 	default:
 		return v.Interface(), nil
 	}
+}
+
+func portableExampleStruct(v reflect.Value, active map[exampleCopyKey]bool) (any, error) {
+	fields, err := exampleFields(v.Type())
+	if err != nil {
+		return nil, err
+	}
+	object := map[string]any{}
+	for _, field := range fields {
+		value, err := v.FieldByIndexErr(field.index)
+		if err != nil {
+			continue
+		}
+		empty := value.IsZero()
+		if value.Kind() == reflect.Struct || value.Kind() == reflect.Array {
+			empty = false
+		}
+		if value.Kind() == reflect.Map || value.Kind() == reflect.Slice || value.Kind() == reflect.String || value.Kind() == reflect.Array {
+			empty = value.Len() == 0
+		}
+		if (field.omit && empty) || (field.zero && value.IsZero()) {
+			continue
+		}
+		if field.quoted {
+			if value.Kind() == reflect.Pointer {
+				if value.IsNil() {
+					object[field.name] = nil
+					continue
+				}
+				value = value.Elem()
+			}
+			object[field.name] = strconv.FormatInt(value.Int(), 10)
+			continue
+		}
+		object[field.name], err = portableExampleValue(value, active)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return object, nil
+}
+
+func portableExampleMap(v reflect.Value, active map[exampleCopyKey]bool) (any, error) {
+	if v.IsNil() {
+		return nil, nil
+	}
+	if v.Type().Key().Kind() != reflect.String {
+		return nil, fmt.Errorf("map key %s is not a string", v.Type().Key())
+	}
+	object := map[string]any{}
+	for iter := v.MapRange(); iter.Next(); {
+		value, err := portableExampleValue(iter.Value(), active)
+		if err != nil {
+			return nil, err
+		}
+		object[iter.Key().String()] = value
+	}
+	return object, nil
+}
+
+func portableExampleSequence(v reflect.Value, active map[exampleCopyKey]bool) (any, error) {
+	if v.Kind() == reflect.Slice && (v.IsNil() || v.Type().Elem().Kind() == reflect.Uint8) {
+		return v.Interface(), nil
+	}
+	array := make([]any, v.Len())
+	for i := range v.Len() {
+		value, err := portableExampleValue(v.Index(i), active)
+		if err != nil {
+			return nil, err
+		}
+		array[i] = value
+	}
+	return array, nil
 }
 
 func (f exampleField) decode(raw []byte) (reflect.Value, error) {

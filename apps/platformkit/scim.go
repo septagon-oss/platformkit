@@ -30,8 +30,10 @@ import (
 // methods it already holds: auth's list of this tenant's role names and auth's
 // union of what a set of roles grants.
 var scimProvisioning = pkit.NewModule("scim", wireScim,
-	pkit.Needs[usercontracts.Service](),
-	pkit.Needs[authcontracts.Auth](),
+	pkit.Needs[usercontracts.Provisioning](),
+	pkit.Needs[usercontracts.Lookup](),
+	pkit.Needs[authcontracts.RoleReader](),
+	pkit.Needs[authcontracts.PermissionReader](),
 	pkit.Provides[scimcontracts.Service](),
 	// The person's copy and the person's erasure reach this door's rows too: the
 	// identifier a provisioning client sent may be the person's own address, and
@@ -40,15 +42,14 @@ var scimProvisioning = pkit.NewModule("scim", wireScim,
 )
 
 func wireScim(w *pkit.Wiring) (module.Module, error) {
-	auth := pkit.Get[authcontracts.Auth](w)
 	svc, manifest := scim.New(scim.Deps{
-		Users: pkit.Get[usercontracts.Service](w),
-		Roles: roleNames{auth: auth},
+		Provisioning: pkit.Get[usercontracts.Provisioning](w),
+		Roles:        roleNames{auth: pkit.Get[authcontracts.RoleReader](w)},
 		// The same two tables, asked a different question: this one is about the
 		// caller rather than about a name.
 		Authority: holderGrants{
-			users: pkit.Get[usercontracts.Service](w),
-			auth:  auth,
+			users: pkit.Get[usercontracts.Lookup](w),
+			auth:  pkit.Get[authcontracts.PermissionReader](w),
 		},
 	})
 	pkit.Put[scimcontracts.Service](w, svc)
@@ -65,7 +66,7 @@ func wireScim(w *pkit.Wiring) (module.Module, error) {
 // An error is returned, not swallowed as "no such role": the write is refused on
 // an outage, and a mapping that silently bound to nothing is the failure this
 // adapter exists to make impossible.
-type roleNames struct{ auth authcontracts.Auth }
+type roleNames struct{ auth authcontracts.RoleReader }
 
 func (d roleNames) HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string) (bool, error) {
 	roles, err := d.auth.Roles(ctx, tx)
@@ -81,34 +82,22 @@ func (d roleNames) HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string
 	return false, nil
 }
 
-// holderGrants is the adapter between the scim module's question about its caller
-// and the two tables that answer it: the person's roles are modules/user's row,
-// and what those roles grant is auth's.
+// holderGrants is the adapter between the scim module's question about its caller and
+// the two tables that answer it: the person's roles are modules/user's row, and what
+// those roles grant is auth's.
 //
 // It reads, and never caches, for the reason roleNames does above: a mapping is a
-// grant decided in advance, and the day a role stops being held or starts granting
-// something has to be the day the answer changes — not the day somebody restarts a
-// process. It resolves the person's roles from the row rather than from whatever
-// the principal claims, because that row is what the session this principal came
-// from was built from (auth.Identify reads it on every request) and reading it here
-// means a caller cannot be its own authority by naming its own roles.
+// grant decided in advance, and the day a role stops being held has to be the day the
+// answer changes, not the day somebody restarts a process. Roles come from the row,
+// so a caller cannot be its own authority by naming its own roles.
 //
-// A credential that carries its own ceiling is answered from that ceiling, by the
-// kernel's own rule and in the same words auth's authorizer uses: a scoped key was
-// minted narrower than its holder on purpose, and resolving the holder's roles here
-// would answer a question about the person instead of about the caller. The
-// intersection the key carries is already that recomputation, done when the request
-// resolved the key.
-//
-// Nobody is refused, not failed: a write that names no caller, or names a person
-// this tenant has no active row for, has no authority to ask about, and the write
-// that needs it is refused for the ordinary reason. An error is left for what is
-// actually an outage — a database that cannot be read — because the module reads an
-// error as "this write cannot be decided" and refuses, and laundering a denial into
-// one would make an outage read as a policy.
+// A credential that carries its own ceiling is answered from that ceiling, in the
+// words auth's authorizer uses: a scoped key was minted narrower on purpose, and the
+// intersection it carries is already the recomputation. Nobody is refused, not failed:
+// an error is left for an outage, since a denial laundered into one reads as policy.
 type holderGrants struct {
-	users usercontracts.Service
-	auth  authcontracts.Auth
+	users usercontracts.Lookup
+	auth  authcontracts.PermissionReader
 }
 
 func (g holderGrants) Holds(ctx context.Context, tx db.Tx[db.Tenant], permission string) (bool, error) {

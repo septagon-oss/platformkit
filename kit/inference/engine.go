@@ -33,7 +33,7 @@ const Bucket = "inference"
 // Counter is the half of kit/limit's Limiter this package asks of a composition,
 // declared here rather than imported for the reason kit/httpx declares its
 // WriteLimiter: a package that counts calls should not link a database runner to
-// get the number. limit.Limiter — Postgres or in-memory, scoped by limit.PostgresOf
+// get the number. limit.Limiter — Postgres or in-memory, scoped by limit.PostgresFor
 // if the installation runs more than one app — satisfies it as it is.
 //
 // Both methods take the tenant-scoped key from the context the caller passed, and

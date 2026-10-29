@@ -1,0 +1,38 @@
+{
+ "name": "plural-mass-noun",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:3dcacda78d8dfc7d656527d9e914dcdf3b24d414187fdc9c9542045c6a404d07",
+  "expectedHash": "sha256:137a5c1a4bbb64f1ea66aa09097376452b3c8156407369ebeebf467af8881630"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "content",
+   "path": "/api/v1/m/content",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    }
+   ]
+  },
+  "hints": {},
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "identity": {
+    "singular": "content",
+    "plural": "content"
+   }
+  }
+ }
+}

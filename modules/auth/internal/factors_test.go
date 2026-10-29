@@ -157,20 +157,20 @@ func TestAFactorEnrolsAndIsWhatSignsThatPersonIn(t *testing.T) {
 			t.Errorf("the refused sign-in left %d sessions where %d were, want none opened", live, previous)
 		}
 
-		// The code is the second half of that same sign-in.
-		opened, identity, err := svc.VerifySecondFactor(ctx, tx, email, codeFor(t, enrolment.Secret, db.Now()), nobody)
+		// The code is the second half of that same sign-in. It is held as the string it
+		// came out in, because the window reaches one step ahead of now: once the step
+		// turns, a second reading of the clock is a different, still-spendable code.
+		step := codeFor(t, enrolment.Secret, db.Now())
+		opened, identity, err := svc.VerifySecondFactor(ctx, tx, email, step, nobody)
 		if err != nil {
 			return err
 		}
 		if opened == nil || identity == nil {
 			return errors.New("a correct code opened nothing")
 		}
-		// The same code again: refused. The code is presented as the string it
-		// was, so the step it names is fixed — the refusal is the factor row's
-		// own last_step guard and not a race with the clock.
-		replay := codeFor(t, enrolment.Secret, db.Now())
+		// The same code again: refused, by the row's own last_step guard on that step.
 		used := opened.ID
-		if _, _, err := svc.VerifySecondFactor(ctx, tx, email, replay, nobody); !errors.Is(err, contracts.ErrCredentials) {
+		if _, _, err := svc.VerifySecondFactor(ctx, tx, email, step, nobody); !errors.Is(err, contracts.ErrCredentials) {
 			t.Errorf("the same step presented twice = %v, want %v", err, contracts.ErrCredentials)
 		}
 		if _, err := svc.Identify(ctx, tx, used, nobody); err != nil {

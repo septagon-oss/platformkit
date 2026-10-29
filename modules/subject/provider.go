@@ -19,29 +19,11 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
-// Module is a person's two doors as the resolver sees them, for an application that
-// names it in Use: `Use(subject.Module)`.
-//
-// This is the line that makes the eight contributions answer to something. Each
-// owner says `pkit.Contributes[personaldata.Part]()`, and a contribution nobody
-// takes is a claim in a manifest and a dead function in a module: the resolver's own
-// explanation prints "no module in platformkit takes one" for exactly that, and for
-// eight modules it printed it until this value was composed. `Needs[[]personaldata.Part]`
-// is the taking, and it is also the ordering — the resolver builds a consumer after
-// every contributor (pkit/declare.go), which is why this module does not say
-// After(Everything), which would refuse anything it provides.
-//
-// It needs the person's own service for one read and no write: an export and an erasure
-// both begin with the address and the name, which live in users and nowhere else the
-// boundary allows (ADR 0020 §1). It needs the file module and the notification module for
-// the door — a bundle's bytes and a person's inbox — and the tenant list for the walk, the
-// same lister modules/task's sweep is handed. The two ports in between are declared here,
-// in this package, so what the module consumes is two methods and not two services; the
-// adapters below are the whole of that wiring, and they are the reason `contracts/` names
-// no storage SDK and no mail client.
+// Module collects each owner's personal-data contribution and a retained-person
+// lookup. The resolver builds contributors first; exports and erasure share their parts.
 var Module = pkit.NewModule("subject", wire,
 	pkit.Needs[[]personaldata.Part](),
-	pkit.Needs[usercontracts.Service](),
+	pkit.Needs[usercontracts.RetainedLookup](),
 	pkit.Optional[usercontracts.InvitationRetention](),
 	pkit.Needs[filecontracts.Service](),
 	pkit.Needs[notificationcontracts.Service](),
@@ -51,16 +33,16 @@ var Module = pkit.NewModule("subject", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	deps := Deps{
-		InvitationRetention: pkit.Get[usercontracts.InvitationRetention](w),
 		Parts:               pkit.All[personaldata.Part](w),
-		People:              pkit.Get[usercontracts.Service](w),
+		Subjects:            pkit.Get[usercontracts.RetainedLookup](w),
+		InvitationRetention: pkit.Get[usercontracts.InvitationRetention](w),
 		Bundles:             bundles{files: pkit.Get[filecontracts.Service](w)},
 		Notes:               notices{service: pkit.Get[notificationcontracts.Service](w)},
 		Tenants:             pkit.Get[jobs.TenantLister](w),
 		Files:               pkit.Get[filecontracts.Service](w),
 	}
 	deps.Service = internal.NewService(internal.Deps{
-		Parts: deps.Parts, People: deps.People, InvitationRetention: deps.InvitationRetention,
+		Parts: deps.Parts, People: subjects(deps), InvitationRetention: deps.InvitationRetention,
 		Bundles: deps.Bundles, Notes: deps.Notes,
 	})
 	pkit.Put[subjectcontracts.Service](w, deps.Service)

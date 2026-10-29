@@ -1,5 +1,19 @@
 # modules/scim — the door an identity provider provisions through
 
+## Composition
+
+`Deps.Provisioning` accepts User's six account lifecycle operations and takes
+precedence over deprecated `Deps.Users`. `RoleDirectory` and `Authority` remain
+separate ports; the reference provider answers them with `RoleReader`, `Lookup`
+and `PermissionReader` rather than aggregate identity services.
+
+**Reused** — User's account commands, SCIM's role reconciliation and the existing
+transactional protocol service continue to decide and publish changes.
+**Added** — `Provisioning` is a compatible narrow input because replacing the public
+`Users` field's type would break callers.
+**Made reusable** — a six-method account facade can support the complete provisioning
+lifecycle while the provider needs no aggregate identity key.
+
 SCIM 2.0 over this platform's own people. The module owns two facts no other door
 records: which collection a provider says a person belongs to, and which of its own
 identifiers it calls them by. Everything else is a read or a write of what the
@@ -34,7 +48,7 @@ named below.
 
 `contracts.Service` is the module's own port over the protocol: discovery, the user
 collection, the group collection, and the tenant's group→role mappings. Its
-implementation lives in `internal/` and takes `modules/user/contracts.Service` as a
+implementation lives in `internal/` and takes `modules/user/contracts.Provisioning` as a
 collaborator, along with two ports the composition implements.
 `contracts.RoleDirectory` answers the question over wherever role definitions
 actually live — this module may read neither auth's role table nor user's role

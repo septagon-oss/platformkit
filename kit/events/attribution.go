@@ -1,19 +1,12 @@
-// Attribution is what caused an event when the cause was not a signed-in
-// person, and where the instruction came from.
+// Attribution is what caused an event when the cause was not a signed-in person, and where
+// the instruction came from.
 //
-// The actor column answers "whose session was this". A seed run has none: it is
-// the application writing a file it ships, on behalf of somebody who asked for it
-// on a command line. Before this type existed such a write arrived as `actor`
-// NULL — the same nothing a periodic job and a relay arrive as — and the facts
-// that distinguish it (which file, which line, on whose behalf) were printed in
-// the run's plan and then lost. Audit subscribes asynchronously to the durable
-// event, so whatever its row is going to report has to be on that event; a
-// source omitted at the moment of the write cannot be reconstructed later.
-//
-// It is carried on the context rather than passed as an argument because the
-// code that writes the event is the owner's own write path, several calls away
-// from the seed loop that knows the source — the same reason the actor travels on
-// the context. See kit/tenancy.WithActor.
+// The actor column answers "whose session was this"; a seed run has none. Audit subscribes
+// asynchronously to the durable event, so whatever its row will report has to be on that
+// event: a source omitted at the moment of the write cannot be reconstructed later. It
+// travels on the context rather than as an argument because the code that writes the event
+// is the owner's own write path, several calls away from the loop that knows the source.
+// See kit/tenancy.WithActor.
 package events
 
 import (

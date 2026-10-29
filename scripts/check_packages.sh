@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
+parts=(kit/screen kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -81,6 +81,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
     { standard[$1] = $2; closure[$1] = $3; module[$1] = $4 }
     END {
         p = "github.com/septagon-oss/platformkit/"
+        screen = p "kit/screen"
+        policy = p "kit/entity/present " p "kit/entity/display " screen
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
         # kit/appname is a value package beside kit/trace: its closure is the
@@ -138,8 +140,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # no SQL and renders nothing, which is why admitting it adds no capability at
         # the page, the screen or the runner. Note that an apostrophe in this block
         # ends the single-quoted awk program for the shell: write around it.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
-        presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
+        kernel = screen " " p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/internal/jsonbody " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
+        presentation = policy " " p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
         # The provider edge for measurement: kit/app is the only package whose
@@ -150,12 +152,15 @@ printf '%s\n' "$metadata" | awk -F '|' '
         measurement = otel " go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc go.opentelemetry.io/otel/exporters/otlp/internal google.golang.org/grpc google.golang.org/protobuf github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc go.opentelemetry.io/proto/otlp"
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
+        check("kit/entity/present", screen " " uuid " " p "kit/entity " p "kit/entity/display")
         check("kit/locale", "")
         # kit/fault declares the three refusal sentinels a value package wraps.
         # Its closure is the standard library and itself, or wrapping a refusal
         # would link the storage adapter to a package that takes no transaction.
         check("kit/fault", "")
+        check("kit/screen", "")
         check("kit/wire", "")
+        check("kit/internal/jsonbody", "")
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
         # The W3C trace context is a value: the standard library and nothing
@@ -169,9 +174,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # net/http here would put a server in the closure of every worker.
         check("kit/operation", "")
         check("kit/request", p "kit/trace " operation)
-        # kit/cache is the value every replica reads: the standard library, uuid and
-        # singleflight. A store it talks to is a provider, not this core.
-        check("kit/cache", uuid " golang.org/x/sync/singleflight")
+        # kit/cache takes its application identity from the appname value package,
+        # beside uuid and singleflight. Stores remain behind the provider boundary.
+        check("kit/cache", uuid " " appname " golang.org/x/sync/singleflight")
         # The one store kit/cache speaks to: the port package and one client, and
         # the four commands the adapter issues are asserted in its own test rather
         # than here — this line is what the provider may link, which is the only
@@ -187,11 +192,18 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # configuration. Nothing in the kernel imports this package, which is why
         # admitting the format dependency here adds no dependency to kit/app.
         check("kit/designconfig", p "design", "gopkg.in/yaml.v3")
-        check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
+        # The chrome of a form is copy a person reads, so ui/forms asks the kernel
+        # for a formatter and the caller composes one: ui/resource hands it the
+        # provider it already holds. kit/locale is measured above with nothing
+        # admitted at all, so its closure is the standard library and this line
+        # links one interface and the locale value around it — no provider, no
+        # catalogue file, no language, none of them named by ui/forms. ui/document
+        # and ui/resource are held to it already.
+        check("ui/forms", policy " " uuid " " p "kit/entity " p "kit/locale " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
-        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
+        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/present " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
-        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
+        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "kit/entity/present " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither
         # provider package is in its closure.
         #
@@ -202,7 +214,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # count is stored, exactly as it chooses an event transport. The
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
-        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
+        # Screen inventories carry the resolved policy version; these value packages
+        # render nothing and open no service. UI and module imports remain forbidden.
+        check("kit/app", policy " " kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
         # pkit is the composition vocabulary and the builder, so it is allowed the
         # runner it drives and the design tokens it hands a composition, and
         # nothing else. The falsifiable part is what is absent: no module package
@@ -218,7 +232,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # and the collector transport — which is why measurement is in this list
         # beside web; what stays refused is a *second* package that could install a
         # provider, and pkit installs none.
-        check("pkit", kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web " " measurement, "web")
+        check("pkit", policy " " kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web " " measurement, "web")
         check("kit/events/transport", uuid " " appname " " operation)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")

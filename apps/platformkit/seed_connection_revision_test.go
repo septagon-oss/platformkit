@@ -24,7 +24,7 @@ func TestTheConnectionRevisionFollowsTheSeededSiteThroughAnUnchangedRun(t *testi
 		t.Helper()
 		var revision int64
 		if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+			tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
 			}

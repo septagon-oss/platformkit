@@ -941,18 +941,32 @@ browser-appropriate memory budget; a smaller application limit remains undefined
 These checks exclude binary and streaming-event readers. This does not clear the separate
 upstream lock audit or establish complete browser dependency reachability.
 
-Two transitive dependencies are held by override, because the package that
+Four dependencies are held by override, because the package that
 selects each of them still allows the vulnerable range: `dompurify@3.4.17`,
-reached through `jspdf`'s `^3.3.1`, fixes the
-[shadow-root template bypass](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
-[detached-subtree handlers](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
-[XHTML SMIL guard](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f); `source-map-js@1.2.2`, reached through `css-tree`'s
-`^1.2.1`, fixes the
+reached through `jspdf`'s `^3.3.1` and the first release above the DOM XSS
+advisories that reach through it —
+[split-template](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
+[in-place-hook](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
+[SMIL-attribute](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f), which
+report 3.4.16 and stop there, and the two they follow,
+[node-removing](https://github.com/advisories/GHSA-p98j-92pf-mc4p) and
+[rawtext-root](https://github.com/advisories/GHSA-6688-9rhm-gjv2), which
+stopped at 3.4.15 — and `source-map-js@1.2.2`, reached through `css-tree`'s
+`^1.2.1` and the release the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
-vulnerability. Neither is a direct dependency, so neither is a version
-anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
-both names to exactly these releases, which is what makes a regenerated lock that
-drifts back into either range a failed test rather than a passed audit.
+advisory describes — and `undici@8.12.3`, reached through `unifont`'s `^8.0.0` and past the
+range its three request advisories report, 8.0.0–8.12.1 — and `zod@4.6.7`, which this
+adapter declares nowhere: it is the peer `@ai-sdk/provider-utils` asks for (`^3.25.76 ||
+^4.1.8`), which npm installs at the newest release that range allows. It lands in the
+production subtree, so `--omit=dev` reads it, and 4.6.7 is the first release above the
+[oversized-collection memory exhaustion](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
+range, which reports 4.6.5 and stops there. None of the four is a direct dependency, so none
+is a version anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
+all four names to exactly these releases, which makes a regenerated lock that
+drifts back into any of those ranges a failed test rather than a passed audit. An override
+is not a finished decision: `dompurify` has been raised twice, 3.4.14 to 3.4.16 to 3.4.17,
+because a release the feed reported nothing against becomes a finding the day the next
+advisory over it is published.
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. Active CI enforces this gate after the locked install and

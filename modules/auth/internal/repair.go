@@ -42,7 +42,7 @@ import (
 // defines, so taking the seeder's grant out of that role would mean taking the
 // other one with it, and that one is not this command's to take. The sweep goes
 // on reporting those.
-func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.Service,
+func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.RoleRepairer,
 	declared []tenancy.Grant, defaults []contracts.Role, remove bool,
 ) (map[string][]string, error) {
 	held, err := roles.Roles(ctx, tx)
@@ -101,7 +101,7 @@ func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts
 // whoever holds the lock, which is why a caller reads unlocked first and comes
 // here only when it has something to write — a listing, and a walk over an
 // installation that still declares everything it seeded, take no lock at all.
-func readUnderRoleLock(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.Service,
+func readUnderRoleLock(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.RoleRepairer,
 	tenant tenancy.Tenant,
 ) ([]*contracts.Role, error) {
 	if err := lockTenantRoles(ctx, tx, tenant); err != nil {

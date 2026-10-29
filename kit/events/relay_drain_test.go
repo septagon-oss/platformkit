@@ -12,8 +12,8 @@ package events
 // is holding would report a backlog clear while its rows are waiting, which is the same
 // number lying in the other direction.
 //
-// The end-to-end reading is pinned by the review's case in kit/events/lagobserved, which
-// owns that binary's one meter reader. What these two cases own is the choice behind it —
+// The end-to-end reading is pinned in kit/events/lagobserved, which owns that
+// binary's one meter reader. What these two cases own is the choice behind it —
 // which series a pass owes the zero to — because that choice is what decides whether the
 // number ever says "not behind at all" and whether it ever says it too early.
 
