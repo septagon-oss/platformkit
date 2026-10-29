@@ -46,6 +46,13 @@ const (
 	Wildcard = "*"
 )
 
+// Namespace is the workspace namespace this module's screens live in: a module
+// that mounts a page beside the session and role screens mounts into this
+// (httpx.Router.ForModule), rather than writing "auth" down. It is tenancy's value and
+// not httpx's on purpose — this package stays free of the HTTP kernel so that
+// naming a Session links neither huma nor chi.
+var Namespace = tenancy.NewNamespace("auth")
+
 // SessionLifetime is how long a session lives from its last use. It slides:
 // every request that finds the session pushes the expiry out again, at most
 // once every SessionTouch, so a person who works every day is not signed out

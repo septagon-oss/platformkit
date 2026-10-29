@@ -201,6 +201,15 @@ type Options struct {
 	// incident.
 	Installation string
 
+	// SystemAccess is the declared cross-tenant need of each module that has one,
+	// by module name and with the reason the manifest states
+	// (module.Module.SystemAccess), filled by the composition. It is an input and
+	// not a door a module walks through: what a module can say about its own
+	// cross-tenant work is said in its manifest, and saying it here as well would
+	// be two answers to one question. A module that takes a credential without an
+	// entry here is refused at composition.
+	SystemAccess map[string]string
+
 	// WriteLimiter counts the anonymous writes of the Public surface, which are
 	// the writes with no account to lock out. Nil leaves them uncounted — a
 	// deployment that mounts nothing anonymous never needs one, and a test that

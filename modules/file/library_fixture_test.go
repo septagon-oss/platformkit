@@ -41,7 +41,8 @@ func libraryFixtureAPI(t *testing.T) (chi.Router, *sql.DB, *db.Conn, contracts.S
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	resolved := caller{hosts: map[string]tenancy.Tenant{host: acme, otherHost: globex}}
 	api, router := httpx.New(httpx.Options{
-		Cache: cache.Memory("pkit"), PublicHost: host, Tenants: resolved, Conn: conn, Authorize: resolved,
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"), PublicHost: host, Tenants: resolved, Conn: conn, Authorize: resolved,
 		Authenticate: func(_ context.Context, _ db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error) {
 			principal := tenancy.Principal{UserID: uuid.New()}
 			if cookie, err := r.Cookie(httpx.CookieName(httpx.SessionCookie, false)); err == nil && cookie.Value == "read-only" {

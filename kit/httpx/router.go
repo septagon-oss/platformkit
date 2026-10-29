@@ -20,6 +20,12 @@ type Router struct {
 	surface     Surface
 	module      string
 	api         *API
+	// owner is the module whose Routes received this router. It survives a
+	// rebind to another module's namespace (ForModule), because a page
+	// mounted beside somebody else's screens is still this module's page — and it
+	// is what a cross-tenant credential is minted for, so a borrowed namespace
+	// borrows nobody's scope. See Router.SystemToken.
+	owner string
 	// atRoot says this router came from Home and therefore mounts at the
 	// surface's own root rather than beneath the module's segment.
 	atRoot bool
@@ -60,6 +66,11 @@ func (r *Router) PagePath(rel string) string {
 // generated them. It is the door the generated shell uses, and it is bounded by
 // the composition: a name that was never composed refuses at once, so a typo
 // cannot quietly invent a namespace.
+//
+// A page one module wrote for another module's namespace takes that module's
+// tenancy.Namespace — the value the owner exports from its own contracts package
+// — and asks by its Module(), so a rename of the owner breaks the caller's
+// build rather than inventing a namespace that answers 404.
 func (r *Router) ForModule(module string) *Router {
 	r.api.mu.Lock()
 	known := r.api.known[module]
@@ -67,7 +78,7 @@ func (r *Router) ForModule(module string) *Router {
 	if !known {
 		panic(fmt.Sprintf("httpx: %s router asked for module %q, which this composition never registered; a route lives in a module that exists", r.surface, module))
 	}
-	return &Router{surface: r.surface, module: module, screenOwner: r.screenOwner, api: r.api}
+	return &Router{surface: r.surface, module: module, screenOwner: r.screenOwner, api: r.api, owner: r.owner}
 }
 
 // Known reports whether the composition registered a module of that name. The
@@ -93,7 +104,7 @@ func (r *Router) Known(module string) bool {
 // routes. The claim is about who answers the visitor at the root of the site or
 // the workspace, which is one address and can have one owner.
 func (r *Router) Home() (*Router, bool) {
-	home := &Router{surface: r.surface, module: r.module, screenOwner: r.screenOwner, api: r.api, atRoot: true}
+	home := &Router{surface: r.surface, module: r.module, screenOwner: r.screenOwner, api: r.api, owner: r.owner, atRoot: true}
 	if r.surface == SurfaceOps {
 		// The control plane has no root to serve: its own address is a 404 at
 		// every host but the installation's, and a page is refused there
@@ -105,10 +116,26 @@ func (r *Router) Home() (*Router, bool) {
 	return home, r.api.claim(r.surface, r.module)
 }
 
-// SystemToken is the capability API.SystemToken hands to a module at the one
-// moment it is being wired. It is forwarded here because the value a module's
-// Routes receives is now the only thing it holds.
-func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() }
+// SystemToken is this module's cross-tenant credential: minted for the module
+// this router belongs to, carrying the reason its manifest declared
+// (module.Module.SystemAccess), and the same value on every call and every
+// registration pass — the value a module's Routes receives is the only one it holds.
+//
+// A module that declared nothing gets nil, and the composition is refused before
+// anything serves: the capability is not handed out on the strength of a call
+// nobody declared (docs/adr/0006). A router bound to another module's namespace
+// (ForModule) is refused too, naming both modules — the credential belongs to
+// the module being wired, so take it on your own router and carry the value.
+//
+// A route that holds one still runs in its own tenant's transaction, so it opens
+// the system one on a detached context (db.Detached), which commits on its own.
+func (r *Router) SystemToken() tenancy.SystemToken {
+	if r.module != r.owner {
+		r.api.noteRefusal(fmt.Sprintf("httpx: module %q took a cross-tenant credential on the %s router bound to module %q's namespace; the credential belongs to the module being wired — take it on your own router, naming no namespace", r.owner, r.surface, r.module))
+		return nil
+	}
+	return r.api.systemTokenFor(r.owner)
+}
 
 // InvalidateHost forgets cached host resolutions, so a rename, a suspension or a
 // new language declaration takes effect now rather than within the cache's own

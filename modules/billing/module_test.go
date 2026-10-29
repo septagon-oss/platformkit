@@ -68,8 +68,9 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, billing.Migrations)
 	api, router := httpx.New(httpx.Options{
-		Cache:      cache.Memory("pkit"),
-		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"),
+		PublicHost:   host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		// The installation is reached at host, which is also the operator's own
 		// tenant: that is what makes the control-plane routes below reachable
 		// at all, and what TestThePriceListIsTheOperators relies on.

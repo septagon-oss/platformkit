@@ -76,6 +76,7 @@ type Singleton[T crud.Entity] struct {
 // Mount registers the two routes, the public one when there is one, and the
 // resource the admin generator reads.
 func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
+	s.Module = mountedUnder(s.Module, surfaces.App, "Singleton", s.Entity)
 	s.check()
 	auth := httpx.Resource{Read: s.Read, Write: s.Write,
 		OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite}
