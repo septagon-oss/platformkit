@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -280,34 +281,53 @@ func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Auth, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest over the ports the composition
+// collected, and answers as an error the wiring that cannot hold: two
+// registration lifecycles at once, a policy that names no roles or no registrar,
+// a mailed link page that is not an absolute path outside the API root, a
+// request budget the counter cannot keep, and an authorizer without its reader.
+// It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Auth, module.Module, error) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
-			panic("auth: choose only one registration lifecycle")
+			return nil, module.Module{}, errors.New("auth: choose only one registration lifecycle")
 		}
 		policy, err := deps.EmailRegistration.Checked()
 		if err != nil {
-			panic(err)
+			return nil, module.Module{}, err
 		}
 		deps.EmailRegistration = &policy
 	}
 	if deps.ApprovalRegistration != nil {
 		if deps.Registration != nil {
-			panic("auth: choose emailed password setup or approval-required registration")
+			return nil, module.Module{}, errors.New("auth: choose emailed password setup or approval-required registration")
 		}
 		policy, err := deps.ApprovalRegistration.Checked()
 		if err != nil {
-			panic(err)
+			return nil, module.Module{}, err
 		}
 		deps.ApprovalRegistration = &policy
 	}
 	if err := deps.LinkPages.check(); err != nil {
-		panic(err)
+		return nil, module.Module{}, err
 	}
 	if err := deps.AccountRequests.Check(); err != nil {
-		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
+		return nil, module.Module{}, fmt.Errorf("auth: Deps.AccountRequests: %w", err)
 	}
-	deps = withGrants(deps)
+	deps, err := withGrants(deps)
+	if err != nil {
+		return nil, module.Module{}, err
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewServiceWithGrants(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
@@ -353,7 +373,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	if deps.EmailRegistration != nil {
 		manifest.Subscriptions = append(manifest.Subscriptions, internal.VerificationSubscriptions(svc)...)
 	}
-	return svc, manifest
+	return svc, manifest, nil
 }
 
 // sessionSubscriptions is the two ways the same fact arrives: somebody who cannot

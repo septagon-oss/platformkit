@@ -53,14 +53,25 @@ var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Labe
 // second constructor could not reach the palette in Deps and would hand out a
 // service that answers the empty colour where this one answers the installation's.
 //
-// The three routes this module used to write by hand are rest.Singleton now:
-// one row per tenant, a read, a PUT, and a public face. They were the same
-// three routes modules/billing wrote for its subscription, with the same
-// transaction ritual and the same error mapping and no resource registered, so
-// neither module had a generated screen. The kernel has the shape now, and this
-// is the module that shows what it takes: a Load that answers with the defaults
-// rather than a 404, a Save, and a Face saying what a visitor may see.
+// The three routes this module used to write by hand are rest.Singleton now: one
+// row per tenant, a read, a PUT and a public face. Owning a singleton leaves the
+// module three things to answer: a Load that returns its defaults rather than a
+// 404, a Save, and a Face saying what a visitor may see.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. A nil Gate writes settings
+// directly and a nil Palette answers the empty colour: both are a composition's
+// decision rather than a mistake, so the error is nil for every Deps today. It
+// opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	svc := internal.NewService(deps.Palette)
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",
@@ -125,5 +136,5 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes:        func(s httpx.Surfaces) { settings.Mount(s) },
-	}
+	}, nil
 }

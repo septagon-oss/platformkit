@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -45,12 +46,16 @@ func (g roleGranting) May(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error
 	return g.authorize.Allowed(ctx, tx, tenancy.Grant{Permission: contracts.PermissionRoleManage})
 }
 
-func withGrants(deps Deps) Deps {
+// withGrants fills the two halves of the module's own grant policy when the
+// composition named neither. Naming exactly one is a wiring mistake: the
+// authorizer and the reader are the same policy seen twice, so half of it is
+// refused rather than answered with a module-wide default nobody chose.
+func withGrants(deps Deps) (Deps, error) {
 	if (deps.Authorization == nil) != (deps.Permissions == nil) {
-		panic("auth: supply both Authorization and Permissions, or leave both nil")
+		return deps, errors.New("auth: supply both Authorization and Permissions, or leave both nil")
 	}
 	if deps.Authorization == nil {
 		deps.Authorization, deps.Permissions, _ = NewGrants(GrantsDeps{})
 	}
-	return deps
+	return deps, nil
 }
