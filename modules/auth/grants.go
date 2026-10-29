@@ -28,6 +28,8 @@ var Grants = pkit.NewModule("authgrants", wireGrants,
 	pkit.Provides[contracts.PermissionReader](),
 	pkit.Provides[usercontracts.Granting](),
 	pkit.Provides[usercontracts.Administration](),
+	pkit.Provides[usercontracts.InvitationTiming](),
+	pkit.Provides[usercontracts.InvitationAuthority](),
 )
 
 func wireGrants(w *pkit.Wiring) (module.Module, error) {
@@ -36,6 +38,8 @@ func wireGrants(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, permissions)
 	pkit.Put[usercontracts.Granting](w, roleGranting{authorize: authorize})
 	pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: internal.AdministeringRoles})
+	pkit.Put(w, usercontracts.InvitationTiming{Lifetime: contracts.TokenLifetime, ResendInterval: contracts.ResetInterval})
+	pkit.Put[usercontracts.InvitationAuthority](w, &usercontracts.InvitationAuthorityFunc{})
 	return manifest, nil
 }
 

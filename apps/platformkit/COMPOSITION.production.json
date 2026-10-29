@@ -22,8 +22,6 @@
         "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
         "authcontracts.ConfirmationChrome",
-        "usercontracts.InvitationTiming",
-        "usercontracts.InvitationAuthority",
         "webhookcontracts.Catalogue"
       ],
       "contributes": [
@@ -50,7 +48,9 @@
         "authcontracts.GrantAuthorizer",
         "authcontracts.PermissionReader",
         "usercontracts.Granting",
-        "usercontracts.Administration"
+        "usercontracts.Administration",
+        "usercontracts.InvitationTiming",
+        "usercontracts.InvitationAuthority"
       ]
     },
     {
@@ -149,11 +149,11 @@
         },
         {
           "contract": "usercontracts.InvitationTiming",
-          "from": "product"
+          "from": "authgrants"
         },
         {
           "contract": "usercontracts.InvitationAuthority",
-          "from": "product"
+          "from": "authgrants"
         }
       ],
       "contributes": [
@@ -165,7 +165,6 @@
         }
       ],
       "after": [
-        "product",
         "authgrants"
       ]
     },
@@ -476,7 +475,7 @@
         },
         {
           "contract": "usercontracts.InvitationAuthority",
-          "from": "product"
+          "from": "authgrants"
         },
         {
           "contract": "authcontracts.InvitationUsers",

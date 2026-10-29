@@ -38,12 +38,12 @@ pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
 pkit: site.Module defines the permission site:manage.
 pkit: site.Module emits site.settings_updated.
-pkit: user.Module is built after product.Module and authgrants.Module.
+pkit: user.Module is built after authgrants.Module.
 pkit: user.Module needs usercontracts.Administration from authgrants.Module.
 pkit: user.Module needs usercontracts.Granting from authgrants.Module.
 pkit: user.Module could use usercontracts.Clock; platformkit composes no provider, so it will not.
-pkit: user.Module uses usercontracts.InvitationTiming from product.Module.
-pkit: user.Module uses usercontracts.InvitationAuthority from product.Module.
+pkit: user.Module uses usercontracts.InvitationTiming from authgrants.Module.
+pkit: user.Module uses usercontracts.InvitationAuthority from authgrants.Module.
 pkit: user.Module contributes one personaldata.Part to subject.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
 pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.invitation_resent, user.invitation_revoked, user.invitation_accepted, user.password_set, user.roles_set, user.deactivated, user.reactivated, user.handle_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
@@ -113,7 +113,7 @@ pkit: auth.Module needs authcontracts.GrantAuthorizer from authgrants.Module.
 pkit: auth.Module needs authcontracts.PermissionReader from authgrants.Module.
 pkit: auth.Module could use usercontracts.Clock; platformkit composes no provider, so it will not.
 pkit: auth.Module uses usercontracts.InvitationReader from user.Module.
-pkit: auth.Module uses usercontracts.InvitationAuthority from product.Module.
+pkit: auth.Module uses usercontracts.InvitationAuthority from authgrants.Module.
 pkit: auth.Module uses authcontracts.InvitationUsers from user.Module.
 pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.

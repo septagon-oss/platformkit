@@ -104,8 +104,6 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[authcontracts.ConfirmationChrome](),
-		pkit.Provides[usercontracts.InvitationTiming](),
-		pkit.Provides[usercontracts.InvitationAuthority](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
@@ -222,8 +220,6 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
 			Assets: pinnedAssets, SignIn: pinnedSignIn,
 		})
-		pkit.Put(w, usercontracts.InvitationTiming{Lifetime: authcontracts.TokenLifetime, ResendInterval: authcontracts.ResetInterval})
-		pkit.Put[usercontracts.InvitationAuthority](w, &usercontracts.InvitationAuthorityFunc{})
 		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
