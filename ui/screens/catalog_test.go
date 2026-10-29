@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
@@ -17,8 +18,14 @@ import (
 // publishBody is the argument of the golden file's row command, and the reason
 // it has one: a command with an argument is a form, and a shell has to be told
 // its shape the way it is told an entity's.
+type sketchNote struct {
+	Note
+	Drawing entity.Sketch `json:"drawing"`
+}
+
 type publishBody struct {
-	At string `json:"at,omitempty" doc:"When it goes out; now if left empty"`
+	Drawing entity.Sketch `json:"drawing"`
+	At      string        `json:"at,omitempty" doc:"When it goes out; now if left empty"`
 }
 
 // The golden file is the seam a native shell reads. It is committed here and
@@ -43,6 +50,7 @@ func TestCatalogGolden(t *testing.T) {
 	// document the shell parses.
 	notes := resource()
 	notes.Present.Session = true
+	notes.Schema.Fields = crud.Fields[*sketchNote]()
 	notes.Commands = []httpx.Command{
 		{
 			Verb: "publish", Summary: "Publish a note",
@@ -109,7 +117,7 @@ func TestCatalogGolden(t *testing.T) {
 	if len(cmds) != 2 || cmds[0].Verb != "publish" || !cmds[1].Collection {
 		t.Fatalf("the commands did not survive the trip: %+v", cmds)
 	}
-	if len(cmds[0].Fields) != 1 || cmds[0].Fields[0].Name != "at" || len(cmds[1].Fields) != 0 {
+	if len(cmds[0].Fields) != 2 || cmds[0].Fields[1].Name != "at" || cmds[0].Fields[0].Type != entity.TypeSketch || len(cmds[1].Fields) != 0 {
 		t.Fatalf("a command's argument did not survive the trip: %+v", cmds[0].Fields)
 	}
 	if len(back.Resources[1].Commands) != 0 {

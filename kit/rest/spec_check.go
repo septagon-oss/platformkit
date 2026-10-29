@@ -3,6 +3,7 @@ package rest
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -23,7 +24,10 @@ func (s Spec[T]) check() {
 		panic("rest: Create replaces the create steps, so a History resource would never record its first version")
 	}
 	s.checkSource()
-	bad := s.choiceFault()
+	bad := sketchDeclarationFault(reflect.TypeFor[T](), s.choiceFields())
+	if bad == "" {
+		bad = s.choiceFault()
+	}
 	if bad == "" {
 		bad = s.identityFault()
 	}

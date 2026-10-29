@@ -54,6 +54,10 @@
           "name": "tags",
           "type": "list",
           "elem": "string"
+        },
+        {
+          "name": "drawing",
+          "type": "sketch"
         }
       ],
       "resolved": {
@@ -212,6 +216,17 @@
                 ]
               },
               {
+                "name": "field",
+                "path": [
+                  "drawing"
+                ],
+                "control": "sketch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
                 "name": "action.submit",
                 "path": [],
                 "control": "button",
@@ -295,6 +310,17 @@
               {
                 "name": "field",
                 "path": [
+                  "drawing"
+                ],
+                "control": "sketch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
                   "status"
                 ],
                 "control": "select",
@@ -327,6 +353,17 @@
             "verb": "publish",
             "cardinality": "one",
             "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "drawing"
+                ],
+                "control": "sketch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
               {
                 "name": "field",
                 "path": [
@@ -405,7 +442,8 @@
             "status",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "overview": [],
           "information": [
@@ -415,7 +453,8 @@
             "status",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "sections": [],
           "create": [
@@ -423,14 +462,16 @@
             "body",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "update": [
             "title",
             "body",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ]
         },
         "fields": [
@@ -665,6 +706,29 @@
               "precision": null
             },
             "options": []
+          },
+          {
+            "figure": null,
+            "name": "drawing",
+            "label": "Drawing",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "sketch",
+            "kind": "sketch",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
           }
         ],
         "list": {
@@ -821,6 +885,29 @@
             "fields": [
               {
                 "figure": null,
+                "name": "drawing",
+                "label": "Drawing",
+                "help": "",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "sketch",
+                "kind": "sketch",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": []
+              },
+              {
+                "figure": null,
                 "name": "at",
                 "label": "At",
                 "help": "When it goes out; now if left empty",
@@ -877,6 +964,10 @@
           "summary": "Publish a note",
           "description": "Makes the note visible. Publishing a published note changes nothing.",
           "fields": [
+            {
+              "name": "drawing",
+              "type": "sketch"
+            },
             {
               "name": "at",
               "type": "string",

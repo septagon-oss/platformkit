@@ -84,11 +84,12 @@ func base() *css.Sheet {
 // state; appearing first preserves utility precedence on equal selectors.
 func componentState() *css.Sheet {
 	s := css.NewSheet()
-	s.Merge(components.ProseStyle())
+	s.Merge(components.ProseStyle()).Merge(components.SketchStyle())
 	// The rich text field's chrome, and the published page's own prose rules
 	// inside its editing surface: what an author formats is dressed the way the
 	// reader will see it.
 	s.Merge(richTextChrome())
+	s.Merge(sketchChrome())
 	s.Merge(components.ProseStyleFor(`[data-richtext-surface] [contenteditable="true"]`))
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped

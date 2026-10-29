@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -258,7 +259,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
 				"Update a "+s.Entity,
 				"Only the fields present in the body change; read-only fields are refused. With ?lang= naming a language other than the tenant's own, the body writes that language's translation of its fields and the record itself is untouched."),
-				s.writeAuth(), func(ctx context.Context, in *translatedPatchInput) (*taggedItem[T], error) {
+				s.writeAuth(), func(ctx context.Context, in *translatedPatchInput[T]) (*taggedItem[T], error) {
 					tx, err := transaction(ctx)
 					if err != nil {
 						return nil, err
@@ -276,7 +277,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 		} else {
 			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
 				"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-				s.writeAuth(), func(ctx context.Context, in *patchInput) (*taggedItem[T], error) {
+				s.writeAuth(), func(ctx context.Context, in *patchInput[T]) (*taggedItem[T], error) {
 					tx, err := transaction(ctx)
 					if err != nil {
 						return nil, err
@@ -309,6 +310,7 @@ func (s Spec[T]) mountDelete(write *httpx.Router) {
 }
 
 func (s Spec[T]) annotateFields(read, write *httpx.Router, schema crud.Schema) {
+	read.AnnotateSchema(reflect.TypeFor[T](), func(wire *huma.Schema) { annotateSketchFields(wire, schema.Fields) })
 	for _, field := range schema.Fields {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")

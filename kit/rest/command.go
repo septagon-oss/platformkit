@@ -401,6 +401,9 @@ func commandInputs[I any, T crud.Entity](
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
+	if bad := sketchDeclarationFault(reflect.TypeFor[I](), fields); bad != "" {
+		panic("rest: " + bad)
+	}
 	fields, err := declareMapArgs(reflect.TypeFor[I](), fields, opts.MapArgs)
 	if err != nil {
 		panic("rest: " + err.Error())
@@ -451,6 +454,9 @@ func commandExecutor[I any, T crud.Entity, O any](
 		if err != nil {
 			return httpx.CommandReply{}, err
 		}
+		if err := validateSketchInput(in); err != nil {
+			return httpx.CommandReply{}, err
+		}
 		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
 			return httpx.CommandReply{}, err
 		}
@@ -489,6 +495,10 @@ func mountCommand[I any, T crud.Entity, O any](
 			var zero O
 			return zero, err
 		}
+		if err := validateSketchInput(in); err != nil {
+			var zero O
+			return zero, err
+		}
 		return run(ctx, tx, id, in)
 	}
 	responseOptions := OperationOptions{}
@@ -501,7 +511,7 @@ func mountCommand[I any, T crud.Entity, O any](
 		}, responseOptions)
 		return
 	}
-	if hasChoices(fields) || len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+	if hasChoices(fields) || len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" || f.Type == entity.TypeSketch }) {
 		defaultAnswer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (O, error) {
 			return answer(ctx, tx, id, body, nil)
 		}

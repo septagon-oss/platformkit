@@ -243,7 +243,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
 	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
 	// other component moves.
-	if legacy.SHA256 != "f4dc64915e72ab142ce232e0c160fbcfc48df92e7803fc16ec1844429dd25982" {
+	// The sketch's attribution travels with the export notices. Compared with main,
+	// it changes /notices and the digest only; the drawing's other bytes already agree.
+	if legacy.SHA256 != "ee72a5bb76dc79cb2abcc19ab4bef0291cda5183b2d7bd4a510bf237970c643a" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
