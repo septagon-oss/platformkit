@@ -51,10 +51,14 @@ type Runtime struct {
 	closeOnce sync.Once
 	closeErr  error
 
-	// declaredRelease is this boot's receipt for the event shapes its composition
-	// claimed in its own app's catalog (kit/events ClaimApp). Close gives them back,
-	// which is what keeps a composition that has stopped from holding its app's names
-	// against the next one — and from holding the shapes the next one means.
+	// catalog is this boot's copy of the event shapes its composition declared, and
+	// declaredRelease is the grip it holds on those names (kit/events NewCatalog).
+	// Close gives the names back, which is what keeps a composition that has stopped
+	// from holding its app's names against the next one — and from holding the shapes
+	// the next one means. Every request and every unit of work this Runtime runs is
+	// measured against the value rather than against whatever the process last
+	// installed under this composition's slug.
+	catalog         *events.Catalog
 	declaredRelease func()
 
 	// closed records that Close has run. Work reads it before it claims anything, so
@@ -99,18 +103,21 @@ func RefusedBeforeEffects(err error) bool {
 func beforeEffects(err error) error { return refusedBeforeEffects{err} }
 
 // claimDeclared takes this composition's grip on its own app's event shapes, and
-// changes nothing when the grip is already held: New takes it, and a caller that
-// starts an App whose last Start was refused takes it again rather than serving a
-// composition whose payloads nothing measures.
+// changes nothing while the grip is in hand: New takes it and Start moves it to the
+// Runtime, so a caller that starts an App whose last Start was refused, or whose last
+// Runtime was Closed, takes it again rather than serving publishes the process-wide record
+// no longer measures. The guard reads the grip and not the contract value beside it because
+// the two are separate facts: the value says what was composed and outlives any one boot,
+// the grip says this process is answering under it.
 func (a *App) claimDeclared() error {
 	if a.declaredRelease != nil {
 		return nil
 	}
-	release, err := events.ClaimApp(a.opts.App, a.declared)
+	catalog, err := events.NewCatalog(a.opts.App, a.declared)
 	if err != nil {
 		return err
 	}
-	a.declaredRelease = release
+	a.catalog, a.declaredRelease = catalog, catalog.Close
 	return nil
 }
 
@@ -126,15 +133,44 @@ func (a *App) giveBackDeclared() {
 	}
 	a.declaredRelease()
 	a.declaredRelease = nil
+	a.catalog = nil
 }
 
-// takeDeclaredRelease moves the grip from the composition to the Runtime this Start
-// returns, whose Close is then the release of it. A Runtime nobody Closes keeps its
-// app's names claimed, which is the same answer it gives its connection.
+// takeDeclaredRelease moves the grip to the Runtime this Start returns, whose Close is
+// then the release of it. A Runtime nobody Closes keeps its app's names claimed, which is
+// the same answer it gives its connection. The contract itself stays with the composition:
+// it is a fact about what was composed, not about whether a pool is still open.
 func (a *App) takeDeclaredRelease() func() {
 	release := a.declaredRelease
 	a.declaredRelease = nil
 	return release
+}
+
+// Publisher is this composition's event door: the value that measures every publish it
+// carries against this composition's own manifest (kit/events Publisher). It is what a
+// composition hands to a module that names an events.Publisher in its own Deps, and to a
+// caller that publishes from outside a served request or a scheduled job — a seed, a CLI
+// command, a goroutine that started from nowhere. A composition whose constructor was
+// refused has none, and never got this far.
+func (a *App) Publisher() events.Publisher { return a.publisher() }
+
+// Publisher is this started Runtime's composition's event door. See App.Publisher; a
+// Runtime that has been Closed hands the same value out, and the resources that value's
+// boot released answer the publish rather than a second refusal.
+func (r *Runtime) Publisher() events.Publisher {
+	if r.catalog == nil {
+		return nil
+	}
+	return r.catalog
+}
+
+// publisher answers the same question for the inside of the package, where a nil
+// composition must not arrive as a non-nil interface.
+func (a *App) publisher() events.Publisher {
+	if a.catalog == nil {
+		return nil
+	}
+	return a.catalog
 }
 
 // Declarations validates three identical route registrations using temporary

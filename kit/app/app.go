@@ -245,16 +245,18 @@ type App struct {
 	screenInventory screen.Inventory
 
 	// declared is every event these manifests promise, with the payload type each
-	// one named, and declaredRelease is this composition's receipt for putting them
-	// in its own app's catalog. The catalog behind them is what events.Publish reads
-	// on every outbox write, and it is keyed by app, so a composition's tenants are
-	// measured against that composition's own contract from the moment the
-	// composition exists, and a boot can neither replace nor erase what another app
-	// is answering under (kit/events/catalog.go). The receipt gives back what this
-	// composition added — every refusal after New, and the Close of the Runtime Start
-	// hands out — which is what keeps a build this kernel refused from holding shapes
-	// no live composition declares.
+	// one named, and catalog is this composition's own copy of that promise: the
+	// value kit/events measures every publish it carries against, and the grip it
+	// holds on those names in the process-wide record other publishes are measured
+	// against (kit/events/catalog.go, kit/events/publisher.go). A composition's
+	// tenants are therefore measured against that composition's own contract from the
+	// moment the composition exists, and a boot can neither replace nor erase what
+	// another app is answering under. Close gives back what this composition added —
+	// every refusal after New, and the Close of the Runtime Start hands out — which is
+	// what keeps a build this kernel refused from holding shapes no live composition
+	// declares.
 	declared        []events.Declared
+	catalog         *events.Catalog
 	declaredRelease func()
 
 	// held is this composition's connection, held open-handed from New until Start
