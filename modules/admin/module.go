@@ -171,7 +171,21 @@ const PermissionGalleryRead = "gallery:read"
 // switcher's and the roles screen's included, which is what keeps a screen and
 // its module's API refusing the same callers. It declares neither events nor a
 // navigation entry of its own.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) module.Module {
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked builds the manifest over the composition and the ports the
+// application handed it. Nothing in Deps is required: every field is optional,
+// defaulted, or supplied by the plan, so the error is nil for every Deps today.
+// It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
 	return module.Module{
 		Name:          "admin",
 		Views:         screenViews(deps),
@@ -207,7 +221,7 @@ func New(deps Deps) module.Module {
 				Registration:      deps.Registration,
 			})
 		},
-	}
+	}, nil
 }
 
 // theme is the palette this shell serves: the caller's, or the one this

@@ -27,12 +27,18 @@ var Module = pkit.NewModule("audit", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	settings := pkit.Config(w, func(c config.Config) config.Audit { return c.Audit })
-	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	store := pkit.Config(w, func(c config.Config) config.Database { return c.Database })
-	return New(Deps{
+	m, err := NewChecked(Deps{
 		Tenants:       pkit.Get[jobs.TenantLister](w),
 		RetentionDays: settings.RetentionDays,
 		RetainURL:     store.RetainURL,
 		Feature:       string(pkit.Get[contracts.Plan](w)),
-	}), nil
+	})
+	if err != nil {
+		return module.Module{}, err
+	}
+	// The part is contributed once the trail built: a refused module leaves no
+	// part in the wiring for an erasure to walk.
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
+	return m, nil
 }
