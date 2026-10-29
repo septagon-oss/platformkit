@@ -41,6 +41,7 @@ assigns only its own modules, in its own `scripts/imports-layers.txt`.
 | `github.com/septagon-oss/platformkit/modules/subject` | `github.com/septagon-oss/platformkit` | `product` |
 | `github.com/septagon-oss/platformkit/modules/task` | `github.com/septagon-oss/platformkit` | `generic` |
 | `github.com/septagon-oss/platformkit/modules/tenant` | `github.com/septagon-oss/platformkit` | `identity` |
+| `github.com/septagon-oss/platformkit/modules/tours` | `github.com/septagon-oss/platformkit` | `generic` |
 | `github.com/septagon-oss/platformkit/modules/translation` | `github.com/septagon-oss/platformkit` | `platform` |
 | `github.com/septagon-oss/platformkit/modules/user` | `github.com/septagon-oss/platformkit` | `identity` |
 | `github.com/septagon-oss/platformkit/modules/web` | `github.com/septagon-oss/platformkit` | `product` |

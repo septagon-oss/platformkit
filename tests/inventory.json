@@ -904,6 +904,14 @@
    "coverage": "",
    "round_named": 3
   },
+  "modules/tours/internal": {
+   "ci_fails": 0,
+   "ci_max_s": null,
+   "ci_med_s": null,
+   "ci_runs": 0,
+   "coverage": "",
+   "round_named": 0
+  },
   "modules/translation": {
    "ci_fails": 0,
    "ci_max_s": null,
@@ -1201,7 +1209,7 @@
    "round_named": 12
   }
  },
- "revision_measured": "5f3ae05c1eed14b1a97ba41a7296d717b1e2e74b",
+ "revision_measured": "HEAD",
  "rows": [
   {
    "area": "apps",
@@ -67093,6 +67101,63 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/tours/internal/transition_test.go",
+   "id": "modules/tours/internal/transition_test.go#TestStaleTourActionDoesNotChangeRun",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestStaleTourActionDoesNotChangeRun",
+   "needs_db": false,
+   "pkg": "modules/tours/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/tours/internal/transition_test.go",
+   "id": "modules/tours/internal/transition_test.go#TestTourLaterResumesAtItsDueTime",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTourLaterResumesAtItsDueTime",
+   "needs_db": false,
+   "pkg": "modules/tours/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/tours/internal/transition_test.go",
+   "id": "modules/tours/internal/transition_test.go#TestTourCompletionLatchesAtFinalStep",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTourCompletionLatchesAtFinalStep",
+   "needs_db": false,
+   "pkg": "modules/tours/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/translation/contracts/translationtest/fake_test.go",
    "id": "modules/translation/contracts/translationtest/fake_test.go#TestTheFakeIsAService",
    "kind": "go",
@@ -98510,7 +98575,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2769,
+  "files": 2770,
   "forge_runs": [
    408,
    413,
@@ -98544,7 +98609,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4311,
+   "behaviour": 4314,
    "composition": 557,
    "contract": 24,
    "journey": 123
@@ -98563,23 +98628,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5015,
+  "rows": 5018,
   "tiers": {
    "merge": 3050,
    "nightly": 123,
-   "push": 1842
+   "push": 1845
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2524,
+   "keep": 2525,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4629,
+   "keep": 4632,
    "keep-rewrite": 170,
    "merge": 216
   }

@@ -38,6 +38,7 @@ github.com/septagon-oss/platformkit/modules/change generic
 github.com/septagon-oss/platformkit/modules/decide generic
 github.com/septagon-oss/platformkit/modules/saved generic
 github.com/septagon-oss/platformkit/modules/task generic
+github.com/septagon-oss/platformkit/modules/tours generic
 github.com/septagon-oss/platformkit/modules/admin product
 github.com/septagon-oss/platformkit/modules/scim product
 github.com/septagon-oss/platformkit/modules/subject product

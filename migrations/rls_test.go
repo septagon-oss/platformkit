@@ -42,6 +42,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
+	"github.com/septagon-oss/platformkit/modules/tours"
 	"github.com/septagon-oss/platformkit/modules/translation"
 	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/webhook"
@@ -53,7 +54,7 @@ import (
 var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
 	scim.Migrations, task.Migrations, billing.Migrations, translation.Migrations, content.Migrations,
 	site.Migrations, file.Migrations, history.Migrations, audit.Migrations, webhook.Migrations,
-	change.Migrations, subject.Migrations, decide.Migrations, saved.Migrations}
+	change.Migrations, subject.Migrations, decide.Migrations, saved.Migrations, tours.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is

@@ -1,0 +1,157 @@
+package internal
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/tours/contracts"
+)
+
+type Service struct {
+	Clock  contracts.Clock
+	Policy tenancy.Policy
+	App    appname.Name
+}
+
+var _ contracts.Service = (*Service)(nil)
+
+func NewService(clock contracts.Clock, policy tenancy.Policy, app appname.Name) *Service {
+	if clock == nil || policy == nil {
+		panic("tours: clock and policy are required")
+	}
+	return &Service{Clock: clock, Policy: policy, App: app}
+}
+
+func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Start) (*contracts.Run, error) {
+	person, err := s.actor(ctx, tx, in.TourID, "run")
+	if err != nil {
+		return nil, err
+	}
+	if in.Source != "manual" && in.Source != "automatic" || in.TourID == "" || in.Edition == 0 || in.ContractHash == "" {
+		return nil, crud.ErrInvalid
+	}
+	if in.Source == "automatic" {
+		if err := lockOffer(ctx, tx, s.App, person); err != nil {
+			return nil, err
+		}
+	}
+	at := s.Clock().UTC()
+	steps := slices.Clone(in.StepIDs)
+	if len(steps) == 0 {
+		return nil, crud.ErrInvalid
+	}
+	run := &contracts.Run{
+		Base: entity.Base{}, App: s.App.String(), PersonID: person,
+		TourID: in.TourID, Edition: in.Edition,
+		ContentRevision: in.ContractHash, ContractHash: in.ContractHash,
+		StepIDs: steps, Source: in.Source, Status: "reserved", CurrentStep: steps[0],
+		Done: []string{}, Skipped: []string{}, Revision: 1, StartedAt: at,
+	}
+	if err := crud.Create(ctx, tx, run); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+func (s *Service) Get(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.UUID) (*contracts.Run, error) {
+	actor, err := s.actor(ctx, tx, "", "read")
+	if err != nil {
+		return nil, err
+	}
+	if actor != person {
+		return nil, crud.ErrNotFound
+	}
+	run, err := crud.Get[*contracts.Run](tx, id)
+	if errors.Is(err, crud.ErrNotFound) || run != nil && run.PersonID != actor {
+		return nil, crud.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.actor(ctx, tx, string(run.TourID), "run"); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+func (s *Service) Act(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.UUID, action contracts.Action) (*contracts.Run, error) {
+	actor, err := s.actor(ctx, tx, "", "run")
+	if err != nil {
+		return nil, err
+	}
+	if actor != person {
+		return nil, crud.ErrNotFound
+	}
+	run, err := crud.GetForUpdate[*contracts.Run](tx, id)
+	if err != nil || run.PersonID != actor {
+		return nil, crud.ErrNotFound
+	}
+	if _, err := s.actor(ctx, tx, string(run.TourID), "run"); err != nil {
+		return nil, err
+	}
+	before := run.Status
+	action.At = s.Clock().UTC()
+	if err := transition(run, action, run.StepIDs); err != nil {
+		return nil, err
+	}
+	if err := crud.Update(ctx, tx, run, "status", "current_step", "done", "skipped", "revision", "later_until", "viewed_at", "completed_at", "dismissed_at", "updated_at"); err != nil {
+		return nil, err
+	}
+	if err := s.publish(ctx, tx, run, action, before); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+func (s *Service) actor(ctx context.Context, tx db.Tx[db.Tenant], id, action string) (uuid.UUID, error) {
+	person, ok := tenancy.ActorFrom(ctx)
+	if !ok {
+		return uuid.Nil, crud.ErrInvalid
+	}
+	decision, err := tenancy.RequirePolicy(ctx, s.Policy, tenancy.PolicyRequest{
+		Tenant: db.TenantOf(tx), Actor: tenancy.PolicyActor{Kind: tenancy.PolicyUser, ID: person.String()},
+		Action:   "tours:" + action,
+		Resource: tenancy.PolicyResource{TenantID: db.TenantOf(tx).ID, Kind: "tour", ID: id},
+	})
+	if err != nil || !decision.Allowed {
+		return uuid.Nil, err
+	}
+	return person, nil
+}
+
+func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], run *contracts.Run, action contracts.Action, before string) error {
+	payload := contracts.Event{RunID: run.ID, TourID: run.TourID, Edition: run.Edition, StepID: action.Step, Source: run.Source, PersonID: run.PersonID, At: action.At}
+	if action.Kind == "viewed" && before == "reserved" {
+		if err := events.Publish(ctx, tx, contracts.EventStarted, payload); err != nil {
+			return err
+		}
+	}
+	if action.Kind == "viewed" {
+		if err := events.Publish(ctx, tx, contracts.EventStepViewed, payload); err != nil {
+			return err
+		}
+	}
+	if run.Status == "completed" && before != "completed" {
+		if err := events.Publish(ctx, tx, contracts.EventCompleted, payload); err != nil {
+			return err
+		}
+	}
+	if run.Status == "dismissed" && before != "dismissed" {
+		return events.Publish(ctx, tx, contracts.EventDismissed, payload)
+	}
+	return nil
+}
+
+func lockOffer(ctx context.Context, tx db.Tx[db.Tenant], app appname.Name, person uuid.UUID) error {
+	name := fmt.Sprintf("tours.offer/%s/%s/%s", app, db.TenantOf(tx).ID, person)
+	return tx.DB().WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", name).Error
+}
