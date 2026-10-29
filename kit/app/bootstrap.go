@@ -25,23 +25,19 @@ const bootstrapLock = "platformkit:bootstrap"
 // It is the only way an installation with no tenants gets its first one: every
 // other write in the application happens inside a tenant, and a tenant is what
 // this creates. The migration is part of it because an empty database is the
-// ordinary case here — a person who has just cloned the repository has run
-// `make up` and nothing else — and it is the same ledger the application
-// applies, modules included, because a bootstrap that migrated less than the
-// process it is bootstrapping would leave a schema the app then has to finish.
+// ordinary case here, and it is the same ledger the application applies, modules
+// included, so a bootstrap never leaves a schema the app then has to finish.
 //
-// The lock makes "it refuses once any tenant exists" true of two bootstraps
-// racing and not only of two run in sequence: both would otherwise read an
-// empty tenants table in their own snapshot and both would create one, leaving
-// two first tenants and two administrators who each believe they are the only
-// one. pg_advisory_xact_lock serializes them, so the second reads the first
-// one's tenant and refuses.
+// pg_advisory_xact_lock makes "it refuses once any tenant exists" true of two
+// bootstraps racing and not only of two run in sequence: without it both would
+// read an empty tenants table in their own snapshot and both would create a first
+// tenant, with two administrators each believing they are the only one.
 func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn func(context.Context, db.Tx[db.System]) error) error {
 	pool := databasePool(cfg.Database)
 	if err := pool.Validate(); err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
-	if err := db.MigrateWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...); err != nil {
+	if err := db.MigrateWithOptions(ctx, cfg.Database.MigrateURL, db.MigrateOptions{Budget: migrationBudget(cfg.Database)}, MigrationSources(mods)...); err != nil {
 		return err
 	}
 	// New publishers require expansions that can follow an older data window.
@@ -53,11 +49,21 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 		return err
 	}
 	// The bootstrap publishes — tenant.created, through events.PublishFor — and it
-	// does so before app.New installs the composition's catalog. An outbox row that
-	// no subscriber can receive is the failure kit/events/checkDeclared exists to
-	// refuse, so the bootstrap has to say what it can emit before it emits it, from
-	// the same manifests app.New will read a moment later.
-	events.DeclareAll(declaredEvents(withKernel(mods)))
+	// does so before any composition was built. An outbox row that no subscriber can
+	// receive is the failure kit/events/checkDeclared exists to refuse, so the
+	// bootstrap says what it can emit before it emits it, from the same manifests
+	// app.New will read a moment later. It names no app, because a first tenant belongs
+	// to whichever composition bootstraps the installation, and carries the value on
+	// its own context: fn's transaction publishes under this manifest — the migration,
+	// the drain and the module migrate above it write schema and no event — and the
+	// claim ends with the bootstrap rather than standing in the process for the next
+	// bootstrapper to trip over.
+	catalog, err := events.NewCatalog("", declaredEvents(withKernel(mods)))
+	if err != nil {
+		return err
+	}
+	defer catalog.Close()
+	ctx = events.WithPublisher(ctx, catalog)
 	conn, err := db.OpenWithPool(ctx, cfg.Database.URL, pool)
 	if err != nil {
 		return err

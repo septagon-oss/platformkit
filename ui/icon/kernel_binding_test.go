@@ -1,6 +1,6 @@
 package icon_test
 
-// kernel_binding_test.go binds entity.Icons to this set. The kernel names the
+// kernel_binding_test.go binds entity.IconNames to this set. The kernel names the
 // icons a resource may be about; only ui/icon draws them, and kit may not import
 // ui (scripts/check_packages.sh), so what ties the two is a test here and not an
 // import there.
@@ -28,13 +28,13 @@ var undrawn = []string{"folder", "chart", "money", "box", "tag", "building", "lo
 
 func TestEveryKernelIconNameResolves(t *testing.T) {
 	t.Parallel()
-	for _, name := range entity.Icons {
+	for _, name := range entity.IconNames() {
 		_, known := icon.Resolve(name)
 		if !known && !slices.Contains(undrawn, name) {
 			// An unknown name answers Fallback rather than nothing, which is the
 			// right answer for a toolbar and the wrong one for a contract: a name
 			// the vocabulary admits has to be drawn here or named below as owed.
-			t.Errorf("Resolve(%q) knows nothing of this name; entity.Icons admits it, and it is not in the list of names this set does not draw", name)
+			t.Errorf("Resolve(%q) knows nothing of this name; entity.IconNames admits it, and it is not in the list of names this set does not draw", name)
 			continue
 		}
 	}
@@ -57,7 +57,7 @@ func TestEveryKernelAliasNamesABody(t *testing.T) {
 	for _, name := range []string{"task", "person", "people", "settings", "plan", "message", "document", "calendar"} {
 		glyph, known := icon.Resolve(name)
 		if !known {
-			t.Errorf("Resolve(%q) does not resolve; entity.Icons admits it", name)
+			t.Errorf("Resolve(%q) does not resolve; entity.IconNames admits it", name)
 			continue
 		}
 		if !slices.Contains(icon.Names(), glyph.Name) {

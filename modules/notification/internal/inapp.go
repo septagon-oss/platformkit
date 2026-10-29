@@ -83,7 +83,7 @@ func MountInApp(s httpx.Surfaces, p InApp) {
 	// address reaches.
 	mounted := s.App.PagePath(path)
 	page.Serve(s.App, p.Shell, page.Route{
-		ID: "notification-inbox", Method: http.MethodGet, Path: path,
+		View: contracts.InboxView, ID: "notification-inbox", Method: http.MethodGet, Path: path,
 		Summary: "The notices addressed to you", Errors: inboxFaults,
 	}, httpx.SignedIn(), func(ctx context.Context, r page.Request, in *inboxInput) (page.View, error) {
 		return p.inbox(ctx, in.Page, per, mounted)

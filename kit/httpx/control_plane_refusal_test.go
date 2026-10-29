@@ -92,30 +92,17 @@ func operatorFixtureWithFault(t *testing.T, fault httpx.Fault) http.Handler {
 	return router
 }
 
-// TestTheControlPlaneRefusalIsTheSameAnswerAsAnAddressNobodyMounted.
+// TestTheControlPlaneRefusalIsTheSameAnswerAsAnAddressNobodyMounted holds what
+// kit/httpx/README.md, docs/adr/0017 and CHANGELOG.md promise in one sentence: the
+// control plane "answers exactly what an address nobody mounted answers, down to
+// the bytes, so the surface discloses nothing".
 //
-// "Anywhere else it answers exactly what an address nobody mounted answers, down
-// to the bytes, so the surface discloses nothing" — kit/httpx/README.md, and the
-// same sentence in docs/adr/0017 and in CHANGELOG.md. `notHere`, the refusal the
-// *authorization* middleware gives on the control-plane surface, is written
-// through huma for exactly this reason ("which is also what makes the answer
-// byte-identical to the one a never-mounted address gets, Fault page included").
-//
-// The other gate — the one that answers /ops at a host that is not the
-// installation's — is not. It runs inside the `surfaces` middleware, which is
-// mounted on the root router *before* the middleware that puts the security
-// headers and the caching decision on a response (kit/httpx/httpx.go:
-// `root.Use(a.requestID, a.surfaces, a.headers)`), and it answers with a.fail and
-// returns without ever calling next. So a browser that asks a customer's host for
-// the control plane is served an HTML refusal page with no Content-Security-Policy,
-// no X-Frame-Options, no X-Content-Type-Options and no Cache-Control, while the
-// same browser asking for an address nobody mounted at the same host gets all
-// four. The difference is the disclosure the README says does not exist, and the
-// uncached HTML page is a hard-reload refusal.
-//
-// The passing branch: answer the host gate after the headers middleware has
-// wrapped the writer (or state the four headers on this one response), which is
-// what "the same answer, down to the bytes" requires.
+// Two gates can refuse /ops. `notHere` does it inside the authorization middleware,
+// written through huma for exactly this reason, and the host gate does it in
+// (*API).address for a host that is not the installation's. Both are mounted after
+// the middleware that puts the security headers and the caching decision on a
+// response (kit/httpx/httpx.go: `root.Use(tracing, a.requestID, a.surface,
+// a.headers, a.address)`), so neither can answer a customer's host with a bare page.
 func TestTheControlPlaneRefusalIsTheSameAnswerAsAnAddressNobodyMounted(t *testing.T) {
 	h := operatorFixture(t)
 
@@ -157,10 +144,10 @@ func TestTheControlPlaneRefusalIsTheSameAnswerAsAnAddressNobodyMounted(t *testin
 	}
 
 	// The same two addresses, asked as a browser navigation, against the refusal
-	// renderer a real composition registers. This is where the missing headers are
-	// not a fingerprint but a document: the page a person is shown at a customer's
-	// host has no Content-Security-Policy and no frame protection, while every other
-	// refusal page of that host has both.
+	// renderer a real composition registers. A page is where a dropped header stops
+	// being a fingerprint and becomes an uncached document with no frame protection,
+	// so the ordinary refusal page is checked first and the control-plane page
+	// compared to it.
 	t.Run("the document a browser is shown", func(t *testing.T) {
 		html := operatorFixtureWithFault(t, func(w http.ResponseWriter, _ *http.Request, p *problem.Problem) bool {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

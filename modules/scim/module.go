@@ -12,6 +12,8 @@
 package scim
 
 import (
+	"errors"
+
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -29,7 +31,10 @@ type Deps struct {
 	// of the users table and locks a person's row only to decide what their roles
 	// become, because the rules about who may become what — and who may take the
 	// last administrator away — live behind those commands.
+	// Deprecated: use Provisioning.
 	Users usercontracts.Service
+	// Provisioning owns account lifecycle commands and takes precedence over Users.
+	Provisioning usercontracts.Provisioning
 
 	// Roles answers whether this tenant knows a role name at all, which is the
 	// question a group→role binding has to be able to ask. Role definitions are
@@ -66,17 +71,36 @@ var permissions = []module.Permission{
 // either cannot write a person, binds groups to roles nobody declared, or writes
 // a role grant it never asked anybody about, and all three answers look like
 // success until a customer's directory is half-imported.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
-	if deps.Users == nil {
-		panic("scim.Module: Deps.Users is required; the people this module provisions are modules/user's rows and only its commands may write them")
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. Every port is required and
+// refused by name — the people this module provisions, the role names a group
+// may bind to, and whoever resolves a caller's roles — because each one answers
+// a write that would otherwise look like success. It opens nothing, runs no
+// query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
+	people := deps.Provisioning
+	if people == nil {
+		people = deps.Users
+	}
+	if people == nil {
+		return nil, module.Module{}, errors.New("scim.Module: Deps.Users is required; the people this module provisions are modules/user's rows and only its commands may write them")
 	}
 	if deps.Roles == nil {
-		panic("scim.Module: Deps.Roles is required; wire contracts.RoleDirectory over whatever owns the tenant's role names, or a group can be bound to a role that does not exist")
+		return nil, module.Module{}, errors.New("scim.Module: Deps.Roles is required; wire contracts.RoleDirectory over whatever owns the tenant's role names, or a group can be bound to a role that does not exist")
 	}
 	if deps.Authority == nil {
-		panic("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or a command's recheck of who is asking has nothing to ask")
+		return nil, module.Module{}, errors.New("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or a command's recheck of who is asking has nothing to ask")
 	}
-	svc := internal.NewService(deps.Users, deps.Roles, deps.Authority)
+	svc := internal.NewService(people, deps.Roles, deps.Authority)
 	return svc, module.Module{
 		Name:       "scim",
 		Migrations: Migrations.Files,
@@ -122,7 +146,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Routes: func(s httpx.Surfaces) {
 			internal.RegisterRoutes(s, svc)
 		},
-	}
+	}, nil
 }
 
 // PersonalData is this module's part of a person's export and erasure, for the

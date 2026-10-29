@@ -35,11 +35,11 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		a.refuse(ctx, http.StatusInternalServerError, "")
 		return
 	}
-	// Close is idempotent, so this covers the panic path and nothing else.
+	// Rollback is idempotent, so this covers the panic path and nothing else.
 	closed := false
 	defer func() {
 		if !closed {
-			rollbackErr := p.Close(false)
+			rollbackErr := p.Rollback()
 			if n, ok := operationNote(ctx.Context()); ok && rollbackErr == nil {
 				if err := a.failedOperation(n); err != nil {
 					n.failureErr = err

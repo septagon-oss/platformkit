@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
-	"maps"
 	"slices"
 	"strings"
 )
@@ -117,14 +115,13 @@ func Compose(t Template, r Resolved) (string, error) {
 	for i, s := range t.data.slots {
 		colours[s] = r.value.Colours[i]
 	}
-	var out boundedOutput
-	enc := xml.NewEncoder(&out)
-	var emit func(*element, bool) error
-	emit = func(e *element, root bool) error {
-		if p := e.attrs["data-part"]; p != "" && selections[p] != e.attrs["data-option"] {
-			return nil
+
+	b := t.data.box
+	bg := &element{name: "rect", attrs: map[string]string{"x": decimal(b[0]), "y": decimal(b[1]), "width": decimal(b[2]), "height": decimal(b[3]), "fill": r.value.Background}}
+	return encode(t.data.root, bg, func(e *element, attrs map[string]string) bool {
+		if p := attrs["data-part"]; p != "" && selections[p] != attrs["data-option"] {
+			return false
 		}
-		attrs := maps.Clone(e.attrs)
 		if s := attrs["data-slot"]; s != "" {
 			if slot, ok := strings.CutPrefix(s, "stroke:"); ok {
 				attrs["stroke"] = colours[slot]
@@ -135,32 +132,6 @@ func Compose(t Template, r Resolved) (string, error) {
 		delete(attrs, "data-part")
 		delete(attrs, "data-option")
 		delete(attrs, "data-slot")
-		start := xml.StartElement{Name: xml.Name{Local: e.name}}
-		for _, k := range slices.Sorted(maps.Keys(attrs)) {
-			start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: k}, Value: attrs[k]})
-		}
-		if err := enc.EncodeToken(start); err != nil {
-			return err
-		}
-		if root {
-			b := t.data.box
-			bg := &element{name: "rect", attrs: map[string]string{"x": decimal(b[0]), "y": decimal(b[1]), "width": decimal(b[2]), "height": decimal(b[3]), "fill": r.value.Background}}
-			if err := emit(bg, false); err != nil {
-				return err
-			}
-		}
-		for _, child := range e.children {
-			if err := emit(child, false); err != nil {
-				return err
-			}
-		}
-		return enc.EncodeToken(start.End())
-	}
-	if err := emit(t.data.root, true); err != nil {
-		return "", err
-	}
-	if err := enc.Flush(); err != nil {
-		return "", err
-	}
-	return out.String(), nil
+		return true
+	})
 }

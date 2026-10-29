@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -71,8 +72,24 @@ func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
 // of its own rather than on the application's configuration surface.
 type OIDC = internal.OIDC
 
+// Pages is the chrome of the one page this module writes for itself: the page
+// the address in a verification email opens (see internal/ui/page.go).
+//
+// The page is the module's — it is the credential, the state and the command
+// that spends them — and its chrome is not: the palette, where the stylesheet is
+// served and where a person who has just confirmed an address is sent are facts
+// about the installation, so the composition writes them here. A composition
+// that turns emailed registration on and leaves Pages zero mails a link that
+// opens nothing.
+type Pages = internal.Pages
+
 // Deps is what this module cannot make for itself.
 type Deps struct {
+	// Authorization and Permissions must be supplied together. Leaving both nil
+	// constructs the independent default policy for legacy direct callers.
+	Authorization contracts.GrantAuthorizer
+	Permissions   contracts.PermissionReader
+
 	// Users is how a password login finds the person an address belongs to,
 	// and how a password that has been earned is stored. It is narrower than
 	// the user module's own Service: a consumer depends on the capability it
@@ -123,6 +140,16 @@ type Deps struct {
 	// sends exactly as it did before the record existed and leaves no trace of the
 	// attempt — which is the bug this closes, not a mode to preserve.
 	Mails contracts.MailLedger
+
+	// MailDelivery is whether the sender above attempts what it is handed. It is
+	// required, and it is fail-closed: nil reads as "nothing is delivered", the
+	// same answer a deployment with no mail host gives, because a port nobody
+	// wired is not evidence that mail goes out.
+	//
+	// The doors that would promise a person an email — sign-up, resend
+	// verification, forgotten password — refuse when it says no, and a composition
+	// that composes auth is refused at the plan unless something answers it.
+	MailDelivery contracts.MailDelivery
 
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
@@ -203,6 +230,11 @@ type Deps struct {
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
+
+	// Pages is the chrome of the page the verification link opens. Only the
+	// emailed-verification lifecycle has such a page, so only that lifecycle
+	// reads it; see Pages.
+	Pages Pages
 }
 
 // LinkPages names the pages a mailed link opens, as paths on the host the tenant
@@ -249,42 +281,64 @@ func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Auth, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest over the ports the composition
+// collected, and answers as an error the wiring that cannot hold: two
+// registration lifecycles at once, a policy that names no roles or no registrar,
+// a mailed link page that is not an absolute path outside the API root, a
+// request budget the counter cannot keep, and an authorizer without its reader.
+// It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Auth, module.Module, error) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
-			panic("auth: choose only one registration lifecycle")
+			return nil, module.Module{}, errors.New("auth: choose only one registration lifecycle")
 		}
 		policy, err := deps.EmailRegistration.Checked()
 		if err != nil {
-			panic(err)
+			return nil, module.Module{}, err
 		}
 		deps.EmailRegistration = &policy
 	}
 	if deps.ApprovalRegistration != nil {
 		if deps.Registration != nil {
-			panic("auth: choose emailed password setup or approval-required registration")
+			return nil, module.Module{}, errors.New("auth: choose emailed password setup or approval-required registration")
 		}
 		policy, err := deps.ApprovalRegistration.Checked()
 		if err != nil {
-			panic(err)
+			return nil, module.Module{}, err
 		}
 		deps.ApprovalRegistration = &policy
 	}
 	if err := deps.LinkPages.check(); err != nil {
-		panic(err)
+		return nil, module.Module{}, err
 	}
 	if err := deps.AccountRequests.Check(); err != nil {
-		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
+		return nil, module.Module{}, fmt.Errorf("auth: Deps.AccountRequests: %w", err)
+	}
+	deps, err := withGrants(deps)
+	if err != nil {
+		return nil, module.Module{}, err
 	}
 	secure := !config.Local(deps.PublicHost)
-	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
+	svc := internal.NewServiceWithGrants(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
+		MailDelivery:    deps.MailDelivery,
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 		AccountRequests: deps.AccountRequests,
-	})
+	}, deps.Authorization, deps.Permissions)
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
 		Name:       "auth",
+		Views:      contracts.Views(deps.EmailRegistration != nil),
 		Migrations: Migrations.Files,
 		Adopts:     Migrations.Adopts,
 		RulesFrom:  Migrations.RulesFrom,
@@ -306,124 +360,74 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		),
 		Permissions: permissions,
 		Declared:    contracts.Events,
-		// The one entry, and the shell serves it: a role is keyed by its name
-		// rather than by an id, so no generated screen could answer this path
-		// and modules/admin writes the page. The two routes below are what it
-		// is a face for. See modules/admin/internal/roles.go.
-		// One nav entry, and deliberately only one. The session list is the
-		// caller's own — the routes reach it through the credential and no
-		// permission — and kit/module.Validate refuses an entry that names no
-		// permission, because a link everybody sees is still a decision somebody
-		// has to own. Borrowing role:manage would be the wrong decision twice
-		// over: it hides the screen from the members it is for and it would put
-		// an administrator's own list under a permission they hold for other
-		// people's rows. So the manifest says nothing here, and the product whose
-		// navigation this is names the entry beside the permission it seeds.
+		// Admin owns the role screen; personal session navigation belongs to the app.
 		Nav: []module.NavEntry{
 			{Label: "Roles", Screen: "auth/roles", Permission: contracts.PermissionRoleManage},
 		},
-		Jobs: []jobs.Job{internal.Sweep(svc, deps.Tenants)},
-		// Two subscriptions, and they are the same fact from two directions:
-		// somebody who cannot sign in has to be sent a link they can use.
-		//
-		// Both are subscriptions rather than calls inside the request, and for
-		// two different reasons. The invitation one, because sending mail is
-		// somebody else's machine and a request that waited on one would hold a
-		// transaction open across it. The reset one, because the request may
-		// not look the address up at all: a public route that took longer for
-		// an address somebody has is an account enumeration oracle with a
-		// stopwatch, so the lookup happens here, where nobody is timing it.
-		Subscriptions: []events.Subscription{{
-			Module: "auth", Name: usercontracts.EventInvited,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
-				var invited usercontracts.Invited
-				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
-					return fmt.Errorf("auth: read the invitation: %w", err)
-				}
-				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
-			},
-		}, {
-			Module: "auth", Name: contracts.EventResetRequested,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
-				var asked contracts.ResetRequested
-				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
-					return fmt.Errorf("auth: read the reset request: %w", err)
-				}
-				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
-			},
-		}},
-		Routes: func(s httpx.Surfaces) {
-			// The catalogue, taken at the one moment the kernel has it and this
-			// module is being wired. The hourly sweep reads it back to say which
-			// roles name a permission nothing defines any more.
-			svc.Declare(s.Permissions())
-			internal.RegisterRoutes(s, svc, cookies)
-			// A person's own keys, mounted always: unlike the factor routes
-			// there is no secret this needs from the deployment — the token is
-			// the secret, and it is hashed rather than sealed because it is
-			// never read back.
-			internal.RegisterTokenRoutes(s, svc)
-			// The factor key is the gate, and it is a deployment's setting
-			// rather than a fact about which other modules were composed: a
-			// composition with the key mounts the routes, one without it does
-			// not, and nothing here looks at a module list to decide.
-			// The factor routes are mounted whether or not the deployment set a
-			// key, and with none they answer 503 — the refusal the spec names,
-			// and the reason they are not mounted conditionally: an operation
-			// that exists only sometimes leaves its four events declared and
-			// unreachable, which the application's own catalogue check (every
-			// declared event has a channel) is right to call a lie. A deployment
-			// without a key is told the door is shut rather than being handed a
-			// 404 that says nothing about why.
-			svc.EnableFactors([]byte(deps.FactorKey))
-			internal.RegisterFactorRoutes(s, svc, cookies)
-			// The passkey half mounts always and unconditionally, and it is not
-			// gated on the factor key: a passkey writes no secret, so a deployment
-			// with no key has nothing it cannot do here. What gates the usernameless
-			// door is that tenant's own row in passkey_settings, read per request in
-			// the transaction the host resolved it in — a capability of the tenant,
-			// never a module list and never a deployment setting. With no row
-			// anywhere, which is every installation until somebody writes one, that
-			// door answers 403 with the reason and every other door behaves as it did
-			// before this file existed. The relying party's display name is the tenant's
-			// own row's Name, so Deps carries no installation-wide name for a platform
-			// prompt and nothing here is a fact about one customer.
-			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
-			if deps.Registration != nil {
-				internal.RegisterRegistrationRoutes(s, svc)
-			}
-			if deps.ApprovalRegistration != nil {
-				internal.RegisterApprovalRegistrationRoutes(s, svc, *deps.ApprovalRegistration)
-			}
-			if deps.EmailRegistration != nil {
-				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
-			}
-			// The gate is "can any tenant here reach a provider", which is the
-			// installation's issuer or the port that resolves one per tenant —
-			// not the installation's issuer alone, which would refuse to mount
-			// the two legs for a deployment whose providers are all per-tenant.
-			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
-				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
-					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
-			}
-			// The gate is the same shape as OIDC's and has one clause less: there is
-			// no installation-level SAML default to ask about, so "can any tenant here
-			// reach an IdP" is answered by the port alone. A composition with no
-			// tenant module — and so no provider to resolve — mounts no /saml/ route,
-			// rather than three doors that would answer 404 for everybody.
-			if deps.SAMLProviders != nil {
-				internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
-					internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
-			}
-		},
-	}
+		Jobs:          []jobs.Job{internal.Sweep(svc, deps.Tenants)},
+		Subscriptions: sessionSubscriptions(svc),
+		Routes:        sessionRoutes(svc, deps, cookies, secure)}
 	if deps.Registration != nil {
 		manifest.Subscriptions = append(manifest.Subscriptions, internal.RegistrationSubscription(svc, deps.Registration))
 	}
 	if deps.EmailRegistration != nil {
 		manifest.Subscriptions = append(manifest.Subscriptions, internal.VerificationSubscriptions(svc)...)
 	}
-	return svc, manifest
+	return svc, manifest, nil
+}
+
+// sessionSubscriptions is the two ways the same fact arrives: somebody who cannot
+// sign in has to be sent a link they can use. A send a transport refused is
+// acknowledged rather than retried, in internal.AcknowledgeRefusedDelivery.
+func sessionSubscriptions(svc *internal.Service) []events.Subscription {
+	return []events.Subscription{{
+		Module: "auth", Name: usercontracts.EventInvited,
+		Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+			var invited usercontracts.Invited
+			if err := json.Unmarshal(ev.Payload, &invited); err != nil {
+				return fmt.Errorf("auth: read the invitation: %w", err)
+			}
+			return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
+		}),
+	}, {
+		Module: "auth", Name: contracts.EventResetRequested,
+		Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+			var asked contracts.ResetRequested
+			if err := json.Unmarshal(ev.Payload, &asked); err != nil {
+				return fmt.Errorf("auth: read the reset request: %w", err)
+			}
+			return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
+		}),
+	}}
+}
+
+func sessionRoutes(svc *internal.Service, deps Deps, cookies internal.Cookies, secure bool) func(httpx.Surfaces) {
+	return func(s httpx.Surfaces) {
+		svc.Declare(s.Permissions())
+		internal.RegisterRoutes(s, internal.RouteServices{Login: svc, Logout: svc, Identity: svc, ChangePassword: svc, ForgotPassword: svc, ResetPassword: svc, ListSessions: svc, RevokeSession: svc, RevokeAllSessions: svc, ListRoles: svc, SetRole: svc}, cookies)
+		internal.RegisterTokenRoutes(s, svc)
+		svc.EnableFactors([]byte(deps.FactorKey))
+		internal.RegisterFactorRoutes(s, svc, cookies)
+		internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
+		if deps.Registration != nil {
+			internal.RegisterRegistrationRoutes(s, svc)
+		}
+		if deps.ApprovalRegistration != nil {
+			internal.RegisterApprovalRegistrationRoutes(s, svc, *deps.ApprovalRegistration)
+		}
+		if deps.EmailRegistration != nil {
+			internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
+			internal.MountVerifyEmailPage(s, svc, *deps.EmailRegistration, deps.Pages)
+		}
+		if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
+			internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
+				internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
+		}
+		if deps.SAMLProviders != nil {
+			internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
+				internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
+		}
+	}
 }
 
 // permissions is what the manifest declares: two, guarding the two roles routes

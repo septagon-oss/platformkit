@@ -118,28 +118,21 @@ func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
 	// The address is the envelope's own subject attribute, from the one
 	// function that writes both: a bridge that reads a subject out of a document
 	// and subscribes to it lands on the messages it came from.
-	if _, err := j.js.Publish(transport.AppSubject(j.app, ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
+	if _, err := j.js.Publish(transport.SubjectFor(j.app, ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
 		return fmt.Errorf("events: publish %s: %w", ev.Name, err)
 	}
 	return nil
 }
 
-// ackWait is how long JetStream waits for an acknowledgement before it decides
-// a delivery was lost, and it is the first rung of the redelivery ladder rather
-// than a number beside it.
+// ackWait is how long JetStream waits for an acknowledgement before it decides a delivery
+// was lost, and it is the first rung of the redelivery ladder rather than a number beside
+// it.
 //
-// That is not tidiness, it is the drift that had every worker crashlooping. The
-// server pins a consumer's AckWait to BackOff[0] whenever a backoff is set, so
-// a subscription that asked for thirty seconds under a ladder starting at one
-// second was stored with one — and nats.go refuses a later subscription whose
-// stored configuration is not the one it asks for:
-//
-//	nats: configuration requests ack wait to be 30s, but consumer's value is 1s
-//
-// The first process therefore created a consumer no later process could bind
-// to. The web role stayed up, every worker crashlooped, and nothing in the
-// chart could see it. One value used twice cannot drift from itself; reconcile
-// handles the drift that is still possible, which is a deploy that changes the
+// The server pins a consumer's AckWait to BackOff[0] whenever a backoff is set, so a
+// subscription that asked for a different wait was stored with the ladder's and nats.go
+// refuses a later subscription whose stored configuration is not the one it asks for — a
+// consumer the first process created and no later process could bind to. One value used
+// twice cannot drift; reconcile handles the drift still possible, a deploy that changes the
 // ladder itself.
 func ackWait() time.Duration { return delivery.Backoff[0] }
 
@@ -156,69 +149,45 @@ func wanted(app appname.Name, durable, name string) []nats.SubOpt {
 		nats.BindStream(stream),
 		// Both addresses, while a publisher on the previous build is still
 		// writing events this worker reads. See transport.Filters.
-		nats.ConsumerFilterSubjects(transport.AppFilters(app, name)...),
+		nats.ConsumerFilterSubjects(transport.FiltersFor(app, name)...),
 	}
 }
 
-// group is the deliver group a durable's subscribers join, and it is the
-// durable's own name.
+// group is the deliver group a durable's subscribers join, and it is the durable's own
+// name.
 //
-// It is what makes a second worker possible. A push consumer with no deliver
-// group belongs to one subscriber and refuses the next — "consumer is already
-// bound to a subscription" — so the boot log recommended scaling the worker out
-// and the second replica crashlooped on the first subscription it tried to
-// make. With a group, JetStream delivers each message to one member of it: N
-// workers share one durable, each event is handled once, and the
-// acknowledgement ladder is still the consumer's.
-//
-// A queue group and not a durable per replica, because a durable per replica is
-// a replica that has to be told which one it is, and a replica that is removed
-// leaves a durable behind that nothing drains and the stream keeps feeding.
-// It is also the smaller change: one call, and one field in reconcile.
+// A push consumer with no deliver group belongs to one subscriber and refuses the next, so
+// the second replica crashlooped on its first subscription. With a group JetStream delivers
+// each message to one member of it: N workers share one durable, each event is handled
+// once, and the acknowledgement ladder stays the consumer's. A queue group and not a
+// durable per replica, because a durable per replica leaves a consumer behind that nothing
+// drains when the replica goes.
 func group(durable string) string { return durable }
 
-// watching is the consumer one observation asks for: ephemeral, deliver-new, and
-// filtered to the one subject js.Subscribe was handed. It shares nothing with
-// wanted, and that is the point — no name for reconcile to compare against (it
-// deletes a stored consumer whose filter, ack or deliver policy disagrees, and an
-// ephemeral consumer wearing a durable's name would be deleted by the durable
-// subscription beside it), no acknowledgement ladder to climb, no stored position
-// to resume.
+// watching is the consumer one observation asks for: ephemeral, deliver-new, and filtered
+// to the one subject js.Subscribe was handed. It shares nothing with wanted and takes no
+// name reconcile could compare against — a stored-consumer comparison would delete an
+// ephemeral consumer — no ladder to climb and no position to resume.
 //
-// DeliverNew and AckNone are named rather than left to the library's defaults, which
-// are DeliverAll and AckExplicit, and each answers one half of the promise Observe
-// makes. A consumer that replayed the stream would hand a browser events it is not
-// owed and that this method's contract says it never sees. A consumer that
-// acknowledges is worse: the server restarts the ack window of every message it has
-// sent and not heard back about, and a callback queue that is still inside an earlier
-// delivery cannot answer the later one, so the broker redelivers a message whose
-// callback has not started yet — one publish reaching the same observer twice. An
-// observation's contract is at most once per publish and no retry, and no-ack is the
-// only consumer policy that keeps it however slow the callback is: what a watch loses
-// is the notice, never a duplicate of it. The filter is the subscribe subject —
-// nats.go writes it into the consumer configuration it is about to create, and there
-// is no separate option for it in this release — which is why Observe passes the exact
-// address rather than a wildcard.
+// DeliverNew and AckNone are named rather than left to the library's DeliverAll and
+// AckExplicit, one each: a consumer that replayed the stream would hand a browser events
+// this method's contract says it never sees, and a consumer that acknowledges has the
+// server restart the ack window of every unanswered message, so a slow callback queue can
+// be handed the same publish twice. The filter is the subscribe subject, which is why
+// Observe passes the exact address rather than a wildcard.
 func watching() []nats.SubOpt {
 	return []nats.SubOpt{nats.BindStream(stream), nats.DeliverNew(), nats.AckNone()}
 }
 
-// stream brings the stored stream into line with what this code asks for, the
-// way reconcile does for a consumer, and for the same reason: the stream is
-// created on first use and then outlives every process that ever connected, so
-// its settings are a second copy of wantedStream that nothing kept in step. A
-// deployment whose subjects or retention a build changed two releases ago ran
-// on the old ones until somebody noticed.
+// stream brings the stored stream into line with what this code asks for, the way reconcile
+// does for a consumer, because a stream outlives every process that connected and its
+// settings are a second copy nothing kept in step.
 //
-// Where it differs from a consumer is what it does about a setting NATS cannot
-// change. A consumer is deleted and made again, replaying DeliverAll. When
-// composed with events.Consume, platformkit_handled claims prevent repeated
-// committed handling; independent sinks must provide durable idempotency.
-// A stream cannot be recreated that way: deleting one
-// throws away the messages in it, and the ones the outbox has already marked as
-// relayed would be events nobody ever gets. So retention and storage are
-// reported and the process refuses to start, which is a deploy that fails where
-// somebody is looking rather than a fleet quietly running on the wrong stream.
+// What differs is the answer to a setting NATS cannot change. A consumer is deleted and
+// made again, replaying DeliverAll; a stream cannot be, because deleting one throws away
+// the messages the outbox has already marked as relayed. So retention and storage are
+// reported and the process refuses to start: a deploy that fails where somebody is looking,
+// rather than a fleet on the wrong stream.
 func (j *jetstream) stream(ctx context.Context) error {
 	info, err := j.js.StreamInfo(stream, nats.Context(ctx))
 	switch {
@@ -259,23 +228,16 @@ func (j *jetstream) stream(ctx context.Context) error {
 	return nil
 }
 
-// reconcile brings a stored consumer into line with what this code asks for,
-// before the subscription that would otherwise be refused for the difference.
+// reconcile brings a stored consumer into line with what this code asks for, before the
+// subscription that would otherwise be refused for the difference. A durable consumer
+// outlives the process that made it, so its settings are a second copy of three constants,
+// and a deploy that changed one used to mean a worker that could not boot until somebody
+// deleted the consumer by hand.
 //
-// A durable consumer outlives the process that created it, so its settings are
-// a second copy of three constants — and a deploy that changes one of them used
-// to mean a worker that could not boot until somebody deleted the consumer by
-// hand. NATS can change some of them on a live consumer and not others, so this
-// updates what it can and deletes what it cannot, naming the field either way.
-//
-// Deleting is safe and worth saying why: this code asks for DeliverAll, so a
-// recreated consumer replays the stream from the beginning, and every replay is
-// claimed in platformkit_handled before the handler runs. A handler that has
-// already run does not run again; one that never ran gets its event. That is
-// the same guarantee an ordinary redelivery has (docs/adr/0004), which is why
-// recreating a consumer is a log line rather than an operator's afternoon.
-// Independent sinks must supply equivalent durable idempotency: this provider
-// does not create SQL claims and cannot make an arbitrary callback run once.
+// Deleting is safe because this code asks for DeliverAll: a recreated consumer replays the
+// stream, and every replay is claimed in platformkit_handled before the handler runs
+// (docs/adr/0004). Independent sinks must supply their own durable idempotency; this
+// provider does not create SQL claims.
 func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	info, err := j.js.ConsumerInfo(stream, durable, nats.Context(ctx))
 	switch {
@@ -310,7 +272,7 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	// kind and the consumer is remade. Remaking it replays the stream under
 	// DeliverAll, and platformkit_handled claims make the replay safe — the same
 	// argument two settings above.
-	if want := transport.AppFilters(j.app, name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
+	if want := transport.FiltersFor(j.app, name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
 		immutable = append(immutable, fmt.Sprintf("filter_subject %q filters %v to %v",
 			info.Config.FilterSubject, info.Config.FilterSubjects, want))
 	}
@@ -428,28 +390,21 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 	return nil
 }
 
-// Observe watches one tenant's one event from now on, on an ephemeral consumer
-// the server names and deletes when this connection's subscription goes away.
+// Observe watches one tenant's one event from now on, on an ephemeral consumer the server
+// names and deletes when this connection's subscription goes away. It asks for no durable
+// name, no ack ladder and no stored position, so it can create, update or delete nothing a
+// durable subscription owns.
 //
-// It asks for no durable name, no ack ladder and no stored position, so it can
-// create, update or delete nothing a durable subscription owns: the claim ledger
-// that makes a redelivery safe does not exist for a watch, which is why a notice
-// this process could not deliver is not something it will ever be handed again — the
-// consumer acknowledges nothing, so the broker has no window to time out and no
-// reason to send one message to the same callback twice.
-//
-// The broker's own buffer bounds nothing here — no MaxPending is set — because the
-// queue that decides whether a connection is alive is kit/stream's per-connection
-// one: a subscriber that cannot keep up is dropped by that bound and not by the
-// server, which would otherwise be redelivering to a consumer whose listener has
-// already stopped caring.
+// No bound is set here: the queue that decides whether a connection is alive is
+// kit/stream's per-connection one, and a subscriber that cannot keep up is dropped by that
+// bound rather than by a server redelivering to a listener that stopped caring.
 func (j *jetstream) Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(transport.Event)) (func(), error) {
 	// The stream has to exist to bind to; nothing else is prepared, and no
 	// reconciliation runs, because an observation owns no stored consumer.
 	if err := j.stream(ctx); err != nil {
 		return nil, fmt.Errorf("events: observe %s in tenant %s: %w", name, tenantID, err)
 	}
-	subject := transport.AppSubject(j.app, tenantID, name)
+	subject := transport.SubjectFor(j.app, tenantID, name)
 	sub, err := j.js.Subscribe(subject, func(msg *nats.Msg) {
 		var ev transport.Event
 		// An undecodable body is dropped, which is the whole of the handling it gets:

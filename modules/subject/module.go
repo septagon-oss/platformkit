@@ -19,6 +19,7 @@
 package subject
 
 import (
+	"errors"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -45,11 +46,14 @@ type Deps struct {
 	// the one read across the boundary, Bundles where a bundle's bytes go, and Notes
 	// how the person hears about them. Tenants is how the export walk reaches active
 	// tenants — the same lister modules/task's sweep is handed.
-	Parts   []personaldata.Part
-	People  usercontracts.Service
-	Bundles contracts.BundleSource
-	Notes   contracts.Notifier
-	Tenants jobs.TenantLister
+	Parts []personaldata.Part
+	// Deprecated: use Subjects.
+	People usercontracts.Service
+	// Subjects reads retained people; when present it takes precedence over People.
+	Subjects usercontracts.RetainedLookup
+	Bundles  contracts.BundleSource
+	Notes    contracts.Notifier
+	Tenants  jobs.TenantLister
 
 	// Files is the file module: where a bundle's bytes are stored and the only way to
 	// stream one back out of the public door. It is a module contract rather than a
@@ -107,19 +111,38 @@ var roles = []module.RoleDecl{
 func New() module.Module { return NewWith(Deps{}) }
 
 // NewWith is the manifest over the contributions and the ports the composition collected.
+// It is the form a hand-written composition writes; NewWithChecked answers the same
+// refusals as an error, which is what a build function returns.
 func NewWith(deps Deps) module.Module {
+	m, err := NewWithChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewWithChecked builds the manifest over the parts and the ports the composition
+// collected, and answers as an error the wiring that loses a person's own words:
+// a foreign service, which carries no export queue to walk, a personal-data part
+// with no module name to attribute it to, or two parts under one name. It opens
+// nothing, runs no query and is safe to call twice.
+func NewWithChecked(deps Deps) (module.Module, error) {
 	// One value serves the routes and the job, because a module with two answers to
 	// "who are the parts" is two modules.
 	svc := deps.Service
 	if svc == nil {
-		svc = internal.NewService(internal.Deps{
-			Parts: deps.Parts, People: deps.People, Now: deps.Now,
+		built, err := internal.NewServiceChecked(internal.Deps{
+			Parts: deps.Parts, People: subjects(deps), Now: deps.Now,
 			Bundles: deps.Bundles, Notes: deps.Notes,
 		})
+		if err != nil {
+			return module.Module{}, err
+		}
+		svc = built
 	}
 	walker, ok := svc.(internal.Walker)
 	if !ok {
-		panic("subject: the export walk runs the service this module builds; a foreign one has no queue to walk")
+		return module.Module{}, errors.New("subject: the export walk runs the service this module builds; a foreign one has no queue to walk")
 	}
 	every := deps.WalkEvery
 	if every == 0 {
@@ -166,5 +189,12 @@ func NewWith(deps Deps) module.Module {
 		Routes: func(s httpx.Surfaces) {
 			internal.RegisterRoutes(s, svc, deps.Files)
 		},
+	}, nil
+}
+
+func subjects(deps Deps) usercontracts.RetainedLookup {
+	if deps.Subjects != nil {
+		return deps.Subjects
 	}
+	return deps.People
 }

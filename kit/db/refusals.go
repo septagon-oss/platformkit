@@ -2,22 +2,18 @@ package db
 
 import "fmt"
 
-// These four refusals are named exactly as the rules are, and the name is printed inside
-// the sentence. A rule is refused from a table an operator can read and, where it
-// judges, except; these are refused because of a fact of *this* database — a table that
-// is not here, a key the window cannot walk, an expansion the ledger has not seen, a
-// drain past the bound a migration gives itself — and none of them is exceptable, because
-// a marker could no more excuse a missing table than a contract half's own expand. The
-// word in front of them is therefore `refusal` and not `rule`: `rule` belongs to the
-// table a file may answer with `allow=`, and the two vocabularies must not be confused by
-// a prefix.
+// These four refusals are named exactly as the rules are, and the name is printed
+// inside the sentence. A rule is refused from a table an operator can read and,
+// where it judges, except; these are refused because of a fact of *this* database —
+// a table that is not here, a key the window cannot walk, an expansion the ledger
+// has not seen, a drain past the bound a migration gives itself — and none is
+// exceptable, since a marker could no more excuse a missing table than a contract
+// half's own expand. The word in front of them is therefore `refusal` and not
+// `rule`, which belongs to the table a file may answer with `allow=`.
 //
-// The id is printed because it is quoted: a runbook, a log line or a review that names
-// one has to lead somewhere in the repository that refused it. An id nothing prints is a
-// second, unenforced name for the same refusal, and it drifts from the sentence it stands
-// for with no gate noticing — so the code that refuses prints the id, the table in
-// README.md names it, and a test walks each one through the door
-// that refuses it and reads it back off the message.
+// The id is printed because it is quoted: a runbook or a log line that names one has
+// to lead somewhere in the repository that refused it, and an id nothing prints drifts
+// from the sentence it stands for with no gate noticing.
 const (
 	refusalTableMissing     = "data-table-missing"
 	refusalKeyNotPrimaryKey = "data-key-not-primary-key"

@@ -11,7 +11,9 @@ import (
 // administrator is on Acme's list, and Globex's administrator — signed in at
 // Globex's host, at the same address — is shown a list without it.
 func TestTheNoticeListShowsOneTenantsNoticesToNobodyAtAnother(t *testing.T) {
-	cfg, acme := started(t)
+	// The reset notice is raised by the worker that mails the link, so this
+	// installation is one that named a mail host.
+	cfg, acme, _ := startedMailing(t)
 	secondTenant(t, cfg, "globex", "root@globex.localhost")
 	globex := signIn(t, cfg, globexHost, "root@globex.localhost", adminPass)
 

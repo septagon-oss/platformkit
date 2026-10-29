@@ -23,6 +23,7 @@ package change
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -66,19 +67,30 @@ type Gate struct {
 	Protection contracts.Protection
 }
 
-// NewGate checks the wiring where it is written, the way every other refusal in
-// this package works: a gate with no door to point at would refuse a write and
-// leave the caller with no way through it.
+// NewGate checks the wiring where it is written. It is the form a hand-written
+// composition writes; NewGateChecked answers the same refusal as an error, which
+// is what a build function returns.
 func NewGate(g Gate) Gate {
+	checked, err := NewGateChecked(g)
+	if err != nil {
+		panic(err.Error())
+	}
+	return checked
+}
+
+// NewGateChecked answers as an error the wiring that protects nothing: a gate
+// with no Protection has no field to refuse, and a gate that names no subject or
+// no way through would refuse a write and leave the caller with nowhere to go.
+func NewGateChecked(g Gate) (Gate, error) {
 	switch {
 	case g.Protection == nil:
-		panic("change: a Gate with no Protection protects nothing; wire no gate instead")
+		return Gate{}, errors.New("change: a Gate with no Protection protects nothing; wire no gate instead")
 	case g.Subject.Module == "" || g.Subject.Entity == "":
-		panic("change: a Gate has to name the subject its door writes")
+		return Gate{}, errors.New("change: a Gate has to name the subject its door writes")
 	case g.WayOn == "":
-		panic("change: a refusal has to name the address the write goes through instead")
+		return Gate{}, errors.New("change: a refusal has to name the address the write goes through instead")
 	}
-	return g
+	return g, nil
 }
 
 // Check is the question one door asks. A non-nil error means nothing was written.

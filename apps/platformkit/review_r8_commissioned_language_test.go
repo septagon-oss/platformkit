@@ -41,8 +41,8 @@ func TestALocaleRouteRefusesALanguageTheInstallationHasNoCopyFor(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	start(t, cfg, c.modules, app.Options{Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans,
+		Authenticate: c.testAuth().Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
 	operator := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	id := tenantID(t, cfg, operator, "acme")
 

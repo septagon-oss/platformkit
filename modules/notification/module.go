@@ -9,6 +9,8 @@
 package notification
 
 import (
+	"errors"
+
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -54,6 +56,18 @@ type Deps struct {
 	Providers contracts.Providers
 
 	// Mailer sends the rendered message, in the worker.
+	//
+	// nil means this installation has no mail transport at all: the deployment
+	// picked notification.Module's "none" because the configuration names no
+	// server and did not ask for the in-memory sink either. It is a value rather
+	// than a panic because "no mail server here" is a state a real deployment is
+	// in, and the module's job in that state is to say so on the record: every
+	// notice is still written and still read in the application, and the mail each
+	// one asks for is recorded as suppressed with the reason, which is the delivery
+	// ledger's own vocabulary rather than a log line somebody has to notice. What
+	// refuses outright is a command whose promise is the message itself
+	// (modules/auth's emailed verification link): that one answers a reasoned 503
+	// and writes nothing, because there is no ledger a stranger can read.
 	Mailer contracts.Mailer
 
 	// Hosts turns the tenant an event belongs to into the host its people reach
@@ -150,8 +164,10 @@ func streamedTopics() []string {
 // not depend on Go's map iteration. A provider is a channel this deployment
 // sends, and a channel it sends has to have somebody listening, so both halves
 // — this list and the decision that opens a ledger row — come from
-// contracts.Providers.Active over the same Deps value and cannot disagree.
-func subscriptions(deps Deps) []events.Subscription {
+// contracts.Providers.Active over the same Deps value and cannot disagree. A
+// wired channel no worker is asked for answers as the refusal of the wiring, the
+// module's own or the carrier's, before any subscription is handed to the plan.
+func subscriptions(deps Deps) ([]events.Subscription, error) {
 	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
 	for _, c := range deps.Providers.Active() {
 		p := deps.Providers.Get(c)
@@ -160,20 +176,38 @@ func subscriptions(deps Deps) []events.Subscription {
 			// Module already refuses to compose without. A second carrier for either
 			// would be two subscriptions on one event and two sent rows for one
 			// delivery, so it fails at the wiring rather than in the worker.
-			panic("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
+			return nil, errors.New("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
 		}
-		subs = append(subs, internal.Carrier(p, deps.Hosts, deps.Secure))
+		carrier, err := internal.Carrier(p, deps.Hosts, deps.Secure)
+		if err != nil {
+			return nil, err
+		}
+		subs = append(subs, carrier)
 	}
-	return subs
+	return subs, nil
 }
 
+// New is the manifest, and the service it is built on.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
-	// A wiring mistake fails where it is written rather than as a nil
-	// dereference in the worker an hour later.
-	if deps.Mailer == nil {
-		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
 	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest, one carrier subscription per
+// provider the deployment wired, and answers as an error a provider on a channel
+// this module carries itself: two carriers on one event write two sent rows for
+// one delivery. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	deps = withDeviceCarriers(deps)
+	subs, err := subscriptions(deps)
+	if err != nil {
+		return nil, module.Module{}, err
+	}
 	devices := internal.DeviceStore{Adapters: deps.Push}
 	svc := internal.NewService(deps.Recipients,
 		internal.WithPreferences(internal.Prefs{}),
@@ -181,6 +215,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		internal.WithProviders(deps.Providers))
 	return svc, module.Module{
 		Name:       "notification",
+		Views:      contracts.Views(deps.Page != nil),
 		Migrations: Migrations.Files,
 		// What a person was told is their own record; the delivery ledger reaches
 		// them only through the notification it delivered. The two preference tables
@@ -209,7 +244,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: subscriptions(deps),
+		Subscriptions: subs,
 		// The live door onto the two events this module raises for one person,
 		// watched by the recipient each payload names. An event not listed here
 		// keeps the durable path it has always had; listing one opens a connection
@@ -225,7 +260,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 				})
 			}
 		},
-	}
+	}, nil
 }
 
 // withDeviceCarriers puts a channel in Deps.Providers for every device channel

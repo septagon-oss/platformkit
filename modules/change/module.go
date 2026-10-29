@@ -18,6 +18,8 @@
 package change
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -71,20 +73,56 @@ var permissions = []module.Permission{
 
 // NewService builds the commands over the subjects this installation applies.
 // Passing the returned value through Deps.Service shares it with other modules.
+// An incomplete or duplicated binding is refused with a panic; NewServiceChecked
+// answers the same refusal as an error.
 func NewService(bindings []contracts.SubjectBinding) contracts.Service {
-	return internal.NewService(bindings)
+	svc, err := NewServiceChecked(bindings)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc
+}
+
+// NewServiceChecked builds the commands and answers as an error a binding that
+// cannot resolve: one naming no module, no entity or no resolver, or one module
+// and entity bound twice, where only one of the two answers would ever be used.
+func NewServiceChecked(bindings []contracts.SubjectBinding) (contracts.Service, error) {
+	svc, err := internal.NewServiceChecked(bindings)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
 }
 
 // Module is the manifest, and the service it is built on.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) module.Module {
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked builds the manifest over the shared service or the bindings this
+// composition applies, and answers as an error the two named at once: a subject
+// bound twice is a proposal whose reviewer cannot tell which answer counted.
+// It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
 	svc := deps.Service
 	if svc == nil {
-		svc = NewService(deps.Subjects)
+		built, err := NewServiceChecked(deps.Subjects)
+		if err != nil {
+			return module.Module{}, err
+		}
+		svc = built
 	} else if len(deps.Subjects) > 0 {
-		panic("change: bind the subjects on the shared service or supply them to Module, not both")
+		return module.Module{}, errors.New("change: bind the subjects on the shared service or supply them to Module, not both")
 	}
 	return module.Module{
 		Name:       "change",
+		Views:      contracts.Views(deps.Reviews.Read != nil),
 		Migrations: Migrations.Files,
 		PersonalData: personaldata.Implements(personaldata.Table{
 			Name:      "change_proposals",
@@ -116,5 +154,5 @@ func New(deps Deps) module.Module {
 			internal.RegisterRoutes(s, svc)
 			internal.MountReviews(s, deps.Reviews)
 		},
-	}
+	}, nil
 }

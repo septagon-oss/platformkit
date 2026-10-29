@@ -41,6 +41,11 @@ const (
 	StatusSuspended = "suspended"
 )
 
+// Namespace is the workspace namespace this module's screens live in: a module
+// that mounts a page beside the tenant screens mounts into this
+// (httpx.Router.ForModule), rather than writing "tenant" down.
+var Namespace = tenancy.NewNamespace("tenant")
+
 // Tenant is one customer of the platform.
 //
 // It does not embed crud.Base, and that is the whole shape of this module. Base
@@ -331,6 +336,7 @@ var ErrNoOperatorTenant = errors.New("tenant: this installation has no operator 
 //
 // The errors are kit/crud's, so one mapping answers for these routes and the
 // generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
+// Deprecated: use the focused capability interfaces in this package.
 type Service interface {
 	// Create writes the tenant, its first host and whatever the hooks add, in
 	// one transaction. A slug or a host already taken is a conflict.
@@ -485,11 +491,20 @@ type Service interface {
 // It is a type rather than a method because jobs.TenantLister's method is called
 // List and Service.List answers a different question — every tenant, suspended
 // ones included. Two questions, two names, and the adapter says which is which.
+// Deprecated: use ActiveTenants with a Lister.
 type Active struct{ Service }
 
 // List is every tenant a job should visit.
 func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant, error) {
-	all, err := a.Service.List(ctx, tx)
+	return (ActiveTenants{Tenants: a.Service}).List(ctx, tx)
+}
+
+// ActiveTenants adapts a tenant directory to the active tenants visited by jobs.
+type ActiveTenants struct{ Tenants Lister }
+
+// List filters suspended tenants and propagates directory failures.
+func (a ActiveTenants) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant, error) {
+	all, err := a.Tenants.List(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

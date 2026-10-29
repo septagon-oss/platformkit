@@ -33,7 +33,7 @@ func TestCompletedErasureLeavesNoNameInABoundedTaskTitle(t *testing.T) {
 	var tenant tenancy.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
-		tenant, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		tenant, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	}); err != nil {
 		t.Fatal(err)

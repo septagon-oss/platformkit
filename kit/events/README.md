@@ -19,6 +19,41 @@ so the SQL outbox package imports none of its own providers and the package gate
 holds it there. Existing outbox consumers can migrate those imports independently. The retry
 ladder, handler-attempt cap and seven-day retention have one internal owner.
 
+## Which catalogue measures a publish
+
+A publication is checked before the INSERT against a manifest: the name has to be one
+somebody declared, and the payload has to be the shape declared for it. Whose manifest it
+is has two answers. The process's is what an install left standing under an app slug, and
+`Publish` reaches it by reading `tenants.app` for the row's tenant — the placement the
+relay and a delivery read too. The composition's is a value:
+`events.NewCatalog(appname.Name, decls)` builds the app's own `Catalog`, and that value
+publishes (`Catalog.Publish`, `Catalog.PublishFor`) and disposes (`Catalog.Close`).
+
+`kit/app` builds one per composition and carries it — the way it carries the composition's
+connection — on the context of every served request and of every job, subscription
+delivery and relay tick the worker half runs, so a module's `events.Publish` is measured
+against its own composition without knowing that anything was carried. `App.Publisher`
+and `Runtime.Publisher` hand the same value to a composition that wants it in a module's
+own `Deps`. With nothing carried the write answers from the installed catalogue exactly as
+it always did, the `tenants.app` read included. Carrying chooses *which* contract answers —
+a composition is held to the manifest it carries rather than to its own — and only
+composition code carries one, so no actor, role or tenant reaches that choice. Delivery is a
+different question and keeps its own answer: an event still cannot be handled by an app whose
+tenant row the table does not show, and the catalogue is a contract, not a capability.
+
+**Reused** — `ClaimApp`'s claim (now `DeclareFor`) with its grip counts, `standing`,
+`retype`, `clashes`, `declaredSchemas` and `OneShapePerName`, so the constructor adds no
+second lifetime ledger and no new refusal sentence; `httpx.WithConn`'s carrier shape; and
+`dbtest.RunInOwnDatabase` beside `providers/memory` for this package's harness, with
+`kit/app`'s own `compose(t)` configuration for its boot cases. **Added** — `Catalog`,
+`Publisher`, `NewCatalog` and the context carrier,
+because nothing on the shelf or in the kernel was both built by a composition and
+consultable by the one write every event passes through. **Made reusable** — the carrier
+and the `X` → `XFor` + `Deprecated:` shape for `RelayFor`, `SubjectFor`, `FilterFor`,
+`FiltersFor` and `DeclareFor`, plus `KernelEventNames`, `IconNames`, `ToneNames`,
+`FormatNames` and `VisibilityNames`: a composition, a module or a tool that needed the
+process's answer now has one door to ask.
+
 ## The envelope, the subject and what a rollout has to expect
 
 The body on the broker is **CloudEvents 1.0 in structured content mode**:
@@ -368,3 +403,66 @@ locks tenants and durables before renaming both ledgers and publishing records.
 [Relay](relay.go) reads locked rows, settles lag, publishes envelopes and stamps
 only after publication. [Schema validation](schema.go) preserves null handling
 and open projections. These steps add no transaction or transport boundary.
+
+## Replaying one event
+
+`Replay` is the operator's verb, and the reason it needs an actor is the reason it
+needs a capability of its own (ADR 0006). A terminal failure writes a claim and a
+dead letter in one statement, and every later delivery finds the claim taken and
+skips the handler — that is the guarantee that makes at-least-once delivery safe to
+run at all. Removing a claim is therefore removing the record that a consequential
+action already happened.
+
+The actor is required of the request's context rather than read from it, and before
+the transaction opens, so a call with nobody behind it writes nothing, emits nothing
+and leaves every claim and dead letter where they were. A system token says this
+process may cross tenants; only an actor says a person asked (`kit/tenancy` names it,
+`kit/httpx` puts it there).
+
+The requirement is unconditional. A dead letter is reviewed late, so the row a replay
+relays is usually old, and age invites the thought that an old enough one needs no
+name. Whether a person has to be named for deleting the record of a finished delivery
+cannot turn on how many days ago it finished — that would waive the audit exactly
+where it is worth most. Who asked, and why, are the only questions the verb asks.
+
+Asked, not granted. Permission lives behind `kit/httpx`'s per-route authorizer and
+this verb has no route, so what it can require is that a person be named, not that
+they hold a grant; reaching for an authorizer through a package-level variable would
+be discovering a dependency rather than naming one. The product mounts the surface,
+declares the permission, and asks the question there.
+
+## Why a delivery checks the address it arrived on
+
+A delivery arrives with three copies of one fact: the address the broker routed by,
+the `app` the publisher stamped into the envelope, and the slug of the process reading
+it. Two were never enough — a message written at this app's scoped address by a
+publisher that believed it was publishing for another app is a message this app would
+otherwise run a handler over, because an address says only where a message was written
+down. So the document's own app is checked rather than trusted, and it is checked
+first, because an operator reading the log has to learn which boundary disagreed.
+
+Why this is needed at all: a consumer's filter fixes the module and event halves of
+the subject, because it spells them out and a NATS `*` matches exactly one token, but
+its tenant half is a wildcard by design. The tenant is therefore the one fact about a
+delivered message the routing does not pin, and the envelope's own check that
+`subject` is `Subject` of `tenantid` and `type` proves only that the document agrees
+with itself — which is exactly what a self-consistent forgery satisfies. Without the
+comparison, a message stored on tenant A's address and stamped as tenant B's would
+open its transaction inside B's rows because its body said so: a tenant boundary held
+up by convention, with a broker credential as its key.
+
+Which of `Filters`' addresses pass depends on whether the reading app names itself,
+and the two cases are one rule read twice. An app that names itself passes only its
+own scoped address; the older two name no app, and an address that names no app
+cannot be shown to be this app's, because it is the address every other app's
+previous build published at too. That is decision 0074 rule 7's "delivery's app check
+applied to both": the filter stays wide for the length of a rollout precisely so that
+the boundary, and not the filter, is what decides. An app that names nothing — the
+deployment of one app, which is every composition that sets no slug — passes both
+pre-decision-0074 addresses, as it always has, and refuses any address carrying an
+app token, because it has no app to agree with and scoped traffic is somebody else's.
+
+The wide filter costs a real deployment something, and the cost belongs to the
+operator: a process must not start naming an app until no process still publishing at
+the older addresses is alive, because from that moment its own older traffic is
+unreadable to it. `kit/appname`'s Limits carry the same rule.

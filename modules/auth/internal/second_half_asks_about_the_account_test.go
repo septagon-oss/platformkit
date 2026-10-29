@@ -163,7 +163,8 @@ func mountTwoWithFactors(t *testing.T, providers contracts.OIDCProviders, secret
 	})
 	svc, authModule := auth.New(auth.Deps{
 		Users: users, Notify: &authtest.Notices{}, Mailer: &authtest.Mailbox{},
-		Hosts: authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
+		MailDelivery: authtest.Delivers,
+		Hosts:        authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
 		PublicHost: host, FactorKey: "a factor key this deployment set",
 	})
 	seed(t, conn, acme)

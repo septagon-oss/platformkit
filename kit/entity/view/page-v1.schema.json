@@ -82,8 +82,29 @@
                       "done": {
                         "type": "boolean"
                       },
+                      "group": {
+                        "type": "string"
+                      },
                       "label": {
                         "type": "string"
+                      },
+                      "noPreference": {
+                        "type": "boolean"
+                      },
+                      "picture": {
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "value"
+                        ],
+                        "type": "object"
                       },
                       "tone": {
                         "type": "string"
@@ -93,6 +114,8 @@
                       }
                     },
                     "required": [
+                      "group",
+                      "noPreference",
                       "value",
                       "label",
                       "tone",
@@ -275,8 +298,29 @@
                     "done": {
                       "type": "boolean"
                     },
+                    "group": {
+                      "type": "string"
+                    },
                     "label": {
                       "type": "string"
+                    },
+                    "noPreference": {
+                      "type": "boolean"
+                    },
+                    "picture": {
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "type": "object"
                     },
                     "tone": {
                       "type": "string"
@@ -286,6 +330,8 @@
                     }
                   },
                   "required": [
+                    "group",
+                    "noPreference",
                     "value",
                     "label",
                     "tone",
@@ -509,8 +555,29 @@
                     "done": {
                       "type": "boolean"
                     },
+                    "group": {
+                      "type": "string"
+                    },
                     "label": {
                       "type": "string"
+                    },
+                    "noPreference": {
+                      "type": "boolean"
+                    },
+                    "picture": {
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "type": "object"
                     },
                     "tone": {
                       "type": "string"
@@ -520,6 +587,8 @@
                     }
                   },
                   "required": [
+                    "group",
+                    "noPreference",
                     "value",
                     "label",
                     "tone",

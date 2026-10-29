@@ -76,8 +76,8 @@ records:
 `)},
 		},
 		Root: "seed", Clock: seedClock{},
-		Writers:   []seed.Writer{&contentSeeder{svc: c.contents}, &userSeeder{users: c.users}},
-		Authorize: seedGrants{auth: c.auth},
+		Writers:   []seed.Writer{&contentSeeder{svc: c.contents}, &userSeeder{users: c.testUsers()}},
+		Authorize: seedGrants{auth: c.testAuth()},
 	})
 	if err != nil {
 		t.Fatalf("the seed this case writes with: %v", err)
@@ -92,12 +92,12 @@ records:
 	var home, hand *contentcontracts.Content
 	var ada *usercontracts.User
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			if ctx, err = seedActor(ctx, c.users, tx, adminEmail); err != nil {
+			if ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail); err != nil {
 				return err
 			}
 			if created, err = fresh.Apply(ctx, tx, seed.Selection{}); err != nil {
@@ -124,7 +124,7 @@ records:
 			if hand, err = c.contents.Public(ctx, tx, "hand-off"); err != nil {
 				return err
 			}
-			if ada, err = c.users.ByEmail(ctx, tx, "ada@example.test"); err != nil {
+			if ada, err = c.testUsers().ByEmail(ctx, tx, "ada@example.test"); err != nil {
 				return err
 			}
 			// Acme's row says false, so demo records are refused for it. The command
@@ -196,8 +196,8 @@ func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
 	// the state check, and a hook two owners short is refused by the wiring
 	// guard before it ever reads the tenant.
 	provision := &seedProvisioner{
-		users: c.users, contents: c.contents, sites: c.sites,
-		tasks: c.tasks, files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
+		users: c.testUsers(), contents: c.contents, sites: c.sites,
+		tasks: c.tasks, files: c.files, auth: c.testAuth(), demoPassword: cfg.Demo.Password,
 	}
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
@@ -214,7 +214,7 @@ func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
 	// ended in a refusal asks for: the statement is the last one the transaction
 	// made, and everything before it rolls back with it.
 	hook := func(ctx context.Context, system db.Tx[db.System]) error {
-		row, err := c.tenants.ByHost(ctx, system, acmeHost)
+		row, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
@@ -222,7 +222,7 @@ func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
 			&tenantcontracts.Tenant{ID: row.ID, Slug: row.Slug, Name: row.Name, Demo: row.Demo})
 	}
 	apply := func(ctx context.Context, system db.Tx[db.System]) error {
-		row, err := c.tenants.ByHost(ctx, system, acmeHost)
+		row, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
@@ -268,12 +268,12 @@ func TestTheSeedRefusesARecordItsOwnerWouldRefuse(t *testing.T) {
 
 	sentences := map[string]string{}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			if ctx, err = seedActor(ctx, c.users, tx, adminEmail); err != nil {
+			if ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail); err != nil {
 				return err
 			}
 			broken, err := seed.New(seed.Deps{
@@ -281,7 +281,7 @@ func TestTheSeedRefusesARecordItsOwnerWouldRefuse(t *testing.T) {
 					"apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: untitled\n    fields: {title: ' '}\n")}},
 				Root: "seed", Clock: seedClock{},
 				Writers:   []seed.Writer{&contentSeeder{svc: c.contents}},
-				Authorize: seedGrants{auth: c.auth},
+				Authorize: seedGrants{auth: c.testAuth()},
 			})
 			if err != nil {
 				return err

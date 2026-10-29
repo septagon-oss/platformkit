@@ -1,0 +1,14 @@
+# Suite kind and exact foreign constructors, followed by the composition reason.
+modules/admin@internal github.com/septagon-oss/platformkit/modules/user Migrates User's real schema so the shell's caller read and tenant switcher are proven inside a tenant-scoped transaction rather than a fake one.
+modules/auth@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Composes notification and user migrations for public Auth repair and seed behavior.
+modules/auth/contracts@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Builds the real schema used by the verification limiter contract tests.
+modules/auth/internal@internal github.com/septagon-oss/platformkit/modules/user Migrates and constructs User to check session cleanup against real users.
+modules/auth/internal@external github.com/septagon-oss/platformkit/modules/audit,github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Composes Auth's user, mail and audit collaborators for service lifecycle and audit behavior.
+modules/file@external github.com/septagon-oss/platformkit/modules/content,github.com/septagon-oss/platformkit/modules/history,github.com/septagon-oss/platformkit/modules/site Composes content, history and site references for public images and release sweeps.
+modules/history@external github.com/septagon-oss/platformkit/modules/admin,github.com/septagon-oss/platformkit/modules/content Constructs Content and the Admin shell to check restore refusals through the localized record door.
+modules/scim/internal@external github.com/septagon-oss/platformkit/modules/user Composes User migrations, service and attributes for SCIM provisioning conformance.
+modules/subject/internal@external github.com/septagon-oss/platformkit/modules/user Composes User and Subject schemas for command authorization, erasure and export behavior.
+modules/task@external github.com/septagon-oss/platformkit/modules/audit Composes Task and Audit to check normalized title history at the mutation boundary.
+modules/tenant/internal@external github.com/septagon-oss/platformkit/modules/auth,github.com/septagon-oss/platformkit/modules/user Composes Auth and User migrations for the real Tenant service and tenant isolation conformance.
+modules/user@internal github.com/septagon-oss/platformkit/modules/auth Migrates Auth's real schema beside User's, so a provisioning that fails partway is proven to take the invited row, the session and the outbox entry back with it.
+modules/web@external github.com/septagon-oss/platformkit/modules/content,github.com/septagon-oss/platformkit/modules/site Composes Content and Site schemas for Web's public module behavior.

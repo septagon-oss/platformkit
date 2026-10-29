@@ -17,25 +17,16 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
-// Module is the shell as the resolver sees it, for an application that names it
-// in Use last: `Use(…, admin.Module)`.
-//
-// It runs after everything, and says so, because it generates a screen for every
-// resource the other modules mounted: composed earlier it would generate screens
-// for a prefix of the application, silently. `pkit.Composition` is where that
-// list comes from now — the modules' own manifests, as the resolver built them —
-// rather than a slice the composition happened to append to, which is the second
-// answer to "what is in this application" this module's Deps used to require.
-//
-// It hands out nothing. The authorizer it filters its navigation with is the one
-// the kernel enforces every route with, read from the module that answers it, so
-// a menu and a door cannot disagree.
+// Module builds the workspace shell after every resource is declared. Its
+// navigation uses the kernel authorizer and its header optionally reads the caller.
 var Module = pkit.NewModule("admin", wire,
-	pkit.Needs[authcontracts.Auth](),
-	pkit.Needs[tenantcontracts.Service](),
+	pkit.Needs[authcontracts.RoleEditor](),
+	pkit.Needs[authcontracts.SessionAdministration](),
+	pkit.Needs[httpx.Authorizer](),
+	pkit.Needs[tenantcontracts.Lister](),
 	// Optional, not Needs: a composition with no user module has no names to show,
 	// and the header says "Signed in" rather than the application refusing to boot.
-	pkit.Optional[usercontracts.Service](),
+	pkit.Optional[usercontracts.Lookup](),
 	pkit.Optional[admincontracts.Signin](),
 	pkit.Optional[admincontracts.Pictures](),
 	pkit.Optional[admincontracts.Locale](),
@@ -46,32 +37,32 @@ var Module = pkit.NewModule("admin", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	skin := w.Skin()
-	auths := pkit.Get[authcontracts.Auth](w)
 	signin := pkit.Get[admincontracts.Signin](w)
 	primary, err := primaryAction(pkit.Get[admincontracts.PrimaryAction](w), pkit.Composition(w))
 	if err != nil {
 		return module.Module{}, err
 	}
-	return New(Deps{
-		Primary:   primary,
-		Modules:   pkit.Composition(w),
-		Authorize: auths,
-		Tenants:   pkit.Get[tenantcontracts.Service](w),
+	return NewChecked(Deps{
+		Primary:    primary,
+		Modules:    pkit.Composition(w),
+		Authorize:  pkit.Get[httpx.Authorizer](w),
+		TenantList: pkit.Get[tenantcontracts.Lister](w),
 		// The three questions the shell asks are the same value seen through the
 		// three interfaces it uses: what may this caller do, which roles exist,
 		// which sessions are live.
-		Roles:    auths,
-		Sessions: auths,
+		Roles:    pkit.Get[authcontracts.RoleEditor](w),
+		Sessions: pkit.Get[authcontracts.SessionAdministration](w),
 		// The fourth question is who this is, and unlike the three above it needs an
 		// adapter: the shell asks about the caller by id and gets back the two words
 		// a header can say, not a row. Eight lines, and they are the whole of what
 		// this module knows about the user module.
-		People:    callerOf(pkit.Get[usercontracts.Service](w)),
-		Theme:     skin.Theme,
-		Messages:  skin.Copy,
-		Locale:    pkit.Get[admincontracts.Locale](w),
-		Storybook: pkit.Get[admincontracts.Storybook](w),
-		SignIn:    signin.Address,
+		People:            callerOf(pkit.Get[usercontracts.Lookup](w)),
+		Theme:             skin.Theme,
+		Messages:          skin.Copy,
+		Locale:            pkit.Get[admincontracts.Locale](w),
+		Storybook:         pkit.Get[admincontracts.Storybook](w),
+		SignIn:            signin.Address,
+		SignInOperationID: signin.OperationID,
 		// A generated picture cell fetches through the file module's door, which this
 		// shell does not mount and so cannot name: the composition that published that
 		// door to the workspace catalogue hands it here as the same string.
@@ -81,20 +72,20 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// the link to it is the same value, so neither half can offer what the
 		// other did not mount.
 		Registration: registration(signin.Registration),
-	}), nil
+	})
 }
 
 // callerOf is the header's read of the caller's own account row, or nothing at all
 // when this application composes no user module — which is what leaves the frame to
 // say "Signed in" rather than to fail.
-func callerOf(users usercontracts.Service) People {
+func callerOf(users usercontracts.Lookup) People {
 	if users == nil {
 		return nil
 	}
 	return people{users: users}
 }
 
-type people struct{ users usercontracts.Service }
+type people struct{ users usercontracts.Lookup }
 
 // Person reads one row: this caller's, in the transaction their request already
 // holds. The tenant is not an argument, because the transaction is the tenant and
@@ -140,7 +131,7 @@ func registration(in *admincontracts.Registration) *Registration {
 	if in == nil {
 		return nil
 	}
-	out := &Registration{Address: in.Address}
+	out := &Registration{Address: in.Address, OperationID: in.OperationID}
 	switch in.Kind {
 	case admincontracts.KindEmail:
 		out.Kind = RegistrationKindEmail

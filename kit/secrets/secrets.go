@@ -1,28 +1,16 @@
-// Package secrets is the door to a deployment's secrets and to its keys.
+// Package secrets is the door to a deployment's secrets and to its keys: what
+// are this name's bytes and which version of them, and wrap this plaintext
+// under that key and give it back. Every cloud keeps these bytes somewhere
+// else, and every module that needed one had read its own environment variable
+// for it, which left a deployment with no plug to point at and six places that
+// each believed they knew who read which secret.
 //
-// Every cloud has its own place for these bytes and every module that needs one
-// has so far read its own environment variable for it, which is two problems. The
-// first is the plug: a deployment that mounts a directory, runs OpenBao or points
-// at a cloud key store has nothing to point at, because each reader spelled its
-// own source. The second is the trail: six modules reading six variables is six
-// places that know who read which secret, which is nowhere. This package is one
-// door for both — what are this name's bytes and which version of them, and wrap
-// this plaintext under that key and give it back — and the adapters under
-// providers/ answer it for the store a deployment actually runs.
-//
-// Two things make this more than a getenv with a span around it. The first is the
-// address: a secret belongs either to a tenant or to the installation, no caller
-// can form an address without saying which, and a read whose context resolved a
-// different tenant is refused before anything is looked up. The second is what a
-// read writes: the name, the adapter and a length, never the bytes, so a trace
-// collector cannot become a secret store by being a trace collector.
-//
-// The port stores nothing and caches nothing. A cached secret is a secret whose
-// rotation nobody sees, so Version exists for a caller with a real invalidation
-// path and every Get reaches the store. It emits no event either: the audit trail
-// is event-fed and committed beside domain state, and a read has no domain state
-// to commit with — the sealed event belongs to the caller's command, which holds
-// the transaction and the outbox. doc.go holds that reasoning in full.
+// The address is either a tenant's or the installation's, no caller can form
+// one without saying which, and a read whose context resolved another tenant is
+// refused before anything is looked up. What a read writes is the name, the
+// adapter and a length, never the bytes, so a trace collector cannot become a
+// secret store. The port stores, caches, emits and instruments nothing, and
+// README.md reasons about each absence.
 package secrets
 
 import (

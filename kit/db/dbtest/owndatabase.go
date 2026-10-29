@@ -10,54 +10,34 @@ import (
 	"time"
 )
 
-// RunInOwnDatabase gives one package its own PostgreSQL database for the length of its run, and
-// is a package's TestMain: `func TestMain(m *testing.M) { os.Exit(dbtest.RunInOwnDatabase(m)) }`.
+// RunInOwnDatabase gives one package its own PostgreSQL database for the length of
+// its run, and is a package's TestMain:
+// `func TestMain(m *testing.M) { os.Exit(dbtest.RunInOwnDatabase(m)) }`.
 //
-// The reason is the queue, not the data. A migration run holds one advisory lock for its whole
-// composition (kit/db's compositionLockKey), an advisory lock belongs to a database rather than a
-// schema, and it cannot be narrowed to one namespace: a module's schema is created as
-// `CREATE SCHEMA IF NOT EXISTS <owner>`, named after the module and so shared by every
-// installation in that database whatever search_path each arrived under. Every package that
-// migrates therefore queues at the same door. `go test ./...` runs one process per package and all
-// of them against the database the test URLs name, so a package whose every case installs an
-// application — apps/platformkit, one migration per case — spends its wall clock behind the other
-// packages' migrations rather than doing its own, and on a loaded machine that is where its stated
-// bound catches it. One database per package divides that queue by the packages that ask, and costs
-// a package nothing it was not already paying: each of its cases was migrating into its own schema
-// all along, and a schema inside a private database is the same work with nothing to wait for.
+// The reason is the queue, not the data. A migration run holds one advisory lock for
+// its whole composition (kit/db's compositionLockKey), an advisory lock belongs to a
+// database rather than a schema, and a module's schema is shared by every installation
+// in that database: every package that migrates queues at the same door. One database
+// per package divides that queue and costs nothing it was already paying.
 //
-// The URLs after this name the new database in the path, which is where pgx reads it; a query that
-// names a database of its own is refused rather than guessed at, because two spellings of one
-// name are a question this fixture cannot answer for its caller. The roles the tests connect as are
-// cluster-wide, and dbtest's URLs grant what a test's schema needs inside it, so a fresh database
-// carries nothing the run needs and inherits nothing it does not ask for.
-//
-// A caller with no test URLs at all is left alone: `m.Run()` on the environment it was given, which
-// is what a checkout with no stack runs, and whose database cases then fail at URLs rather than
-// skipping.
+// The URLs after this name the new database in the path, where pgx reads it, and a
+// query naming a database of its own is refused rather than guessed at.
 func RunInOwnDatabase(m *testing.M) (code int) {
 	return runInOwnDatabase(m, nil)
 }
 
-// RunInOwnDatabaseWithTemplate is RunInOwnDatabase plus one prepared installation that the
-// package's cases may each take a copy of, and is a package's TestMain:
+// RunInOwnDatabaseWithTemplate is RunInOwnDatabase plus one prepared installation
+// that the package's cases may each copy, and is a package's TestMain:
 // `func TestMain(m *testing.M) { os.Exit(dbtest.RunInOwnDatabaseWithTemplate(m, prepare)) }`.
 //
-// It answers the half of the queue RunInOwnDatabase leaves. One private database takes a package
-// out of the queue behind *other* packages' migrations; a package whose every case installs the
-// same composition pays that migration once per case inside its own database, and a migration
-// holds one advisory lock for its whole composition, so those cases queue behind each other. Here
-// `prepare` runs the installation once, before the first case starts, into a database of its own
-// (`<package database>_template`); a case then asks for Clone, and Postgres copies the prepared
-// files rather than replaying the migration.
+// It answers the half of the queue RunInOwnDatabase leaves: a package whose every case
+// installs the same composition pays that migration, and its advisory lock, once per
+// case. Here `prepare` installs it once into a database of its own, and a case asks
+// for Clone, so Postgres copies the prepared files rather than replaying.
 //
-// `prepare` is handed the URLs of the template — an owner URL and the unprivileged application URL,
-// both landing in the schema this fixture created for it — and returns an error to fail the whole
-// package before any case runs, with its own sentence printed and the template removed. It runs
-// with the process's own eyes and no testing.T: whatever it writes into the template is what every
-// case starts with, so a package prepares exactly what one of its cases would prepare for itself.
-// Once it returns, this fixture closes every connection it opened: a session left standing in the
-// template is what a later clone refuses on.
+// `prepare` is handed the template's owner and application URLs and returns an error
+// that fails the package before any case runs. When it returns, every connection this
+// fixture opened is closed: a session left in the template breaks a later clone.
 func RunInOwnDatabaseWithTemplate(m *testing.M, prepare func(adminURL, appURL string) error) (code int) {
 	return runInOwnDatabase(m, prepare)
 }

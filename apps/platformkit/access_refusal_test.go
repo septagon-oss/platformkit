@@ -26,7 +26,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 const (
@@ -39,7 +38,7 @@ const (
 // TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted walks the
 // journey named above in one boot of the reference application.
 func TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -63,10 +62,9 @@ func TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted(t *testing
 	// The refused person: signed up through the public door at acme, confirmed
 	// with the mailbox link this composition kept, signed in. They hold the
 	// tenant's member role, which the seed grants nothing.
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the confirmation link out of it", c.mail)
-	}
+
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	signup, err := json.Marshal(map[string]any{
 		"email": askMemberEmail, "displayName": "Refused Member",
 		"password": askMemberPassword, "confirmation": askMemberPassword, "termsAccepted": true,

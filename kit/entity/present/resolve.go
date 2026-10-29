@@ -13,6 +13,8 @@ import (
 // holds it for one request. Resolve reads it and writes none of it, so a shared
 // registration may be resolved concurrently in several languages.
 type Input struct {
+	// InputOnly enables the input form without advertising storage operations.
+	InputOnly bool
 	// Schema and Hints are the registration's, with declared words already
 	// translated by the caller.
 	Schema entity.Schema
@@ -23,7 +25,7 @@ type Input struct {
 	Singleton bool
 	// CommandsOnly resolves no fields, layout or list, only the commands.
 	CommandsOnly bool
-	// Operations are the routes the resource offers (create, update, …); nil is all five.
+	// Operations are the routes the resource offers; nil is all five, empty is none.
 	Operations []string
 	// Commands are the commands the caller may call, in order.
 	Commands []CommandInput
@@ -36,11 +38,15 @@ type Input struct {
 
 // CommandInput is one command the caller may call.
 type CommandInput struct {
-	Verb      string
-	Summary   string
-	Undo      string
-	HasResult bool
-	Hints     entity.CommandHints
+	Fields     []entity.Field
+	Bindings   map[string]string
+	Collection bool
+	Repeated   bool
+	Verb       string
+	Summary    string
+	Undo       string
+	HasResult  bool
+	Hints      entity.CommandHints
 }
 
 // Resolve decides the presentation of one entry. It never fails: a hint that
@@ -59,13 +65,16 @@ func Resolve(in Input) Resolved {
 	if in.CommandsOnly {
 		r.Titles = ResolvedTitles{EmptyTitle: in.word("present.emptyTitle", "—"), ListCandidates: []string{}, RecordCandidates: []string{}, Summary: []string{}}
 		r.Layout = emptyLayout()
+		r.Fields = []ResolvedField{}
 		r.List = ResolvedList{Sorts: []ResolvedSortOption{}, Filters: []ResolvedFilter{}}
+		r.Views = views(in, r.Layout, r.Fields)
 		return r
 	}
 	r.Titles = titles(in)
 	r.Layout = layout(in, r.Titles)
 	r.Fields = fields(in)
 	r.List = list(in)
+	r.Views = views(in, r.Layout, r.Fields)
 	return r
 }
 
@@ -77,6 +86,12 @@ func (in Input) word(key, fallback string) string {
 }
 
 func (in Input) offers(op string) bool {
+	if in.InputOnly {
+		return op == "input"
+	}
+	if op == "input" {
+		return false
+	}
 	if in.Singleton && op != "update" && op != "read" {
 		return false
 	}
@@ -105,7 +120,8 @@ func commands(in Input) []ResolvedCommand {
 	for _, c := range in.Commands {
 		h := c.Hints
 		rc := ResolvedCommand{
-			Verb: c.Verb, Label: cmp.Or(h.Label, c.Summary, display.Humanize(c.Verb)),
+			Fields: commandFields(in, c),
+			Verb:   c.Verb, Label: cmp.Or(h.Label, c.Summary, display.Humanize(c.Verb)),
 			Visible: !h.System, System: h.System, Primary: h.Primary, Destructive: h.Destructive,
 			SuccessMessage: h.SuccessMessage,
 		}

@@ -1,44 +1,17 @@
-// Package openbao is the store behind the port for a deployment that runs a secret
-// service: OpenBao, the open fork of Vault, through its HTTP API — KV v2 for the
-// bytes and the transit engine for the envelope.
+// Package openbao is the store behind the port for a deployment that runs a
+// secret service: OpenBao, the open fork of Vault, through its HTTP API — KV v2
+// for the bytes and the transit engine for the envelope.
 //
-// It speaks plain net/http rather than the vendor SDK on purpose: three JSON calls
-// are the whole of what this adapter needs, and the SDK arrives with some two
-// hundred and forty packages of hcl, mapstructure, go-jose and golang.org/x
-// beside them. The license rule would allow the SDK; the package budget that
-// prices what the application links does not, and compose.yaml names the container
-// the same way the Valkey and SeaweedFS services are named.
+// It speaks plain net/http rather than the vendor SDK: three JSON calls are all
+// this adapter needs, and the SDK's two hundred and forty extra packages are what
+// the package budget prices, though the licence rule would allow them.
 //
-// Two shapes come from the server rather than from this package. The version token
-// is KV v2's own integer, spelled "v<N>" so a token of one store can never equal a
-// token of another; and the envelope is transit's `vault:vN:…` text, returned
-// verbatim, so that a ciphertext written before a key rotation still reads back as
-// it was written and the rotation history stays the server's rather than being
-// rebuilt here.
-//
-// # What makes a tenant's secret another tenant's refusal
-//
-// A read is scoped three times: kit/secrets refuses an address whose tenant the
-// context did not resolve, a customer's key is mounted under its own address
-// (KeyAddress), and the transit *key derivation* refuses a ciphertext written for a
-// different tenant. The provider's own words are the mechanism — "Key derivation is
-// supported, which allows the same key to be used for multiple purposes by deriving
-// a new key based on a user-supplied context value" — and the context this adapter
-// sends is the tenant's 16 UUID bytes, absent for the installation's own key. So a
-// ciphertext stolen from one tenant's column does not open with another tenant's
-// context: the binding is enforced by the key store, which is the only place it can
-// be enforced when the key store holds the key.
-//
-// That split is also what a deployment's mount has to honour. A derived key refuses
-// a call that carries no context; a key created without `derived` answers a call
-// that carries one by ignoring it, measured against the container. So the first
-// binding is the address and it holds whatever the mount looks like: KeyAddress
-// spells a customer's key and the installation's key in two forms that cannot be the
-// same string, which is the only promise that still holds on a key an operator
-// mounted without `derived`. The derivation is the second one a deployment adds by
-// mounting a customer's keys `derived: true`, and it is what stops a ciphertext
-// stolen with the key itself — which is why the mount, and not only this file,
-// decides how far a stolen ciphertext reaches.
+// Two shapes come from the server: the version token is KV v2's own integer,
+// spelled "v<N>" so a token of one store never equals one of another, and the
+// envelope is transit's vault:vN:… returned verbatim, so a ciphertext written
+// before a rotation still reads as it was written. A read is scoped three times —
+// kit/secrets' tenant check, KeyAddress, and transit's key derivation — and
+// kit/secrets/README.md's Limits reason about each binding.
 package openbao
 
 import (
@@ -232,28 +205,19 @@ func (s *store) kv(ctx context.Context, ref secrets.Ref) (kvResponse, error) {
 // address spaces from spelling each other — see KeyAddress.
 const sharedKeyPrefix = "shared-"
 
-// KeyAddress is a key's whole path inside the transit mount: the name under a fixed
-// prefix for the installation's own key, and the tenant's UUID as a prefix for a
-// customer's.
+// KeyAddress is a key's whole path inside the transit mount: the name under a
+// fixed prefix for the installation's own key, and the tenant's UUID as a prefix
+// for a customer's.
 //
-// One segment rather than KV's nested `<tenant>/<name>`, because the transit mount
-// refuses a nested key name before it looks at anything else: `POST
-// /v1/transit/keys/<tenant>/<name>` answers 404 "unsupported path", measured
-// against the container compose.yaml names. The tenant's UUID is a prefix instead,
-// spelled in full so a policy may be written for `transit/encrypt/<tenant>-*` and
-// one customer's request cannot address another's key by guessing a suffix.
+// One segment rather than KV's nested <tenant>/<name>, because the transit mount
+// answers 404 for a nested key name before it looks at anything else. The UUID is
+// the prefix, in full, so a policy reads transit/encrypt/<tenant>-* and one
+// customer cannot address another's key by guessing a suffix.
 //
-// The prefix on the installation's spelling is what makes the two spellings unable
-// to meet. A name is 1 to 63 bytes of lower-case letters, digits, dot, underscore
-// and hyphen, so `Shared("<uuid>-relay")` is a legal address, and it is exactly what
-// a customer's `relay` key is spelled as — one shared name and one tenant's key
-// would then be one key in one mount. The two halves of a tenant address are fixed
-// by types rather than by an operator: it always begins with a canonical UUID, whose
-// first character is a lower-case hex digit, and no shared address can begin with
-// `shared-`, whose first character is not one. So the disjointness is a property of
-// the two spellings, needs no parsing to check, and holds whatever the mount looks
-// like — including a key created without `derived`, which answers a call that
-// carries a tenant context by ignoring it.
+// The shared prefix keeps the two spellings from meeting: a tenant address always
+// begins with a canonical UUID, whose first character is a hex digit, and no
+// shared address begins with shared-. That holds whatever the mount looks like;
+// kit/secrets/README.md's Limits reason about it further.
 func KeyAddress(ref secrets.Ref) string {
 	if ref.Tenant() == uuid.Nil {
 		return sharedKeyPrefix + ref.Name()

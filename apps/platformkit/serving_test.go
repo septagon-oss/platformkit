@@ -90,7 +90,7 @@ func TestAListeningStrangerIsNotTakenForThisApplication(t *testing.T) {
 		go func() { _ = http.Serve(foreigner, http.NotFoundHandler()) }()
 
 		start(t, cfg, c.modules, app.Options{
-			Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+			Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 			Role: app.Web, Transport: memory.New(), Log: quiet(),
 		})
 		// What a case that believed that wait would then ask — the same question

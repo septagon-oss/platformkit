@@ -23,6 +23,7 @@
 package file
 
 import (
+	"errors"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -177,17 +178,31 @@ var permissions = []module.Permission{
 // route — which meant holding file:manage to do something the interface says it
 // may do with a transaction. contracts.Opener is the narrow half most consumers
 // should take.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest, and answers as an error the
+// wiring it cannot work without: Deps.Storage is required, and Deps.Tenants is
+// required once Deps.Retention names a class. A zero MaxBytes, QuotaBytes,
+// MaxImagePixels or interval keeps the default beside it. It opens nothing, runs
+// no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	if deps.Storage == nil {
-		// A wiring mistake fails where it is written rather than as a nil
-		// dereference on the first upload.
-		panic("file.Module: Deps.Storage is required; wire file.Local(dir) to keep the bytes on disk")
+		// Storage is required before any route can accept an upload.
+		return nil, module.Module{}, errors.New("file.Module: Deps.Storage is required; wire file.Local(dir) to keep the bytes on disk")
 	}
 	if len(deps.Retention) > 0 && deps.Tenants == nil {
 		// The other half of the same rule. A retention policy is a promise that
 		// bytes get removed; the sweep keeps it by walking the tenants, and a
 		// module handed a policy and no way to walk is a module that will not.
-		panic("file.Module: Deps.Tenants is required when Deps.Retention names a class; wire tenant.Active so the sweep can walk them")
+		return nil, module.Module{}, errors.New("file.Module: Deps.Tenants is required when Deps.Retention names a class; wire tenant.Active so the sweep can walk them")
 	}
 	max := deps.MaxBytes
 	if max <= 0 {
@@ -237,6 +252,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	}
 	return svc, module.Module{
 		Name:       "file",
+		Views:      contracts.Views(deps.Library != nil, true, true),
 		Migrations: Migrations.Files,
 		// Bytes go, rows stay, and the certificate names both a subject and an actor.
 		PersonalData: personaldata.Implements(
@@ -284,6 +300,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
 		Subscriptions: []events.Subscription{internal.EraseBlobs(deps.Storage)},
+		// The sweep walks the object store and asks which rows still point at
+		// each blob, which is a question across every tenant: the bytes exist
+		// whether or not the row that owns them does. See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "sweep stored bytes no row references, across every tenant"},
 		Routes: func(s httpx.Surfaces) {
 			sweep.Use(s.Ops.SystemToken())
 			internal.RegisterRoutes(s, svc)
@@ -291,5 +311,5 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			// so the grid's meter and the upload's refusal cannot be two sums.
 			internal.MountLibrary(s, library)
 		},
-	}
+	}, nil
 }

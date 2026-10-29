@@ -58,7 +58,7 @@ func contentHistoryFixture(t *testing.T, adminShell ...bool) (*world, http.Handl
 	if len(adminShell) > 0 && adminShell[0] {
 		admin.New(admin.Deps{Modules: []module.Module{manifest}, Messages: messages,
 			Authorize: grants{contentcontracts.PermissionContentRead: true, contentcontracts.PermissionContentManage: true},
-			SignIn:    "/api/v1/auth/login"}).Routes(api.Surfaces("admin"))
+			SignIn:    "/api/v1/auth/login", SignInOperationID: "auth-login"}).Routes(api.Surfaces("admin"))
 	} else {
 		screens.Mount(api.Surfaces("content").App, page.Shell{
 			Messages: messages,

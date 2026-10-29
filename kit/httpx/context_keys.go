@@ -23,26 +23,20 @@ type (
 	answerNoteKey struct{}
 )
 
-// TxFrom returns the request's tenant transaction, opening it if this is the
-// first query of the request. It reports false for a request that resolved to
-// no tenant, and for one whose transaction could not be opened — the middleware
-// logs that failure with its cause, and the handler's own error becomes the
-// response.
+// TxFrom returns the request's tenant transaction, opening it if this is the first query
+// of the request. It reports false for a request that resolved to no tenant, and for one
+// whose transaction could not be opened — the middleware logs that failure with its cause,
+// and the handler's own error becomes the response.
 //
-// Opening on demand rather than on arrival is what lets a liveness probe reach
-// a tenant host while the database is down: a request that never queries never
-// needs a database.
+// Opening on demand rather than on arrival is what lets a liveness probe reach a tenant
+// host while the database is down: a request that never queries never needs a database.
 //
-// A context already inside a transaction answers with that one, and not with the
-// request's: work running under db.Run — a re-check opened outside the request, a
-// detached control-plane write — is inside a transaction whose commit somebody else
-// decided, and opening the request's beside it would hold two, pinning one of them
-// open until the request ended. This is the reader's own rule read back: the caller
-// that chose the transaction is the caller that ends it.
+// A context already inside a transaction answers with that one, and not with the request's:
+// work running under db.Run is inside a transaction whose commit somebody else decided,
+// and opening the request's beside it would hold two, pinning one of them open until the
+// request ended — the caller that chose the transaction is the caller that ends it.
 //
-// This is how a handler reaches the database: there is no other door, and a
-// repository that takes db.Tx[db.Tenant] cannot be called without going through
-// one.
+// This is how a handler reaches the database: there is no other door.
 func TxFrom(ctx context.Context) (db.Tx[db.Tenant], bool) {
 	if tx, ok := db.TxFrom(ctx); ok {
 		return tx, true

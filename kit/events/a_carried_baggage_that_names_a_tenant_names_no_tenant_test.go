@@ -56,12 +56,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round12Claimed is the tenant the caller's own bag claims: a second customer of this
+// claimedTenant is the tenant the caller's own bag claims: a second customer of this
 // schema, whose rows the publisher may not see and whose name none of this tenant's
 // spans may carry.
-var round12Claimed = tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
+var claimedTenant = tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 
-const round12Event = "billing.invoice_issued"
+const claimedEvent = "billing.invoice_issued"
 
 // TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery is the claim: the
 // tenant on the delivery span and on the handler's transaction span is the tenant the
@@ -79,7 +79,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
 	if err := events.Consume(ctx, conn, tr, []events.Subscription{{
-		Module: "billing", Name: round12Event,
+		Module: "billing", Name: claimedEvent,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 			// The handler's own transaction: the span below the delivery span,
 			// opened by kit/db on the handler's context (see kit/db/tx.go).
@@ -102,11 +102,11 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 	if err != nil {
 		t.Fatalf("the kernel's own request id is not a baggage member: %v", err)
 	}
-	claimedSlug, err := baggage.NewMember(telemetry.AttrTenant, round12Claimed.Slug)
+	claimedSlug, err := baggage.NewMember(telemetry.AttrTenant, claimedTenant.Slug)
 	if err != nil {
 		t.Fatalf("a caller's slug is not a baggage member: %v", err)
 	}
-	claimedID, err := baggage.NewMember(telemetry.AttrTenantID, round12Claimed.ID.String())
+	claimedID, err := baggage.NewMember(telemetry.AttrTenantID, claimedTenant.ID.String())
 	if err != nil {
 		t.Fatalf("a caller's tenant id is not a baggage member: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 	publishCtx := baggage.ContextWithBaggage(t.Context(), bag)
 	if err := db.Run(tenancy.WithTenant(publishCtx, acme), conn,
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			return events.Publish(ctx, tx, round12Event, map[string]any{"amount": 1})
+			return events.Publish(ctx, tx, claimedEvent, map[string]any{"amount": 1})
 		}); err != nil {
 		t.Fatalf("publish inside the caller's bag: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 	for time.Now().Before(deadline) {
 		delivery, txSpan = nil, nil
 		for _, s := range recorder.Ended() {
-			if s.Name() == round12Event+" deliver" {
+			if s.Name() == claimedEvent+" deliver" {
 				delivery = s
 			}
 		}
@@ -163,7 +163,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 	if txSpan == nil {
 		t.Fatalf("no %q span child of the delivery span was recorded (spans: %v), so the handler's "+
 			"transaction — the span below the one the delivery context is read from — was never reached",
-			"database transaction", round12Names(recorder.Ended()))
+			"database transaction", baggageSpanNames(recorder.Ended()))
 	}
 	select {
 	case <-ran:
@@ -173,7 +173,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 
 	// Every span below the delivery names the tenant of the row, both of them.
 	for _, s := range []sdktrace.ReadOnlySpan{delivery, txSpan} {
-		got, has := round12Attr(s, telemetry.AttrTenantID)
+		got, has := baggageAttr(s, telemetry.AttrTenantID)
 		if !has {
 			t.Errorf("%s carries no %s, so the delivery's tenant boundary is not being written at all",
 				s.Name(), telemetry.AttrTenantID)
@@ -188,7 +188,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 		// kit/telemetry/README.md promises a span never carries, and an id would be
 		// one tenant charged with another tenant's work.
 		for _, kv := range s.Attributes() {
-			if v := kv.Value.AsString(); v == round12Claimed.Slug || v == round12Claimed.ID.String() {
+			if v := kv.Value.AsString(); v == claimedTenant.Slug || v == claimedTenant.ID.String() {
 				t.Errorf("%s carries %s=%q: a tenant the caller named in its own Baggage header "+
 					"reached the kernel's span through the propagated correlation set the delivery "+
 					"extracts (kit/events/trace.go, startDelivery)", s.Name(), kv.Key, v)
@@ -198,7 +198,7 @@ func TestACarriedBaggageThatNamesATenantNamesNoTenantOnTheDelivery(t *testing.T)
 
 	// And the kernel's own member still arrives: the request id the caller saw in
 	// X-Request-ID is on both spans, which is what the baggage column is for.
-	if id, has := round12Attr(delivery, telemetry.AttrRequestID); !has || id.AsString() != requestID {
+	if id, has := baggageAttr(delivery, telemetry.AttrRequestID); !has || id.AsString() != requestID {
 		t.Errorf("the delivery span names request %q (present: %v), want %q: the case cannot tell "+
 			"which request it speaks of if the kernel's own member does not arrive",
 			id.AsString(), has, requestID)
@@ -220,7 +220,7 @@ func TestTheRowKeepsTheBagItWasGivenAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the kernel's own request id is not a baggage member: %v", err)
 	}
-	claimed, err := baggage.NewMember(telemetry.AttrTenant, round12Claimed.Slug)
+	claimed, err := baggage.NewMember(telemetry.AttrTenant, claimedTenant.Slug)
 	if err != nil {
 		t.Fatalf("a caller's slug is not a baggage member: %v", err)
 	}
@@ -233,11 +233,11 @@ func TestTheRowKeepsTheBagItWasGivenAndNothingElse(t *testing.T) {
 	var parent, state, correlation string
 	err = db.Run(tenancy.WithTenant(baggage.ContextWithBaggage(t.Context(), bag), acme), conn,
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			if err := events.Publish(ctx, tx, round12Event, map[string]any{"amount": 2}); err != nil {
+			if err := events.Publish(ctx, tx, claimedEvent, map[string]any{"amount": 2}); err != nil {
 				return err
 			}
 			return tx.DB().Raw("SELECT tenant_id, COALESCE(traceparent,''), COALESCE(tracestate,''), "+
-				"COALESCE(baggage,'') FROM platformkit_outbox WHERE name = ?", round12Event).
+				"COALESCE(baggage,'') FROM platformkit_outbox WHERE name = ?", claimedEvent).
 				Row().Scan(&rowTenant, &parent, &state, &correlation)
 		})
 	if err != nil {
@@ -270,8 +270,8 @@ func TestTheRowKeepsTheBagItWasGivenAndNothingElse(t *testing.T) {
 	}
 }
 
-// round12Attr reads one attribute off a recorded span.
-func round12Attr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
+// baggageAttr reads one attribute off a recorded span.
+func baggageAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	for _, kv := range s.Attributes() {
 		if string(kv.Key) == key {
 			return kv.Value, true
@@ -280,7 +280,7 @@ func round12Attr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 	return attribute.Value{}, false
 }
 
-func round12Names(all []sdktrace.ReadOnlySpan) []string {
+func baggageSpanNames(all []sdktrace.ReadOnlySpan) []string {
 	out := make([]string, 0, len(all))
 	for _, s := range all {
 		out = append(out, s.Name())

@@ -76,7 +76,8 @@ func mountTwo(t *testing.T, providers contracts.OIDCProviders, secrets contracts
 	})
 	svc, authModule := auth.New(auth.Deps{
 		Users: users, Notify: &authtest.Notices{}, Mailer: &authtest.Mailbox{},
-		Hosts: authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
+		MailDelivery: authtest.Delivers,
+		Hosts:        authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
 		PublicHost: host,
 	})
 	seed(t, conn, acme)

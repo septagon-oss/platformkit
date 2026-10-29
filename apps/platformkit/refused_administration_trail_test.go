@@ -39,7 +39,7 @@ func TestARefusedAdministrationWriteLeavesAnAuditRecord(t *testing.T) {
 	c := s.c
 	// One administrator left, so the next write at either door takes the last one.
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.Deactivate(ctx, tx, s.bob.ID)
+		_, err := c.testUsers().Deactivate(ctx, tx, s.bob.ID)
 		return err
 	}); err != nil {
 		t.Fatalf("deactivating bob: %v", err)
@@ -48,7 +48,7 @@ func TestARefusedAdministrationWriteLeavesAnAuditRecord(t *testing.T) {
 	subject := s.ada.ID.String()
 	was := outboxRows(t, s, subject)
 	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
+		_, err := c.testUsers().SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleMember})
 		return err
 	})
 	if !errors.Is(err, crud.ErrInvalid) {
@@ -62,7 +62,7 @@ func TestARefusedAdministrationWriteLeavesAnAuditRecord(t *testing.T) {
 	role := `"` + authcontracts.RoleAdmin + `"`
 	was = outboxRows(t, s, role)
 	err = db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := c.auth.SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
+		_, err := c.testAuth().SetRole(ctx, tx, authcontracts.RoleAdmin, nil, declared)
 		return err
 	})
 	if !errors.Is(err, crud.ErrInvalid) {

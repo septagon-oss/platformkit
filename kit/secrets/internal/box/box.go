@@ -1,19 +1,16 @@
-// Package box is the envelope the adapters that hold their own key write: AES-256-GCM
-// over key material the store hands over, with the secret's address in the additional
-// authenticated data.
+// Package box is the envelope the adapters that hold their own key write:
+// AES-256-GCM over key material the store hands over, with the secret's address
+// in the additional authenticated data.
 //
-// It is one package, and it is internal, for two reasons. env and file seal with the
-// same algorithm over the same key material, and two handings of the same AEAD are
-// two ways to get one wrong — so the body is shared and no other tree may import it.
-// And the store that runs a key service of its own (OpenBao's transit engine, a cloud
-// KMS) must not be handed this: a second crypto path in front of a key store would be
-// a second truth about which key a ciphertext is under, and that store's own answer is
-// the one that rotates.
+// env and file seal with the same algorithm over the same material, and two
+// handings of one AEAD are two ways to get one wrong, so the body is shared and
+// internal: no other tree may import it. A store that runs a key service of its
+// own must not be handed this either — a crypto path in front of a key store is
+// a second truth about which key a ciphertext sits under, and that store's own
+// answer is the one that rotates.
 //
-// The AAD is the addition over the plain AEAD, and it is the reason this package is
-// worth its name: modules/webhook's own box records in its comment that its seal
-// binds nothing about the row it is stored beside. Binding the address means a
-// ciphertext written for one name, or one tenant, does not open under another.
+// The AAD is what this package adds to a plain AEAD: a ciphertext written for
+// one name, or one tenant, does not open under another.
 package box
 
 import (

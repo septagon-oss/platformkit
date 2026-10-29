@@ -7,8 +7,8 @@ package main
 // store has an opinion about.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
-	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -31,11 +31,11 @@ func media() *pkit.Module {
 	return pkit.NewModule("media", func(w *pkit.Wiring) (module.Module, error) {
 		pkit.Put[*file.LibraryChrome](w, &file.LibraryChrome{
 			Shell:     libraryShell(catalogues()),
-			Authorize: pkit.Get[authcontracts.Auth](w),
+			Authorize: pkit.Get[httpx.Authorizer](w),
 		})
 		return module.Module{Name: "media"}, nil
 	},
-		pkit.Needs[authcontracts.Auth](),
+		pkit.Needs[httpx.Authorizer](),
 		pkit.Provides[*file.LibraryChrome](),
 	)
 }

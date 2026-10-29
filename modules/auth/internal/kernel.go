@@ -68,46 +68,16 @@ func (s *Service) bearerPrincipal(ctx context.Context, tx db.Tx[db.Tenant], toke
 	return tenancy.Principal{UserID: cred.user.ID, TokenID: cred.tokenID, Permissions: cred.scopes}, true, nil
 }
 
-// Allowed is kit/httpx's authorizer: one query per request that asks a
-// permission question, in the request's own transaction, with no cache.
-//
-// No cache is the decision. A permission cache is a window in which a revoked
-// grant still works, and what it would save is a primary-key read of a handful
-// of rows — so the cost of being exactly right is one round trip on the
-// requests that need one, and requests by an anonymous caller or by a caller
-// with no roles do not even make that.
-//
-// The tenant is unused, and deliberately: the kernel has already refused an
-// operator grant on a tenant that is not the operator's, and every row this
-// reads is inside that tenant's own transaction. A second comparison here would
-// be a check that cannot fail.
+// Allowed delegates live requests to the injected transaction-scoped authorizer.
+// Legacy calls without a request transaction can only decide without a role read.
 func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, grant tenancy.Grant) (bool, error) {
-	principal, ok := tenancy.PrincipalFrom(ctx)
-	if !ok {
-		return false, nil
+	if tx, ok := httpx.TxFrom(ctx); ok {
+		return s.authorization.Allowed(ctx, tx, grant)
 	}
-	if principal.Permissions != nil {
-		// The credential carries its own authority, so the credential is what is
-		// asked about and the roles are not consulted. They belong to the person
-		// the key acts as; the key was minted narrower than that on purpose, and
-		// resolving the roles here would answer a question about the holder rather
-		// than about the caller — which is the thing a scope exists to prevent.
-		// What is on this list is already the intersection of the two, recomputed
-		// when this request resolved the key.
-		return contracts.Grants(contracts.Permissions(principal.Permissions), grant), nil
-	}
-	if len(principal.Roles) == 0 {
-		return false, nil
-	}
-	tx, ok := httpx.TxFrom(ctx)
-	if !ok {
-		return false, errors.New("auth: no transaction to resolve the caller's permissions in")
-	}
-	held, err := s.Permissions(ctx, tx, principal.Roles)
-	if err != nil {
-		return false, err
-	}
-	return contracts.Grants(held, grant), nil
+	principal, _ := tenancy.PrincipalFrom(ctx)
+	return contracts.Decide(principal, grant, func([]string) ([]string, error) {
+		return nil, errors.New("auth: no transaction to resolve the caller's permissions in")
+	})
 }
 
 var _ httpx.Authorizer = (*Service)(nil)

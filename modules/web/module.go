@@ -13,6 +13,8 @@
 package web
 
 import (
+	"errors"
+
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -20,6 +22,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/web/contracts"
 	"github.com/septagon-oss/platformkit/modules/web/internal"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -73,15 +76,30 @@ type Deps struct {
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) module.Module {
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked builds the manifest over the site and the content it renders, and
+// answers as an error either service missing or a page the site would link but
+// cannot name: the sign-in route and the address a stored picture is fetched
+// through. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
 	if deps.Site == nil || deps.Content == nil {
-		panic("web: Deps.Site and Deps.Content are required; the site renders what they publish")
+		return module.Module{}, errors.New("web: Deps.Site and Deps.Content are required; the site renders what they publish")
 	}
 	if deps.SignInPath == "" || deps.PublicFileURL == nil {
-		panic("web: Deps.SignInPath and Deps.PublicFileURL are required; the site links a sign-in it does not serve and a file it does not store")
+		return module.Module{}, errors.New("web: Deps.SignInPath and Deps.PublicFileURL are required; the site links a sign-in it does not serve and a file it does not store")
 	}
 	return module.Module{
 		Name:          "web",
+		Views:         contracts.Views(),
 		Permissions:   nil,
 		Declared:      nil,
 		Jobs:          nil,
@@ -93,5 +111,5 @@ func New(deps Deps) module.Module {
 				Translations: deps.Translations, ContentRows: deps.ContentRows,
 			})
 		},
-	}
+	}, nil
 }

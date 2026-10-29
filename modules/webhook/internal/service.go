@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -79,23 +80,36 @@ type Service struct {
 var _ contracts.Service = (*Service)(nil)
 
 // NewService builds the service. A wrong key width, a missing catalogue and an
-// empty event list are wiring mistakes, so they panic where they are written.
+// empty event list are wiring mistakes, so they panic where they are written;
+// NewServiceChecked answers the same refusals as an error.
 func NewService(deps Deps) *Service {
+	svc, err := NewServiceChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc
+}
+
+// NewServiceChecked builds the service and answers as an error the wiring every
+// write depends on: the secret key is the 32 bytes one read hands it, the event
+// list comes from the catalogue rather than from this module, and a key the
+// envelope cannot be built on means this process must not start.
+func NewServiceChecked(deps Deps) (*Service, error) {
 	if len(deps.SecretKey) != 32 {
-		panic(fmt.Sprintf("webhook: the secret key is %d bytes; it is 32, read once by the composition", len(deps.SecretKey)))
+		return nil, fmt.Errorf("webhook: the secret key is %d bytes; it is 32, read once by the composition", len(deps.SecretKey))
 	}
 	if deps.Catalogue == nil {
-		panic("webhook: a Catalogue is required: every write and the picker read it, and nothing can invent the list")
+		return nil, errors.New("webhook: a Catalogue is required: every write and the picker read it, and nothing can invent the list")
 	}
 	wrap, err := newBox(deps.SecretKey)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 	now := deps.Now
 	if now == nil {
 		now = db.Now
 	}
-	return &Service{wrap: wrap, policy: deps.Policy, catalogue: deps.Catalogue, alerts: deps.Alerts, now: now}
+	return &Service{wrap: wrap, policy: deps.Policy, catalogue: deps.Catalogue, alerts: deps.Alerts, now: now}, nil
 }
 
 // Now is the module's clock, shared by every half: the sender stamps its header

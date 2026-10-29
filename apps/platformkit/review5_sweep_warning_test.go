@@ -73,7 +73,7 @@ func TestTheHourlyWarningHasNothingToSayAboutWhatThisCompositionSeeds(t *testing
 	// service is handed the catalogue the kernel read off every manifest, and a
 	// sweep run against an un-booted composition is silent for the wrong reason.
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -213,7 +213,7 @@ func bootstrappedTenant(t *testing.T, c composition, conn *db.Conn) tenancy.Tena
 	var acme tenancy.Tenant
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		acme, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	})
 	if err != nil {
@@ -227,7 +227,7 @@ func rolesOf(t *testing.T, c composition, conn *db.Conn, tenant tenancy.Tenant) 
 	out := map[string][]string{}
 	err := db.Run(httpx.WithConn(tenancy.WithTenant(t.Context(), tenant), conn), conn,
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			roles, e := c.auth.Roles(ctx, tx)
+			roles, e := c.testAuth().Roles(ctx, tx)
 			if e != nil {
 				return e
 			}

@@ -15,8 +15,8 @@ package events
 // defers a correction, and what it defers is observable in the ledger — the series a full
 // batch relayed outright are still owed their zero — which is what this case reads back.
 // relay_drain_test.go owns the choice of *which* series a settled pass owes the zero to, and
-// review_round6_… owns the size the ledger reaches by ordinary relaying; neither can see
-// which pass paid to find out.
+// the_lag_ledger_grows_by_relaying_real_rows_test.go owns the size the ledger reaches by
+// ordinary relaying; neither can see which pass paid to find out.
 //
 // The bias this leaves is pinned where it is written rather than here: a tick whose deadline
 // passes mid-drain returns without a correction and repeats one stale reading, which is the

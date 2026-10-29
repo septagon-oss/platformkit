@@ -76,6 +76,13 @@ type Sender struct{ cfg Config }
 func New(cfg Config) *Sender { return &Sender{cfg: cfg} }
 
 var _ contracts.Mailer = (*Sender)(nil)
+var _ contracts.MailDelivery = (*Sender)(nil)
+
+// Available says this carrier delivers: it dials the relay named in Config.
+// A refused connection is a failed send, recorded as one, which is a different
+// fact from never having tried — an outage must not read to a caller as "no mail
+// is configured", because that would refuse every sign-up while a relay is down.
+func (*Sender) Available() bool { return true }
 
 // Send renders one contracts.Message onto the wire and hands it to the relay.
 //

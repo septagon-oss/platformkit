@@ -9,6 +9,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -125,9 +126,24 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. Deps.Administration and
+// Deps.Granting are required, and an adapter of either whose Ask closure is nil
+// is refused with it: both doors answer a question, and an empty adapter would
+// answer "nobody administers this tenant" to all of them. It opens nothing, runs
+// no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	if deps.Administration == nil {
-		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
+		return nil, module.Module{}, errors.New("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}
 	// An interface is not nil just because what it holds is. &contracts.
 	// AdministrationFunc{} satisfies the field, reaches this composition looking
@@ -138,24 +154,14 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// answers the same way as an error, so a hand-written implementation that
 	// cannot answer fails the write rather than passing it.
 	if asked, ok := deps.Administration.(*contracts.AdministrationFunc); ok && (asked == nil || asked.Ask == nil) {
-		panic("user.Module: Deps.Administration is an adapter with no Ask; wire auth.AdministeringRoles, do not hand the floor an empty adapter")
+		return nil, module.Module{}, errors.New("user.Module: Deps.Administration is an adapter with no Ask; wire auth.AdministeringRoles, do not hand the floor an empty adapter")
 	}
 	if deps.Granting == nil {
-		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
+		return nil, module.Module{}, errors.New("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
 	}
-	// An empty GrantingFunc is the one adapter this module accepts unwired, and
-	// the reason is the shape of the answer. Who may hand out an administering
-	// role is the authentication service's, and the authentication service is
-	// built after this module — it looks people up here — so the holder arrives
-	// empty and the auth module fills its Ask in its own build. Refusing an empty
-	// holder at this line would refuse the only wiring that is not a cycle.
-	//
-	// What is not refused is what stays refused: an adapter with no Ask answers
-	// the error contracts.GrantingFunc.May carries, so a composition whose auth
-	// module never ran fails the roles write — no row, no event, no stale read —
-	// rather than answering "nobody may promote anybody" and reading as a door
-	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
-	// case, not by this line.
+	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
+		return nil, module.Module{}, errors.New("user.Module: Deps.Granting requires an initialized adapter")
+	}
 	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
@@ -205,9 +211,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Subscriptions: nil,
 		Routes: func(s httpx.Surfaces) {
 			mounted.Mount(s)
-			internal.RegisterRoutes(s, mounted, svc)
+			internal.RegisterRoutes(s, mounted, internal.RouteServices{Invitations: svc, Approvals: svc, Passwords: svc, Roles: svc, Handles: svc, Deactivation: svc})
 		},
-	}
+	}, nil
 }
 
 // refuseLifecycleOnCreate keeps roles and password registrations behind their

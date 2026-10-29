@@ -293,6 +293,7 @@ func ValidHandle(handle string) bool {
 //
 // Commands document their retry behavior. An unchanged idempotent command emits
 // no event; verification replay conflicts rather than asserting fresh proof.
+// Deprecated: use the focused capability interfaces in this package.
 type Service interface {
 	Registrations
 	// Invite creates a user with no password, in status invited, and publishes

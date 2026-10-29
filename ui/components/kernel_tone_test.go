@@ -1,6 +1,6 @@
 package components
 
-// kernel_tone_test.go binds entity.Tones to clBadgeTone. The kernel names the
+// kernel_tone_test.go binds entity.ToneNames to clBadgeTone. The kernel names the
 // tones a status may be said in, and this package is what draws one; kit may not
 // import ui, so the tie is a test here.
 //
@@ -19,9 +19,9 @@ import (
 
 func TestEveryKernelToneHasABadgeTone(t *testing.T) {
 	t.Parallel()
-	for _, tone := range entity.Tones {
+	for _, tone := range entity.ToneNames() {
 		if _, ok := clBadgeTone[tone]; !ok {
-			t.Errorf("entity.Tones admits %q and clBadgeTone draws no class list for it", tone)
+			t.Errorf("entity.ToneNames admits %q and clBadgeTone draws no class list for it", tone)
 		}
 	}
 }

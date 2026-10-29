@@ -1,31 +1,16 @@
-// Package health is the two probes an orchestrator calls, and the checks
-// behind the second one.
+// Package health is the two probes an orchestrator calls, and the checks behind
+// the second. GET /health is liveness and runs no check of its own: a probe that
+// fails while the database is briefly unreachable gets the process killed
+// instead of the database fixed. GET /ready runs every registered check and
+// answers 503 with the names that failed, so a deploy holds traffic off an
+// instance that cannot serve it yet.
 //
-// GET /health is liveness: it runs no check of its own, because a probe that
-// fails when the database is briefly unreachable gets the process killed
-// instead of getting the database fixed.
-//
-// GET /ready is readiness: it runs every registered check and answers 503 with
-// the names that failed, so a rolling deploy holds traffic off an instance that
-// cannot serve it yet.
-//
-// # One mux, both roles
-//
-// The probes are a plain net/http mux, mounted beside the API in the web role
-// and served alone in the worker role. They are not operations: a probe has no
-// tenant, no session and nothing to declare, and the API's middleware chain
-// resolves a tenant from the request host before any of it runs — a real query,
-// with a two second budget, that never hits the cache for a pod address because
-// only a successful resolution is cached. Liveness went through that lookup,
-// so a probe with a two second timeout failed while the database was
-// unreachable and the kubelet restarted every replica during the outage
-// instead of after it.
-//
-// So the two probes bypass the resolver entirely (httpx.API.Probes). Nothing
-// else does: a public route is still tenant-scoped, because a page served at a
-// customer's host is that customer's page whether or not a session is behind
-// it. The exception is exactly the two routes that are addressed to the
-// process rather than to a site.
+// Both are a plain net/http mux, beside the API in the web role and alone in the
+// worker, and they bypass the tenant resolver (httpx.API.Probes): a probe has no
+// tenant and no session, and resolving the host is a real query on a two second
+// budget that no cache answers for a pod address. Nothing else bypasses it — a
+// public route is still tenant-scoped — because the exception is exactly the two
+// routes addressed to the process rather than to a site.
 package health
 
 import (
@@ -80,16 +65,47 @@ type Report interface {
 // the application, DatabaseCheck below, and a second one arrives with the type
 // that needs it.
 
+// Faults answers a probe's failure in the shape the caller asked for. kit/httpx's
+// (*API).Siteless is the only implementation the composition passes, so a monitor is
+// answered by the document every other kernel refusal writes — same encoder, field
+// order and Content-Type — and a person at the address is shown a page. A caller with
+// no API leaves the port nil, and writeProblem answers with that document alone.
+//
+// It is one call and deliberately not `fail`, because a probe cannot pay for what
+// `fail` does: resolving the host is a real query with a two second budget (this
+// package's comment names the restart storm it caused), and a probe has no tenant
+// transaction to resolve anything inside. The port states that constraint: what
+// answers a probe's failure is the door that never asks who owns the address.
+//
+// A refusal, not a status and a sentence, because the two audiences of one failure
+// are owed different words — see problem.Problem's Diagnostic.
+type Faults func(w http.ResponseWriter, r *http.Request, refused *problem.Problem)
+
 // Register mounts the two probes beside the API, on the router that carries
 // neither the request middleware nor a transaction. Both roles therefore answer
 // the same bytes from the same handler, which is what the deployment's one
-// probe stanza already assumed. See Mux, and httpx.API.Probes.
+// probe stanza already assumed. See MuxWithFaults, and httpx.API.Probes.
 func Register(api *httpx.API, checks []Check, reports ...Report) {
-	api.Probes(Mux(slog.Default(), checks, reports...), livePath, readyPath)
+	api.Probes(MuxWithFaults(slog.Default(), api.Siteless, checks, reports...), livePath, readyPath)
 }
 
-// Mux is the two probes. It is a plain net/http mux because that is all a probe
-// needs: no tenant, no session, no operation to declare, and no transaction.
+// Mux is the two probes with no fault door: every failure of a probe is answered
+// by the problem document this package writes (writeProblem), which is the shape
+// a readiness stanza has compared since the probe existed. A caller that has the
+// kernel's API hands its door to MuxWithFaults instead, and a refused probe then
+// reaches the person as a page in the reader's language rather than as a document
+// only a monitor reads.
+func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
+	return MuxWithFaults(log, nil, checks, reports...)
+}
+
+// MuxWithFaults is the two probes answered through the caller's fault door, which
+// is (*httpx.API).Siteless: the one composition that has an API to ask has a page
+// to give a probe, and a probe that has none — a worker served alone — passes nil
+// and is answered in the problem shape, as Mux does.
+//
+// It is a plain net/http mux because that is all a probe needs: no tenant, no
+// session, no operation to declare, and no transaction.
 //
 // It is the whole answer in both roles — the worker serves it alone, the web
 // role mounts it beside the API — because a readiness probe that says one thing
@@ -97,22 +113,59 @@ func Register(api *httpx.API, checks []Check, reports ...Report) {
 // learn twice. It was two implementations of two routes until the web role's
 // probes had to stop resolving a tenant, at which point the one that already
 // did not was the answer.
-func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
+func MuxWithFaults(log *slog.Logger, faults Faults, checks []Check, reports ...Report) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
+	if faults == nil {
+		faults = writeProblem
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+livePath, func(w http.ResponseWriter, _ *http.Request) {
+	// Both probes answer GET, and say so themselves. Registering the address without a
+	// verb puts the method refusal in this package's hands: left to the mux, a POST to
+	// /ready was answered "Method Not Allowed" in text/plain by net/http, and this is
+	// the one place that reaches a person — the mux lives outside the middleware chain
+	// that negotiates a shape, and whoever typed /ready into a browser and let a page
+	// post to it was looking at a developer's note. Through the same door as a failed
+	// check, which makes it one verdict with every other kernel refusal.
+	mux.HandleFunc(livePath, func(w http.ResponseWriter, r *http.Request) {
+		if !onlyGet(w, r, faults) {
+			return
+		}
 		write(w, http.StatusOK, `{"status":"ok"}`, "application/json")
 	})
-	mux.HandleFunc("GET "+readyPath, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(readyPath, func(w http.ResponseWriter, r *http.Request) {
+		if !onlyGet(w, r, faults) {
+			return
+		}
 		failed := failures(r.Context(), log, checks)
 		if len(failed) == 0 {
 			write(w, http.StatusOK, ready(r.Context(), reports), "application/json")
 			return
 		}
-		body, _ := json.Marshal(problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", ")))
-		write(w, http.StatusServiceUnavailable, string(body), problem.ContentType)
+		// The one line in this package that answers a failure, and it is a call to the
+		// kernel's door rather than a body written here: a person who navigated to /ready
+		// during an outage was shown problem+json in a browser window because this mux
+		// sits outside the middleware chain and had no *API to ask, and a second encoder
+		// of the problem shape is what fault.go exists to refuse. The port costs nothing
+		// this package must not pay — no host resolved, no transaction, no Accept read.
+		//
+		// Which check failed is the monitor's and the operator's, and it is said twice:
+		// in the problem document a readiness stanza diffs, and in the log line below,
+		// joined to the request id a person reads back off a screenshot. It is not the
+		// browser's. A check's name names this composition's subsystems, so a page that
+		// lists them tells the reader nothing they can act on and tells an asker what
+		// makes this installation run. The refusal says which of its sentences a page
+		// may show; the shell answers with its outage copy, in the reader's language.
+		refused := problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", "))
+		refused.Diagnostic = true
+		faults(w, r, refused)
+		// The reference the page shows and the check that failed are joined here, in the
+		// one line an operator has to read: whoever is quoting `request 8f2c…` off a
+		// screenshot is quoting the string below.
+		log.ErrorContext(r.Context(), "health: readiness failed",
+			"checks", strings.Join(failed, ", "),
+			"request_id", w.Header().Get(httpx.RequestIDHeader))
 	})
 	return mux
 }
@@ -150,6 +203,29 @@ func ready(ctx context.Context, reports []Report) string {
 		return `{"status":"ok"}`
 	}
 	return string(body)
+}
+
+// writeProblem is the door Mux mounts when the caller has no *httpx.API to borrow
+// one from: the kernel's one problem document, written from kit/problem rather than
+// copied here. It is what the two probes wrote before they had a door to be handed,
+// and a monitor that diffs their body reads the same bytes either way — the page a
+// real fault door can render is what a caller without one is missing, not the verdict.
+func writeProblem(w http.ResponseWriter, _ *http.Request, refused *problem.Problem) {
+	body, _ := json.Marshal(refused)
+	write(w, refused.Status, string(body), problem.ContentType)
+}
+
+// onlyGet is the verb gate both probes answer for themselves: GET, and HEAD because a
+// HEAD answers a GET's headers with no body. Every other verb is refused in the shape
+// the caller asked for, with the Allow header half of an RFC 9110 405 owes — the list
+// net/http's own mux wrote here before this file owned the refusal.
+func onlyGet(w http.ResponseWriter, r *http.Request, faults Faults) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return true
+	}
+	w.Header().Set("Allow", "GET, HEAD")
+	faults(w, r, problem.New(http.StatusMethodNotAllowed, "this address accepts GET requests"))
+	return false
 }
 
 func write(w http.ResponseWriter, status int, body, contentType string) {

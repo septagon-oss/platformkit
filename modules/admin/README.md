@@ -151,6 +151,17 @@ The module does not grant anything itself. `gallery:read` is held by any role th
 
 ## Composition
 
+The provider requests Auth's `RoleEditor` and `SessionAdministration`, the kernel's
+`httpx.Authorizer`, Tenant's `Lister`, and optional User `Lookup`. `Deps.TenantList`
+takes precedence over deprecated `Deps.Tenants`; missing Lookup retains the anonymous
+header label used for a signed-in caller whose name is unavailable.
+
+**Reused** — existing role/session screens, navigation authorization and caller header
+continue to render through their current shell ports.
+**Added** — the `TenantList` compatibility input lets the switcher consume only `List`
+while retaining its legacy `Tenants` field for callers.
+**Made reusable** — the provider can build without any identity aggregate key.
+
 The shell keeps workspace, caller and build labels inline; destination groups share
 one column, and purpose sentences use the shared bounded measure. Navigation cards
 stay unfilled in both themes so they remain quiet destinations. Generated forms

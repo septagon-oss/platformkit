@@ -1,33 +1,16 @@
-// Package crud is the five operations every tenant-owned resource needs.
-// Entity definitions and schemas are owned by kit/entity, with aliases here
-// for existing callers. The three refusal sentinels are owned by kit/fault, and
-// aliased here for the same reason.
-//
-// A module writes a struct with an embedded Base and gets read, list, create,
+// Package crud is the five operations every tenant-owned resource needs: a
+// module writes a struct with an embedded Base and gets read, list, create,
 // update and delete, each refusing what row-level security would refuse anyway.
-// What it does not write is a repository, a DTO or a mapper.
 //
-// # This half links no web server
+// This half links no web server: kit/rest owns routes, PATCH merging and OpenAPI
+// and imports this storage adapter. Instantiate with the pointer type —
+// crud.Get[*Task](tx, id) — so the kernel can stamp the tenant.
 //
-// Existing module contracts may import this package for Base. A caller that
-// needs only entity definitions or field metadata can instead import kit/entity
-// without linking a database driver. HTTP routes, PATCH merging and OpenAPI
-// declarations belong to kit/rest, which imports this storage adapter.
-//
-// # Instantiate with the pointer type
-//
-// Entity requires a pointer so the kernel can stamp its tenant: use
-// crud.Get[*Task](tx, id), and List returns []*Task.
-//
-// # The tenant is never a parameter
-//
-// Create takes the tenant from the transaction, and Update refuses an entity
-// carrying a different one. That is defense in depth rather than the boundary:
-// row-level security refuses the same write in the database, whatever Go
-// believes. See docs/adr/0003.
-//
-// The [Get] example reads a row through an explicit tenant transaction.
-// The [List] example reads a page and total from a tenant-isolated PostgreSQL fixture.
+// The tenant is never a parameter: Create takes it from the transaction and
+// Update refuses an entity carrying a different one, which is defence in depth
+// over the boundary the database enforces (docs/adr/0003). Which family of door to
+// call, and what each asks of its caller, is in README.md; the [Get] and [List]
+// examples call the two reads from inside a tenant transaction of their own.
 package crud
 
 import (
@@ -89,25 +72,78 @@ type Entity = entity.Entity
 // Validator is the optional check run before a storage write.
 type Validator = entity.Validator
 
-// Query is a list request: a page, an order and a set of equality filters.
-// Sort is "field" or "-field" and every name is checked against the entity's
-// schema, so a column name never comes from a caller.
+// Query is a list request: a page, an order, a set of equality filters and a set of
+// comparisons. Sort is "field" or "-field" and every name is checked against the
+// entity's schema, so a column name never comes from a caller.
+//
+// Filter and Where narrow together: one row is on the page when the lifecycle clause
+// and every equality key and every predicate hold. A field named by both is narrowed
+// twice rather than overwritten, and a pair that contradicts answers an empty page
+// rather than a refusal. Where is built by server code from a declaration or a
+// command the module checked; no request parameter of this repository reaches it.
 type Query struct {
 	Limit, Offset int
 	Sort          string
-	Filter        map[string]any
+
+	// Filter is one value per field name, each read as that column's own Go type by
+	// the rule Predicate states: any integer kind for a count, any float or integer
+	// kind for an amount, and exactly string, bool, time.Time or uuid.UUID for a
+	// word, a flag, a moment and an id. A value of another shape refuses the whole
+	// question with ErrInvalid before a statement is sent; none of it is coerced. A
+	// value of the right shape and a number too wide for the column is the driver's
+	// refusal and not ErrInvalid: the rule is on a shape, and a column's width is no
+	// fact this package reads. Where takes the same rule.
+	Filter map[string]any
+
+	// Where is the comparisons of the same question, narrowed with Filter and bound
+	// by the same rule on an operand's shape.
+	Where Where
 }
 
-// The page bounds. A caller that asks for nothing gets a screenful; a caller
-// that asks for everything gets the most a single response should carry.
+// The page and operand bounds. A caller that asks for nothing gets a screenful; a
+// caller that asks for everything gets the most a single response should carry.
 const (
 	DefaultLimit = 50
 	MaxLimit     = 200
+
+	// MaxInValues is how many values one In predicate carries. It is MaxLimit
+	// because the set a caller lists is bounded by the page it came from: a page
+	// reads at most MaxLimit rows, so a list assembled from rows never needs more,
+	// and a caller holding a longer list is asking a question a page cannot answer.
+	MaxInValues = 200
+
+	// MaxQueryValues is how many values one question carries in total — every
+	// equality key plus every predicate operand, at the total and the page built
+	// from the same list. Postgres counts the parameters of a statement in sixteen
+	// bits, so this ceiling is the product's own, set far under the wire's: a
+	// question that trips it is a bug, not a tuning request.
+	MaxQueryValues = 2000
 )
 
 // Get reads one row of this tenant. A soft-deleted row is not found.
+//
+// Deprecated: Use GetCtx, which answers the caller's own ending before it sends a
+// statement instead of reading a row nobody is waiting for.
 func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
-	return get[T](tx.DB(), id)
+	return GetCtx[T](context.Background(), tx, id)
+}
+
+// GetCtx reads one row of this tenant, or ErrNotFound — including another tenant's
+// row, which is not found either, the only thing the API may say about it. A
+// soft-deleted row is not found.
+//
+// ctx is the caller's own cancellation: it is checked before anything reaches the
+// database, and the ended caller is an error wrapping its cause, not an ErrNotFound
+// for a row that exists. It never rebinds the statement, which runs on the handle
+// the transaction gave the caller — the handle already carries the caller's deadline,
+// and a door of this package that asks its caller gets that handle only from [begin].
+func GetCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	q, err := begin(ctx, tx)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return get[T](q, id)
 }
 
 // GetForUpdate reads and locks one live row of this tenant until the caller's
@@ -129,22 +165,53 @@ func get[T Entity](query *gorm.DB, id uuid.UUID) (T, error) {
 }
 
 // Count returns the total live rows visible to this tenant without loading a page.
+//
+// Deprecated: Use CountCtx, which answers the caller's own ending before it sends a
+// statement.
 func Count[T Entity](tx db.Tx[db.Tenant]) (int64, error) {
+	return CountCtx[T](context.Background(), tx)
+}
+
+// CountCtx returns the total live rows visible to this tenant without loading a
+// page. ctx is checked before the statement and rebinds nothing — see GetCtx.
+func CountCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
+	q, err := begin(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
 	var total int64
-	err := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL").Count(&total).Error
+	err = q.Model(blank[T]()).Where("deleted_at IS NULL").Count(&total).Error
 	return total, Classify(err)
 }
 
 // List reads a page of this tenant's rows and the total the page came from.
 // The order always ends in the id, so two pages of equal-keyed rows do not
 // overlap or skip.
+//
+// Deprecated: Use ListCtx, which answers the caller's own ending before it sends a
+// statement.
 func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
-	fields := Fields[T]()
-	where, args, err := conditions(fields, q.Filter)
+	return ListCtx[T](context.Background(), tx, q)
+}
+
+// ListCtx reads a page of this tenant's rows and the total the page came from. The
+// order always ends in the id, so two pages of equal-keyed rows neither overlap nor
+// skip. A filter, a predicate or a sort naming no field of the schema is refused
+// ErrInvalid before the caller is asked and before anything connects — an
+// unanswerable query is the caller's bug, and it is answered whatever the caller's
+// own state. The total and the page are built from one set of conditions, so a
+// narrowed page and the number under it are answers about one set of rows. ctx is
+// checked before the statements and rebinds nothing — see GetCtx.
+func ListCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
+	clauses, err := fragments(Fields[T](), q.Filter, q.Where)
 	if err != nil {
 		return nil, 0, err
 	}
-	order, err := ordering(fields, q.Sort)
+	order, err := ordering(Fields[T](), q.Sort)
+	if err != nil {
+		return nil, 0, err
+	}
+	stmt, err := begin(ctx, tx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -158,9 +225,9 @@ func List[T Entity](tx db.Tx[db.Tenant], q Query) ([]T, int64, error) {
 	// from one reused handle: GORM carries clauses forward, and a Count that
 	// inherits a LIMIT counts the page instead of the table.
 	build := func() *gorm.DB {
-		g := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL")
-		for i, w := range where {
-			g = g.Where(w, args[i])
+		g := stmt.Model(blank[T]()).Where("deleted_at IS NULL")
+		for _, c := range clauses {
+			g = g.Where(c.sql, c.args...)
 		}
 		return g
 	}
@@ -204,22 +271,19 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	return nil
 }
 
-// RecheckTenant is the tenant-scope recheck Update performs on the row before it
-// writes it: an entity carrying a tenant that is not the transaction's is not
-// this caller's row, and is answered ErrNotFound, the only thing the API may say
-// about it. A row carrying no tenant is the transaction's to stamp, which is what
-// Update then does with it. Nothing at all is answered ErrInvalid, the answer
-// Create and Update give for nothing to act on: the non-nil precondition cannot
-// be a sentence in the doc of an exported door, because the caller the export
-// exists for has no Update above it to pass the guard first.
+// RecheckTenant is the tenant-scope recheck Update performs before it writes: an
+// entity carrying a tenant that is not the transaction's is not this caller's row
+// and is answered ErrNotFound, the only thing the API may say about it. A row with
+// no tenant is the transaction's to stamp, which is what Update then does with it.
+// Nothing is answered ErrInvalid, the answer for nothing to act on: an exported
+// door cannot state a non-nil precondition its callers do not have.
 //
 // It is exported for a caller that read a row under the lock and then decided to
-// write nothing, which is where row-level security stops being the backstop. On a
-// table whose read policy shows one shared list to every tenant — the catalogue
-// shape of docs/adr/0008 — GetForUpdate answers a row the request may read and
-// may not write, and a write that never happens is one WITH CHECK never gets to
-// refuse. A patch body that names no column is that write, and the answer it gets
-// has to be the answer the same row gives a body that names a column.
+// write nothing, which is where row-level security stops being the backstop: on a
+// table whose read policy shows one shared list to every tenant (docs/adr/0008),
+// GetForUpdate answers a row a request may read and may not write, and a write
+// that never happens is one WITH CHECK never gets to refuse. A patch naming no
+// column is that write.
 func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to recheck", ErrInvalid)
@@ -234,24 +298,20 @@ func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
 	return nil
 }
 
-// Update writes an existing row back. It refuses an entity carrying another
-// tenant, which row-level security would refuse too; reporting it as not found
-// is the same answer the read would have given.
+// Update writes an existing row back, refusing an entity that carries another
+// tenant — which row-level security would refuse too, and not found is the answer
+// the read would have given.
 //
-// columns names the database columns to write, and no columns means all of
-// them. The distinction is what makes two concurrent PATCHes of different
-// fields both survive: writing every column means the second request writes the
-// first one's fields back to what they were when it read them, so a change to a
-// field nobody touched is lost. Spec.Mount passes exactly the columns the patch
-// body named. crud.Schema is the only thing that produces these names; a caller
-// that invents one gets whatever GORM makes of it.
+// columns names the database columns to write; no columns means all of them. The
+// distinction is what lets two concurrent PATCHes of different fields both
+// survive: writing every column writes the first request's fields back to what
+// they were when it read them, losing a change nobody touched. Spec.Mount passes
+// exactly the columns the patch named, and crud.Schema is the only producer of
+// those names.
 //
-// Read with GetForUpdate before merging or validating stored state; acquiring
-// a lock only at this write cannot correct an earlier decision on a stale row.
-//
-// A failed write aborts the whole transaction, in Postgres as everywhere: a
-// caller that means to try something else after a conflict needs a new
-// transaction, which for an HTTP handler means a new request.
+// Read with GetForUpdate before merging or validating stored state: a lock taken
+// only at the write cannot correct a decision made on a stale row. A failed write
+// aborts the transaction, so a retry needs a new one.
 func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...string) error {
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to update", ErrInvalid)
@@ -286,15 +346,60 @@ func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...
 
 // Delete removes a row: soft sets deleted_at, which hides it from Get and List
 // while keeping it for anything that referenced it; otherwise the row goes.
+//
+// Deprecated: Use SoftDelete or DeleteRow, which name which of the two answers the
+// caller asked for instead of a bare bool at the call site.
 func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
-	e := blank[T]()
-	res := tx.DB().Model(e).Where("id = ? AND deleted_at IS NULL", id)
 	if soft {
-		// db.Now, because the stamp has to be the instant the column keeps.
-		res = res.Update("deleted_at", db.Now())
-	} else {
-		res = res.Delete(e)
+		return SoftDelete[T](context.Background(), tx, id)
 	}
+	return DeleteRow[T](context.Background(), tx, id)
+}
+
+// SoftDelete stamps deleted_at with db.Now — the instant the column keeps — on one
+// live row of this tenant, which hides it from Get, GetCtx, Count and List while
+// keeping it for anything that referenced it. No such row is ErrNotFound and writes
+// nothing. ctx is checked before the statement and rebinds nothing — see GetCtx.
+func SoftDelete[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	q, err := begin(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return stampDeletion[T](q, id)
+}
+
+// DeleteRow removes one live row of this tenant from the table. Reference to it from
+// another row is the caller's to have checked: the database's refusal comes back
+// through Classify, and nothing about it is soft. No such row is ErrNotFound and
+// writes nothing. A caller whose resource may still be pointed at wants SoftDelete.
+// ctx is checked before the statement and rebinds nothing — see GetCtx.
+func DeleteRow[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	q, err := begin(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return eraseRow[T](q, id)
+}
+
+// stampDeletion and eraseRow are the two statements the two doors above send, and
+// the only ones either answer comes from: a row that is not there, or not live, or
+// another tenant's, is refused by row-level security as zero rows affected.
+func stampDeletion[T Entity](query *gorm.DB, id uuid.UUID) error {
+	res := query.Model(blank[T]()).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Update("deleted_at", db.Now())
+	return deleted(res)
+}
+
+func eraseRow[T Entity](query *gorm.DB, id uuid.UUID) error {
+	e := blank[T]()
+	res := query.Model(e).Where("id = ? AND deleted_at IS NULL", id).Delete(e)
+	return deleted(res)
+}
+
+// deleted is the one answer both statements give: the database's own failure
+// classified, and nothing touched reported as no such row.
+func deleted(res *gorm.DB) error {
 	if res.Error != nil {
 		return Classify(res.Error)
 	}
@@ -302,6 +407,21 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// begin asks a caller that has already ended, in the words that name it, and hands
+// back the statement handle the transaction gave that caller. The two belong in one
+// call: the refusal is neither ErrNotFound — a row nobody waited for still exists —
+// nor ErrInvalid, which would tell the caller to correct a submission it never sent,
+// and the handle comes from the transaction rather than from this context, which the
+// query never sees. A door therefore takes the caller's ending as a question and the
+// transaction's scope as its scope; rebinding a statement to the caller would replace
+// the one scope that carries the tenant settings the row-level security reads.
+func begin(ctx context.Context, tx db.Tx[db.Tenant]) (*gorm.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("crud: the caller ended before the statement: %w", context.Cause(ctx))
+	}
+	return tx.DB(), nil
 }
 
 // Reset clears the metadata the server owns, whatever a caller sent for it.
@@ -335,23 +455,6 @@ func validate(ctx context.Context, e any) error {
 		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	return nil
-}
-
-// conditions turns a filter map into predicates, one per field, with the column
-// taken from the schema. A name the schema does not know is refused rather than
-// ignored: a filter that silently does nothing returns the wrong page.
-func conditions(fields []Field, filter map[string]any) ([]string, []any, error) {
-	where := make([]string, 0, len(filter))
-	args := make([]any, 0, len(filter))
-	for name, v := range filter {
-		sql, arg, err := predicateSQL(fields, Predicate{Field: name, Op: OpEq, Value: v})
-		if err != nil {
-			return nil, nil, err
-		}
-		where = append(where, sql)
-		args = append(args, arg...)
-	}
-	return where, args, nil
 }
 
 // ordering turns "field" or "-field" into an ORDER BY, always ending in the id
@@ -393,7 +496,9 @@ func comparable(fields []Field, name, what string) (Field, error) {
 // Classify names the two database failures a caller can do something about: a
 // row that is not there, and a unique constraint the write contradicts.
 // Everything else is ours and comes back unchanged, to be logged and answered
-// with a 500.
+// with a 500. One failure that is not ours arrives through here too: a value of a
+// kind this package admits that the column's own type cannot hold, which the driver
+// refuses on the way to the wire.
 //
 // It is exported because a module that writes rows this package cannot still
 // has to answer with the same errors. A tenant carries no tenant_id, so it is

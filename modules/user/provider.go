@@ -16,27 +16,23 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
-// Module is the people of a tenant as the resolver sees it, for an application
-// that names it in Use: `Use(user.Module)`.
-//
-// It hands out five contracts. Service is the whole of it. The other four are
-// the ports a peer declares over people, and this module answers each of them
-// because every one is the same read seen from a different door: a password
-// login finding a person (auth.Users), the person a verified claim names
-// (auth.Provisioner), the address a notice goes to
-// (notification.RecipientLookup), and the first administrator an invitation
-// makes (tenant.Inviter). They used to be four adapters written in the
-// composition file, which meant a client that composed this module wrote them
-// again; a consumer still names no other module, because each is a port the
-// consumer declares and this one implements.
-//
-// What it cannot decide is the two questions about roles: which roles
-// administer a tenant, and whether this caller may hand one out. Both come from
-// the composition — see Deps.
+// Module declares account capabilities and adapters over one service. Granting
+// and Administration must be provided before construction; no session service is needed.
 var Module = pkit.NewModule("user", wire,
 	pkit.Needs[usercontracts.Administration](),
 	pkit.Needs[usercontracts.Granting](),
 	pkit.Provides[usercontracts.Service](),
+	pkit.Provides[usercontracts.Lookup](),
+	pkit.Provides[usercontracts.SystemProvisioner](),
+	pkit.Provides[usercontracts.RegistrationUsers](),
+	pkit.Provides[usercontracts.EmailRegistrar](),
+	pkit.Provides[usercontracts.PendingRegistrar](),
+	pkit.Provides[usercontracts.RetainedLookup](),
+	pkit.Provides[usercontracts.Provisioning](),
+	pkit.Provides[usercontracts.RoleHolders](),
+	pkit.Provides[usercontracts.AddressLookup](),
+	pkit.Provides[usercontracts.SeedWriter](),
+
 	pkit.Provides[authcontracts.Users](),
 	pkit.Provides[authcontracts.Provisioner](),
 	pkit.Provides[notificationcontracts.RecipientLookup](),
@@ -45,11 +41,26 @@ var Module = pkit.NewModule("user", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Administration: pkit.Get[usercontracts.Administration](w),
 		Granting:       pkit.Get[usercontracts.Granting](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
+	pkit.Put[usercontracts.Lookup](w, svc)
+	pkit.Put[usercontracts.SystemProvisioner](w, svc)
+	pkit.Put[usercontracts.RegistrationUsers](w, svc)
+	pkit.Put[usercontracts.EmailRegistrar](w, svc)
+	pkit.Put[usercontracts.PendingRegistrar](w, svc)
+	pkit.Put[usercontracts.RetainedLookup](w, svc)
+	pkit.Put[usercontracts.Provisioning](w, svc)
+	pkit.Put[usercontracts.RoleHolders](w, svc)
+	pkit.Put[usercontracts.AddressLookup](w, svc)
+	pkit.Put[usercontracts.SeedWriter](w, svc)
+
 	pkit.Put[authcontracts.Users](w, svc)
 	pkit.Put[authcontracts.Provisioner](w, provisioner{users: svc})
 	pkit.Put[notificationcontracts.RecipientLookup](w, recipients{users: svc})
@@ -66,7 +77,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 // composition because the read is this module's and the port is the consumer's:
 // notification still names no module, and a client that composes both gets the
 // answer without writing it.
-type recipients struct{ users usercontracts.Service }
+type recipients struct{ users usercontracts.Lookup }
 
 func (r recipients) Email(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (string, error) {
 	u, err := r.users.Get(ctx, tx, userID)
@@ -88,7 +99,9 @@ func (r recipients) Email(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.
 //
 // It runs in the control plane's own system transaction, which is the only way
 // to write a row into a tenant the request did not resolve to.
-type firstAdmin struct{ users usercontracts.Service }
+type firstAdmin struct {
+	users usercontracts.SystemProvisioner
+}
 
 func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName string) error {
 	_, err := a.users.Provision(ctx, tx, tenantID, email, displayName, "",
@@ -108,7 +121,9 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 // Which roles the mode hands out is the tenant operator's decision, taken at
 // POST /tenants/{id}/oidc and stored in the tenant's row; this line decides only
 // that the roles named there and no others are the ones the person arrives with.
-type provisioner struct{ users usercontracts.Service }
+type provisioner struct {
+	users usercontracts.InvitationWriter
+}
 
 func (p provisioner) Provision(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string, roles []string) (uuid.UUID, error) {
 	person, err := p.users.Invite(ctx, tx, email, displayName)

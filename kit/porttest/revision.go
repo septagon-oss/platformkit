@@ -5,21 +5,19 @@ import (
 	"strings"
 )
 
-// RevisionField is this package's reading of "this entity carries a revision": the
-// first field of typ, or of anything it embeds, named as a revision a caller quotes
-// back — see isRevision. A name that merely contains one of those words
+// RevisionField is this package's reading of "this entity carries a revision":
+// the first field of typ, or of anything it embeds, named as a revision a caller
+// quotes back — see isRevision. A name that merely contains one of those words
 // (Conversion) is not one, because a reading that flags everything a suite might
 // have meant teaches a suite to ignore the result.
 //
 // It exists because a suite that declines the Stale case does so in prose, and a
-// reason is the one claim about a port no check in this package reads — the
-// harness requires a Skip to have a sentence, not a true one. A suite that says "no
-// row of mine carries a revision" can watch that sentence itself: call this on the
-// stored entity in a case of its own and let it redden when the kernel grows the
-// field, which is the moment the decline has to become the case. What the harness
-// cannot see is the entity type — W is the module's fixture, and the suite's
-// description never names one — so the watching is the suite's and the reading is
-// shared here, beside the Kind it is about.
+// reason is the one claim about a port no check here reads: the harness requires
+// a Skip to have a sentence, not a true one. A suite that says "no row of mine
+// carries a revision" can watch its own sentence — call this on the stored entity
+// in a case of its own and let it redden when the kernel grows the field, the
+// moment the decline has to become the case. What the harness cannot see is the
+// entity type, so the watching is the suite's and the reading is shared here.
 func RevisionField(typ reflect.Type) (reflect.StructField, bool) {
 	if typ.Kind() != reflect.Struct {
 		return reflect.StructField{}, false

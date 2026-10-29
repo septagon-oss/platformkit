@@ -117,7 +117,7 @@ func migrateWithLog(ctx context.Context, adminURL string, logf func(string, ...a
 		if try > 1 && logf != nil {
 			logf("dbtest: the migration was refused by a lock, running it again: attempt %d of %d", try, migrateTries)
 		}
-		return db.Migrate(ctx, adminURL, sources...)
+		return db.MigrateWithOptions(ctx, adminURL, db.MigrateOptions{}, sources...)
 	})
 }
 
@@ -142,33 +142,18 @@ func pastContention(ctx context.Context, tries int, pause time.Duration, attempt
 	return err
 }
 
-// DeploymentSchema is the namespace an unqualified statement in this session
-// lands in, read back through an open owner connection: under the URLs this
-// package returns that is the schema it created for t, which is what public is
-// to an installation — the namespace the kernel's SQL lands in, and the one
-// whose default privileges the deployment pinned.
+// DeploymentSchema is the namespace an unqualified statement in this session lands
+// in, read back through an open owner connection: under the URLs this package
+// returns that is the schema it created for t, which is what public is to an
+// installation.
 //
-// It is exported because the name is this package's own fact and every caller
-// that opens a module's schema needs the namespace it is opening beside: a test
-// that derives a module-owner name from it, or that compares a module schema's
-// privileges against the deployment's answer, otherwise re-derives it by hand.
-// Such a caller cuts a schema name out of this answer, and then role names out
-// of that, so the answer is one namespace rather than a list of them.
+// It is exported because the name is this package's own fact, and every caller that
+// opens a module's schema needs the namespace it is opening beside rather than
+// re-deriving it by hand out of a connection string.
 //
-// current_schema() is what makes that true. It is the namespace the server
-// resolved the session's path to, where current_setting('search_path') is the
-// raw setting the URL asked for — and a setting is a list: the default is
-// "$user", public, so an installation whose pins live in public resolves to
-// public whatever its path names first. A caller handed the setting would write
-// a comma into the middle of an identifier. Nothing else is checked, because the
-// server's answer is a schema name by construction and this package makes the
-// schema its URLs name; the failure a caller can actually reach is the one no
-// prefix check could see, and it is stated below rather than left to whatever
-// the driver says about a NULL.
-//
-// The name comes from the server rather than from the connection URL for the
-// same reason the runner reads a file's checksum rather than trusting its name:
-// the answer has to be what the database resolved, not what this package meant.
+// current_schema() is what makes that true: the namespace the server resolved the
+// session's path to, where current_setting('search_path') is the raw setting, which
+// is a list. The name comes from the server, not the URL.
 func DeploymentSchema(t testing.TB, admin *sql.DB) string {
 	t.Helper()
 	var schema sql.NullString
@@ -214,42 +199,16 @@ func openOwner(rawURL string) (*sql.DB, error) {
 
 // Role creates a login role that owns nothing and holds nothing except what the
 // caller grants it, in the installation the given owner connection stands in, and
-// returns its name and a DSN that lands in that installation — the same database and the same
-// namespace the handle reached.
+// returns its name and a DSN that lands in that installation — the same database
+// and namespace the handle reached.
 //
-// The name is the namespace's with this fixture's prefix on it, and a namespace too long for one
-// PostgreSQL identifier keeps its head — as much of it as holds whole characters — and gains a
-// digest of the whole name rather than losing its tail: two installations whose names differ only
-// past the limit — the copies of one prepared installation differ only in how many times their case
-// asked — take two roles, and each grant lands on the installation it was written for. The
-// namespace comes back through the owner connection, so that name is built from whatever the caller
-// called its installation, not only from the names this fixture makes for itself.
-//
-// The grant is aimed at the database the connection stands in, read from the server, rather than at
-// the database the environment names, because a test may hold a copy of an installation its package
-// prepared (Clone) rather than the one the URLs name. A privilege lives in the database it was
-// granted in, and PostgreSQL refuses to drop a role that still holds one anywhere: a fixture that
-// cleaned up through the environment's own database would revoke nothing, lose the role, and say
-// nothing about either.
-//
-// It exists because the tree has two roles and some rights belong to neither: the
-// owner is a superuser that row-level security does not bind, and the application
-// role must hold INSERT or it cannot write at all. A boundary that fences an
-// expiry away from the role that appends (modules/audit/migrations/000048) therefore
-// cannot be tested from either handle — the second tenant's rows would be visible
-// from the first's session as the owner, and invisible as the app role, and both
-// answers would be about the wrong role. Each grants argument is the privilege list
-// and the object, spelled the way GRANT spells it, so the test says what the
-// deployment would have to grant and nothing else.
-//
-// The password is the one the test cluster already uses, read from
-// PLATFORMKIT_TEST_DATABASE_URL rather than invented: the role is a fixture in a
-// disposable schema, dropped with it, and a second secret in the environment would
-// be a second thing to rotate for no gain.
-//
-// A cleanup this fixture cannot finish is reported rather than swallowed: the role is cluster-wide,
-// so one left behind by a package outlives the database that held it and stands in the way of the
-// next run's grant of the same name.
+// The name is the namespace's with this fixture's prefix on it; one too long for an
+// identifier keeps its head, cut at a whole character, and gains a digest of the
+// whole name, so two installations differing only past the limit take two roles.
+// The grant goes to the database the connection stands in, because a test may hold
+// a Clone and a privilege lives where it was granted. It exists because the tree's
+// two roles cannot test a right that fences one role from another: the owner is a
+// superuser RLS does not bind, the application role must hold INSERT.
 func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	t.Helper()
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
@@ -447,21 +406,16 @@ func digestOf(name string) string {
 	return fmt.Sprintf("%0*x", digestWidth, digest.Sum32())
 }
 
-// identifier is a name the server will hold as one identifier: within the limit it comes back as it
-// was given, and a longer one keeps its head and ends in a digest of the whole name. The head stops
-// at a whole character, because the limit counts bytes and an identifier may hold characters that
-// take several of them: a cut inside one leaves a partial character the server refuses back, so
-// CREATE ROLE answers `invalid byte sequence for encoding "UTF8"` for a namespace this fixture
-// created itself and read back in full. What the shortened head cannot spell, the digest answers.
+// identifier is a name the server will hold as one identifier: within the limit it
+// comes back as it was given, and a longer one keeps its head — stopped at a whole
+// character, because the limit counts bytes and a cut inside one character is
+// refused back — and ends in a digest of the whole name.
 //
-// It is for a name built out of another name, where the cut lands where the caller has no more
-// room: Role derives a login role's name from the namespace it holds rights in, so two namespaces
-// that differ only past the limit — the copies of one prepared installation, which differ only in
-// how many times their case asked — would arrive at the cluster as one role name. The second CREATE
-// ROLE is then refused as already existing, and its grants would have landed on the installation
-// that got there first. Cutting at the limit instead is what did that; PostgreSQL shortens in
-// silence, so nothing else said so. The digest is over the whole name, so one name answers one
-// identifier every time: a caller that has to spell its role out in a GRANT derives it twice.
+// It is for a name built out of another name, where the cut lands where the caller
+// has no more room: Role derives a login role's name from the namespace it holds
+// rights in, so two namespaces differing only past the limit would arrive at the
+// cluster as one role name and the second CREATE ROLE would be refused. The digest
+// is over the whole name, so one name answers one identifier every time.
 func identifier(name string) string {
 	if len(name) <= identifierLimit {
 		return name
@@ -502,10 +456,10 @@ func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + 
 // place for this too.
 var systemToken = syscap.NewSystemToken("a test writing across tenants")
 
-// SystemToken is that capability, for a test of something the application hands
-// one to: a module's control-plane routes take api.SystemToken(), and a job
-// that has to cross tenants takes it in Module.Routes, so a test of either has
-// to be able to stand where the kernel stands.
+// SystemToken is that capability, for a test that has to stand where a kernel
+// runner stands: one that opens a cross-tenant transaction directly, or runs the
+// sweep a module's declared SystemAccess credential opens in production. A
+// module's control-plane routes take that per-module credential, not this one.
 func SystemToken() tenancy.SystemToken { return systemToken }
 
 // System runs fn in a cross-tenant transaction, for a test that has to reach
@@ -516,21 +470,16 @@ func System(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[d
 }
 
 // Hold runs stmt on a session of its own, inside one transaction, and keeps
-// whatever lock that statement took until the caller releases it or the test
-// ends — whichever comes first. It answers once the lock is held, because the
-// statement that took it has already returned.
+// whatever lock that statement took until the caller releases it or the test ends.
+// It answers once the lock is held, because the statement that took it has already
+// returned.
 //
-// This is how a test slows a store on purpose. The alternative, a Go timer in the
-// test's own goroutine, waits for a sleep rather than for a queue, and the
-// behaviour worth testing — a statement that cannot get the lock it asked for
-// because somebody else is holding it — is exactly what a loaded machine does by
-// itself. A caller that wants a row rather than a table takes it by name, with
-// UPDATE … WHERE key = $1; one that wants every statement to wait locks the table
-// instead, since a plain read never queues behind a row lock.
-//
-// The transaction is rolled back rather than committed, so the holder leaves no
-// mark on what the test reads afterwards, and the sleep that holds the lock is
-// cut short when the test ends rather than running out its bound.
+// This is how a test slows a store on purpose: a Go timer waits for a sleep rather
+// than for a queue, and the behaviour worth testing — a statement that cannot get
+// the lock it asked for because somebody else holds it — is what a loaded machine
+// does by itself. A caller that wants a row takes it by name; one that wants every
+// statement to wait locks the table. The transaction is rolled back, so the holder
+// leaves no mark, and the sleep is cut short when the test ends.
 func Hold(t testing.TB, admin *sql.DB, hold time.Duration, stmt string, args ...any) (release func()) {
 	t.Helper()
 	ctx := context.WithoutCancel(t.Context())

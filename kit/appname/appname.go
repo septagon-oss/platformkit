@@ -1,56 +1,17 @@
-// Package appname is the one place a name two apps could share is formed, and
-// the type that says which app a name belongs to.
+// Package appname is the one place a name two apps could share is formed, and the
+// type that says which app a name belongs to.
 //
-// A server hosts many apps over one database and one broker (decision 0074), so
-// every name the kernel derives — where an event is published, which consumer
-// owns it, which job lock it takes, which cookie a browser sends back, which
-// rate-limit bucket a write spends, where a stored file's bytes sit — is a name
-// more than one app wants for itself. Tenant-scoped is not enough any more:
-// inside one app the tenant is the boundary, and between two apps it is only a
-// label, because tenant ids and module names are the same vocabulary on both
-// sides. A name alone is a convention, so each of these constructors comes with
-// a boundary that reads the app back (transport.AddressMismatch, delivery's
-// tenant check, the relay's claim, tenant lookup by host); the constructors here
-// make the boundary expressible.
+// A server hosts many apps over one database and one broker, so every name the
+// kernel derives — where an event is published, which consumer owns it, which job
+// lock it takes, which cookie a browser sends back, which rate-limit bucket a
+// write spends, where a stored file's bytes sit — is a name more than one app
+// wants for itself. Tenant-scoping is not enough between apps: tenant ids and
+// module names are the same vocabulary on both sides. A name alone is a
+// convention, so each constructor comes with the boundary that reads the app back.
 //
-// # The rule
-//
-// Every shared name is formed by a function in this package, from a validated
-// Name. A census test scans the tree for shared names formed
-// any other way and names the site it found, so a shared name cannot be spelled
-// inline in a caller — the same argument that puts an event's address in
-// transport.Subject and nowhere else.
-//
-// # The shape of the name
-//
-// The app segment is the client's slug, the one that names its directory in
-// clients/<slug>/ and its subjects on the broker: collect, academy, shelf. Parse
-// refuses anything a subject token, a consumer name, a cookie name and a path
-// segment could not all hold: lower-case alphanumerics joined with single
-// dashes, which is a DNS label's grammar because every one of those carriers is
-// a DNS label or maps onto one.
-//
-// # What stays shared, and why
-//
-// Four names are deliberately not app-scoped, each for a reason a reader can
-// check in one line:
-//
-//   - the PLATFORMKIT stream (kit/events/providers/nats/jetstream.go), because
-//     its subjects are app-scoped, so one stream carries many apps without one
-//     app ever filtering another's tokens; a stream per app would trade a shared
-//     name for a per-app limit an operator has to raise;
-//   - the dead-letter table, because every row carries a durable, and a durable
-//     carries the app, so the rows are already separated by the only column that
-//     queries them;
-//   - the composition migration lock and the migration owners
-//     (kit/db/migrate.go, kit/app/migrations.go), because they guard one schema
-//     that the apps share; scoping them would let two apps migrate it at once;
-//   - CSRF (kit/httpx/csrf.go), because it checks origins and holds no token, so
-//     there is no name for two apps to collide over.
-//
-// The process's telemetry service.name stays one name too: one process hosts
-// many apps, and the app belongs on each record as an attribute (see App), not
-// in the name of the process.
+// Every shared name is formed by a function here, from a validated Name, and a
+// census test names any site that spells one inline. The slug grammar, the names
+// that stay shared and the rollout windows are in README.md.
 package appname
 
 import (
@@ -200,39 +161,18 @@ func SubjectSpace() string { return Prefix + ".>" }
 
 // Durable names one subscription on a transport: <app>+<module>-<event>.
 //
-// Two rules shape it. A durable consumer name may not hold a dot (JetStream's
-// own rule) while the subject it filters is made of dots, so the event half is a
-// transliteration of the name and not the name — which is why renaming a durable
-// needs the migration that copies the handled ledger and rewrites the dead
-// letters with it, or a renamed durable sees every redelivered event as first.
+// A durable consumer name may not hold a dot while the subject it filters is made
+// of dots, so the event half is a transliteration — which is why renaming a durable
+// needs the migration that copies the handled ledger and rewrites the dead letters
+// with it, or a renamed durable sees every redelivered event as first.
 //
-// And the app half stays separable, because the durable is the one name that
-// says which app owns a consumer: it is the JetStream consumer name on the single
-// PLATFORMKIT stream, the deliver group every replica of that app joins, and half
-// the primary key of platformkit_handled and platformkit_dead_letters. Joining
-// with a dash would not survive the deployment this rule exists for: a dash is
-// legal inside an app slug ("acme-billing" parses), so app "acme" with module
-// "billing" and event "billing.plan.created" would answer to the same consumer as
-// app "acme-billing" with module "billing" and event "plan.created" — one
-// consumer, one queue group, and one app load-balancing another app's tenants'
-// events into its own handlers. The plus sign is the app's join because it is in
-// none of the three grammars an app name, a module name or an event name is written
-// in (kit/appname's slug is [a-z0-9-], kit/module's moduleName is [a-z0-9_],
-// transport's eventName adds only dots) and JetStream still accepts it in a consumer
-// name. One plus sign therefore ends the app, and the first dash after it ends the
-// module — a module name holds no dash either, so the two halves behind the app stay
-// as separable as they always were.
-//
-// The join behind the app is a dash rather than a second plus for one reason beyond
-// looks: it is the join this name carried before the app segment existed, so the
-// scoped durable is the unscoped one with "<app>+" in front of it. That is what
-// makes the move of the two ledgers expressible at all, because a row of
-// platformkit_handled holds a durable and nothing else — no module, no event name,
-// and for an event the purge has taken no outbox row left to ask — so the only
-// rename that can be written against the table is a prefix. It is not the reason the
-// move is absent: kit/appname/README.md, *Limits*, names that, and
-// TestADurableCarriesNoDot is the case that holds the prefix property whatever
-// eventually performs the move has to be able to rely on.
+// The app half stays separable because the durable is the name that says which app
+// owns a consumer. It joins with "+" because a dash is legal inside a slug: app
+// "acme" with module "billing" and event "billing.plan.created" would otherwise
+// answer to the same consumer as app "acme-billing" with event "plan.created", one
+// app load-balancing another app's tenants' events into its own handlers. One plus
+// ends the app and the first dash after it ends the module. README.md names the
+// row move this spelling exists to make possible.
 func Durable(app Name, module, event string) string {
 	return DurablePrefix(app) + module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
 }
