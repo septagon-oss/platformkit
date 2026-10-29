@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/push"
 	pushlog "github.com/septagon-oss/platformkit/kit/push/providers/log"
@@ -36,9 +37,10 @@ func TestARegisteredDeviceReceivesThePersonsPushNotice(t *testing.T) {
 		// answers that need even to test a channel that never reads one: these
 		// cases run the mailbox sender, which dials nothing.
 		pkit.Put[secrets.Secrets](w, secrets.Map(nil, nil))
+		pkit.Put[jobs.TenantLister](w, acmeOnly)
 		return module.Module{Name: "delivery_inputs"}, nil
 	}, pkit.Provides[contracts.RecipientLookup](), pkit.Provides[contracts.HostLookup](),
-		pkit.Provides[push.Adapters](), pkit.Provides[secrets.Secrets]())
+		pkit.Provides[push.Adapters](), pkit.Provides[secrets.Secrets](), pkit.Provides[jobs.TenantLister]())
 	var svc contracts.Service
 	var manifest module.Module
 	reader := pkit.NewModule("delivery_reader", func(w *pkit.Wiring) (module.Module, error) {

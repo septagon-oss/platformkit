@@ -245,11 +245,38 @@ func sign(msg *mail.Msg, s *contracts.Sender) error {
 // server's verdict.
 func (s *Sender) failed(what string, err error) error {
 	var send *mail.SendError
-	if !errors.Is(err, context.DeadlineExceeded) && errors.As(err, &send) && !send.IsTemp() &&
+	if !errors.As(err, &send) {
+		// No SendError at all means the failure happened on the way to the SMTP
+		// transaction: the dial, EHLO, STARTTLS or AUTH. go-mail attaches a
+		// SendError to the message the moment a message-level step fails, so an
+		// error it built without one never carried a byte of the message, and the
+		// relay provably has nothing. That is what lets a mail whose server is simply
+		// down come back as ErrNotAccepted and be retried on the module's ladder
+		// within a minute, rather than as an unknown that waits a day.
+		return fmt.Errorf("notification: send by %s: %w: %w", what, contracts.ErrNotAccepted, err)
+	}
+	if ambiguous(send.Reason) {
+		// This process stopped being able to tell: the write broke mid-body, the
+		// connection check failed after the body was offered, or go-mail itself
+		// cannot say which of the two happened. The relay may have taken the message.
+		return fmt.Errorf("notification: send by %s: %w: %w", what, contracts.ErrUncertainSend, err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !send.IsTemp() &&
 		send.ErrorCode() >= 500 && send.ErrorCode() < 600 {
 		return contracts.Permanent(fmt.Sprintf("%s refused the message: %s", what, send))
 	}
-	return fmt.Errorf("notification: send by %s: %w", what, err)
+	// The relay answered, and what it said was "not this", before or instead of
+	// taking the body. Nothing was sent, so another attempt is a question and not a
+	// duplicate.
+	return fmt.Errorf("notification: send by %s: %w: %w", what, contracts.ErrNotAccepted, err)
+}
+
+// ambiguous names the four go-mail reasons that say this process lost the answer
+// rather than that a relay gave one: everything else in its list is a step the
+// message did not get past, which is knowable.
+func ambiguous(reason mail.SendErrReason) bool {
+	return reason == mail.ErrWriteContent || reason == mail.ErrConnCheck ||
+		reason == mail.ErrSMTPDataClose || reason == mail.ErrAmbiguous
 }
 
 func (s *Sender) port() int {
