@@ -32,8 +32,9 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
-		Cache:      cache.Memory("pkit"),
-		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
+		SystemAccess: declaredCrossTenantAccess(),
+		Cache:        cache.Memory("pkit"),
+		PublicHost:   host, Tenants: caller{}, Conn: app, Authorize: caller{},
 		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}, true, nil

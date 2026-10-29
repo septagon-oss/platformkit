@@ -65,11 +65,21 @@ func (v *validation) module(m Module) {
 	v.roles(m)
 	v.events(m)
 	v.tours(m)
+	v.systemAccess(m)
 }
 
 func (v *validation) tours(m Module) {
 	for _, problem := range tourProblems(m) {
 		v.add("%s", problem)
+	}
+}
+
+// systemAccess refuses a declaration that could not be read as an audit line.
+// Whether the declared token was ever taken is a different question and lives in
+// kit/app, which is the one place a module's Routes has finished running.
+func (v *validation) systemAccess(m Module) {
+	if bad := m.SystemAccess.fault(); bad != "" {
+		v.add("module %q: %s", m.Name, bad)
 	}
 }
 
@@ -213,7 +223,11 @@ func (v *validation) moduleReferences(m Module, emitted map[string]bool) {
 		switch {
 		case s.Handler == nil:
 			v.add("module %q: subscription to %q has no handler", m.Name, s.Name)
-		case s.Module != m.Name:
+		case s.Module != "" && s.Module != m.Name:
+			// An empty Module is the manifest leaving the answer to the kernel:
+			// Expand names it before Validate runs (see attributedTo). Only a name
+			// that disagrees is a fault, which is the guard the fill exists not to
+			// trade away.
 			v.add("module %q: subscription to %q is attributed to module %q", m.Name, s.Name, s.Module)
 		case m.SubscribeAll && s.Name == "":
 			// Unexpanded, which is a composition nobody ran through

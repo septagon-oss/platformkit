@@ -336,6 +336,10 @@ func (a *App) routeOptions(store cache.Cache) httpx.Options {
 		// here, because the routes say it and the kernel records it; boot prints
 		// the list below.
 		Installation: a.opts.Installation.Host,
+		// Every cross-tenant need the manifests declare, name and sentence together:
+		// the door that hands out a credential refuses a module that never said it
+		// crosses tenants, and this is the one place the whole module list is read.
+		SystemAccess: systemAccess(a.mods),
 		WriteLimiter: limit.PostgresFor("", a.held.read),
 		// The memory beside the counter: the same connection the limiter is counted
 		// on, the same detached write, the same reason — a retried write arrives at
@@ -367,4 +371,21 @@ func (a *App) validateRoutes(api *httpx.API) error {
 		return err
 	}
 	return a.validateTours()
+}
+
+// systemAccess is every module's declared cross-tenant need as its manifest
+// states it, keyed by the module. A module with nothing to declare contributes
+// nothing, which is what makes an undeclared credential distinguishable here.
+func systemAccess(mods []module.Module) map[string]string {
+	var out map[string]string
+	for _, m := range mods {
+		if !m.SystemAccess.Declared() {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[m.Name] = m.SystemAccess.Reason
+	}
+	return out
 }
