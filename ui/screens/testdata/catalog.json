@@ -813,8 +813,7 @@
         ],
         "summary": {
           "trendField": ""
-        },
-        "savable": null
+        }
       },
       "screen": "/app/note/notes",
       "immutable": [
@@ -1575,8 +1574,7 @@
         "commands": [],
         "summary": {
           "trendField": ""
-        },
-        "savable": null
+        }
       },
       "screen": "/app/note/notes",
       "writable": false
@@ -2037,8 +2035,7 @@
         "commands": [],
         "summary": {
           "trendField": ""
-        },
-        "savable": null
+        }
       },
       "screen": "/app/note/notes",
       "writable": true,
