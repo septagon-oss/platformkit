@@ -195,8 +195,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 // no query and is safe to call twice.
 func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	if deps.Storage == nil {
-		// A wiring mistake fails where it is written rather than as a nil
-		// dereference on the first upload.
+		// Storage is required before any route can accept an upload.
 		return nil, module.Module{}, errors.New("file.Module: Deps.Storage is required; wire file.Local(dir) to keep the bytes on disk")
 	}
 	if len(deps.Retention) > 0 && deps.Tenants == nil {
