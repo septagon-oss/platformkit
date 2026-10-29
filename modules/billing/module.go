@@ -148,6 +148,10 @@ func New(deps Deps) (httpx.Entitler, module.Module) {
 		// somebody to is the consuming module's business, and this module has no
 		// opinion about anybody else's events.
 		Subscriptions: nil,
+		// The catalogue of plans is shared, so the question "is anybody still
+		// billed for this plan" is asked across every tenant at once.
+		// See docs/adr/0006.
+		SystemAccess: module.SystemAccess{Reason: "read every tenant's subscription before a plan is removed"},
 		Routes: func(s httpx.Surfaces) {
 			// The tenant's one subscription: a read, and no PUT — it is moved
 			// by the two commands beside it, and a PUT would be a customer

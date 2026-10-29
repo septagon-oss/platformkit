@@ -79,6 +79,15 @@ type API struct {
 	refusals []string
 	homes    map[Surface]string
 	known    map[string]bool
+	// declaredAccess is the cross-tenant need of each module that has one, by
+	// module name, as the composition stated it from the manifests; systemTokens
+	// is the credential minted for a module and tookAccess marks the modules that
+	// took theirs. All three are written only while Routes runs, beside the mounts
+	// and refusals above them, and are what make a token name its module in the
+	// audit trail rather than name nothing. See systemTokenFor and docs/adr/0006.
+	declaredAccess map[string]string
+	systemTokens   map[string]tenancy.SystemToken
+	tookAccess     map[string]bool
 	// addresses are the protocol addresses modules declared with Router.At, and
 	// frozen says the mount gate has read the table. Both are written only while
 	// Routes runs and read under the same mutex beside them. The freeze is what
@@ -124,6 +133,19 @@ func New(cfg Options) (*API, *chi.Mux) {
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	// The declared cross-tenant needs arrive as the composition states them, from
+	// the manifests. Nothing here guesses at one: a module that crosses tenants
+	// without saying so is refused below, at the door it tried to walk through.
+	// An entry whose reason is empty says nothing, so it is not kept — the module
+	// meets the refusal for an undeclared take rather than a weaker claim.
+	for module, reason := range cfg.SystemAccess {
+		if module != "" && reason != "" {
+			if a.declaredAccess == nil {
+				a.declaredAccess = map[string]string{}
+			}
+			a.declaredAccess[module] = reason
+		}
 	}
 	// A media type the composition cannot name is a refusal, not a guess: an
 	// entry of the wrong shape registers nothing, and a protocol whose clients
@@ -217,20 +239,20 @@ func (a *API) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	a.fail(w, r, http.StatusMethodNotAllowed, "this address does not accept "+r.Method+" requests")
 }
 
-// SystemToken is the capability that opens a cross-tenant transaction, handed
-// to a module at the one moment it is being wired: Module.Routes is given this
-// API, and a module that registers a control-plane route takes the token there.
+// SystemToken is the capability an in-process caller uses to reach a route that
+// needs a principal where no HTTP request carries one.
 //
-// It is a method rather than something kit/internal/syscap would mint for
-// anybody, because the point is that the set of modules holding one is short and
-// visible. `grep -rn 'SystemToken()' modules/` is that list, and there is no
-// other door: nothing outside kit/ can construct or implement a token, so a
-// module that wants to cross tenants has to write this call where a reviewer
-// reading the manifest will see it. See docs/adr/0006.
-//
-// A route that holds one still runs inside its own tenant's transaction, so it
-// opens the system transaction on a detached context (db.Detached) — two
-// transactions, and the control-plane one commits on its own.
+// Deprecated: declare module.Module.SystemAccess in the manifest and take the
+// credential from Surfaces.SystemToken or Router.SystemToken, which mint one per
+// module with that module's own reason. This value belongs to the composition and
+// to no module, so the audit trail of a transaction opened with it says "a
+// module's control-plane routes" and cannot say which module — the fact the
+// declaration exists to state. No production code in this repository takes it:
+// the kernel's own runners mint where they run (kit/health's probes, kit/events'
+// relay, kit/jobs, kit/app's transactions) and host resolution uses API.token. A
+// test that registers routes on a hand-built API does take it, because an API
+// built without declarations answers nil at the per-module door. It stays as the
+// door a composition outside this repository had, until the next major.
 func (a *API) SystemToken() tenancy.SystemToken { return a.system }
 
 // Cache is the installation's one shared store — the same adapter host
