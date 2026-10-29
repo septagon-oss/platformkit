@@ -4,7 +4,7 @@
       "author": "platform worker, unreviewed",
       "date": "2026-10-26",
       "inputHash": "sha256:d5a0cf93e34ee62c999cb7bb885177396967b45556183347a728083bc60ea72a",
-      "expectedHash": "sha256:09833dc25a67cf7d321f6d5f98fb16f5ddfa40d97650efa22ff844f8cfa94359"
+      "expectedHash": "sha256:a3cd70ea9e50cf106e02e3a212e3c30b85b445de304eb31b31ae526ae03571ad"
     },
     "input": {
       "hints": {},
@@ -237,12 +237,16 @@
                 "kind": "bool",
                 "values": [
                   {
+                    "group": "",
+                    "noPreference": false,
                     "value": "true",
                     "label": "Yes",
                     "tone": "neutral",
                     "done": false
                   },
                   {
+                    "group": "",
+                    "noPreference": false,
                     "value": "false",
                     "label": "No",
                     "tone": "neutral",
