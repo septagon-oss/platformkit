@@ -62,6 +62,24 @@ change the listening address and port — an address that names no host, such as
 sign-in page for whatever else is on that network, which is what you want only when
 you meant it.
 
+To inspect an existing deployment before starting it, run
+`go run github.com/septagon-oss/platformkit/apps/platformkit@main diagnose --config config.yaml`.
+The command prints JSON with a status and safe next step for each check; network
+checks remain `not_checked` unless `--probe` is supplied. The probe can briefly
+bind and close `server.addr`, connect to PostgreSQL, and read migration history in
+a read-only transaction. It never migrates or prints configuration values, and a
+successful database connection does not certify the application as
+production-ready. Pass `--data <directory>` to inspect `start`'s local
+`postgres/PG_VERSION` marker; the command preserves the cluster and reports a
+missing marker separately from a matching version.
+
+**Reused** — `diagnose` uses `kit/config.Load`, the `pkit` reference composition,
+and `kit/app.MigrationSources` so its inputs match `run` and `migrate`.
+**Added** — a bounded JSON operator report and read-only migration history comparison
+fill the gap between startup refusals and the process-level `/ready` probe.
+**Made reusable** — `kit/db.InspectMigrations` lets other command paths inspect the
+same migration ledger without acquiring the migration lock or changing the schema.
+
 After signing in, explore the administration screens and the
 [component gallery](http://platformkit.localhost:8080/app/admin/_gallery).
 Product applications configure [tenant storybooks](modules/admin/README.md) to
