@@ -2,24 +2,21 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -68,7 +65,7 @@ func diagnose(args []string) error {
 		providerObservation(cfg),
 		observation{ID: "runtime-version", Status: "ready", Operation: "read runtime version", Target: "PlatformKit process", Observed: runtime.Version(), Next: "No compatibility matrix is defined by this command."},
 	)
-	report.Checks = append(report.Checks, portObservation(ctx, cfg.Server.Addr, *probe))
+	report.Checks = append(report.Checks, portObservation(ctx, cfg.Server.Addr, *probe, startDeps{}))
 	report.Checks = append(report.Checks, embeddedClusterObservation(*data))
 	if !*probe {
 		report.Checks = append(report.Checks,
@@ -112,9 +109,25 @@ func embeddedClusterObservation(data string) observation {
 	}
 	found := strings.TrimSpace(string(content))
 	if !databaseVersionMatches(found) {
-		return observation{ID: "embedded-cluster-version", Status: "incompatible", Operation: "compare embedded PostgreSQL major version", Target: marker, Observed: "cluster version " + found + " does not match this binary's PostgreSQL " + databaseMajor(), Next: "Preserve this cluster and select a compatible supported binary or an explicit backup and migration procedure."}
+		observed := "cluster version marker does not match this binary's PostgreSQL " + databaseMajor()
+		if isMajorVersionMarker(found) {
+			observed = "cluster version " + found + " does not match this binary's PostgreSQL " + databaseMajor()
+		}
+		return observation{ID: "embedded-cluster-version", Status: "incompatible", Operation: "compare embedded PostgreSQL major version", Target: marker, Observed: observed, Next: "Preserve this cluster and select a compatible supported binary or an explicit backup and migration procedure."}
 	}
 	return observation{ID: "embedded-cluster-version", Status: "ready", Operation: "compare embedded PostgreSQL major version", Target: marker, Observed: "cluster major version matches this binary", Next: "No version action needed."}
+}
+
+func isMajorVersionMarker(value string) bool {
+	if len(value) == 0 || len(value) > 2 {
+		return false
+	}
+	for _, digit := range value {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func configFailure(err error) (string, string, string, string) {
@@ -157,11 +170,14 @@ func defaultName(value, fallback string) string {
 	return value
 }
 
-func portObservation(ctx context.Context, address string, probe bool) observation {
+func portObservation(ctx context.Context, address string, probe bool, deps startDeps) observation {
 	if !probe {
 		return observation{ID: "port", Status: "not_checked", Operation: "bind and close configured server address", Target: "server.addr", Observed: "network probe was not requested", Next: "Rerun with --probe to check whether the address can be bound now."}
 	}
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", address)
+	if err := ctx.Err(); err != nil {
+		return observation{ID: "port", Status: "unreachable", Operation: "bind configured server address", Target: "server.addr", Observed: "address could not be checked before the probe deadline", Next: "Rerun the diagnostic when the process has capacity."}
+	}
+	listener, err := deps.withDefaults().listen("tcp", address)
 	if err != nil {
 		return observation{ID: "port", Status: "unreachable", Operation: "bind configured server address", Target: "server.addr", Observed: "address could not be bound", Next: "Choose an available permitted address and port."}
 	}
@@ -170,12 +186,12 @@ func portObservation(ctx context.Context, address string, probe bool) observatio
 }
 
 func databaseObservation(ctx context.Context, url string) (string, string) {
-	pool, err := sql.Open("pgx", url)
+	conn, err := db.Open(ctx, url)
 	if err != nil {
-		return "unsupported", "database connection settings are not supported"
+		return "unreachable", "database did not answer before the probe deadline"
 	}
-	defer pool.Close()
-	if err := pool.PingContext(ctx); err != nil {
+	defer conn.Close()
+	if err := health.DatabaseCheck(conn).Check(ctx); err != nil {
 		return "unreachable", "database did not answer before the probe deadline"
 	}
 	return "ready", "database connectivity was confirmed; application readiness is not implied"

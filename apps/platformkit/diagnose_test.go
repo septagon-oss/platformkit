@@ -74,7 +74,7 @@ func TestPortProbeClosesItsListener(t *testing.T) {
 	if err := reserved.Close(); err != nil {
 		t.Fatal(err)
 	}
-	got := portObservation(t.Context(), address, true)
+	got := portObservation(t.Context(), address, true, startDeps{})
 	if got.Status != "ready" {
 		t.Fatalf("port observation=%+v, want ready", got)
 	}
@@ -91,7 +91,7 @@ func TestPortProbeReportsOccupiedAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	got := portObservation(t.Context(), listener.Addr().String(), true)
+	got := portObservation(t.Context(), listener.Addr().String(), true, startDeps{})
 	if got.Status != "unreachable" || !strings.Contains(got.Next, "available") {
 		t.Fatalf("occupied port observation=%+v", got)
 	}

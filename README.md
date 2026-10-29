@@ -67,11 +67,11 @@ To inspect an existing deployment before starting it, run
 The command prints JSON with a status and safe next step for each check; network
 checks remain `not_checked` unless `--probe` is supplied. The probe can briefly
 bind and close `server.addr`, connect to PostgreSQL, and read migration history in
-a read-only transaction. It never migrates or prints configuration values, and a
-successful database connection does not certify the application as
-production-ready. Pass `--data <directory>` to inspect `start`'s local
-`postgres/PG_VERSION` marker; the command preserves the cluster and reports a
-missing marker separately from a matching version.
+a read-only transaction. It never migrates or prints credentials or secret values;
+it does report configured provider selections. A successful database connection
+does not certify the application as production-ready. Pass `--data <directory>`
+to inspect `start`'s local `postgres/PG_VERSION` marker; the command preserves
+the cluster and reports a missing marker separately from a matching version.
 
 **Reused** — `diagnose` uses `kit/config.Load`, the `pkit` reference composition,
 and `kit/app.MigrationSources` so its inputs match `run` and `migrate`.
