@@ -17,6 +17,8 @@ func PolicyText(text Text) Text {
 	}
 	return func(key, fallback string) string {
 		switch key {
+		case "present.form.details":
+			key = "forms.step.details"
 		case "present.missing":
 			key = "screens.missing"
 		case "present.true":

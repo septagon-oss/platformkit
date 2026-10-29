@@ -2,6 +2,7 @@ package resource
 
 import (
 	"maps"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 )
@@ -60,16 +61,15 @@ func (w Words) Section(sec entity.EntitySection) entity.EntitySection {
 }
 
 // say is the fallback rule in one place, so two call sites cannot write it
-// differently: the translation, unless it comes back empty, in which case the
-// declared word. `xtext` cannot answer empty (its loader refuses a copy whose
-// translation is blank), so this guard is against a foreign Formatter, and the
-// cost of not having it is a label that reads as nothing.
+// differently: the translation, unless a person could read no words in it, in
+// which case the declared word. `xtext` refuses a blank or all-space copy when
+// it loads, so this guard is against a foreign Formatter, and the cost of not
+// having it is copy that reads as nothing wherever a label decides a page.
 func (w Words) say(aspect, declared string) string {
-	if declared == "" || w.text == nil {
-		return declared
-	}
-	if out := w.text(w.Key(aspect), declared); out != "" {
-		return out
+	if declared != "" && w.text != nil {
+		if out := w.text(w.Key(aspect), declared); strings.TrimSpace(out) != "" {
+			return out
+		}
 	}
 	return declared
 }
@@ -79,6 +79,7 @@ func (w Words) say(aspect, declared string) string {
 // always copied so callers may safely narrow them to authorized commands.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	out := p
+	out.Forms = w.forms(p.Forms)
 	out.Deck = p.Deck.Clone()
 	if out.Deck != nil {
 		for key, d := range out.Deck.Directions {

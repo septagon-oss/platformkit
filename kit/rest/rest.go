@@ -53,6 +53,9 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// input is the typed read-only query declared by ReadForm; nil for every
+	// ordinary CRUD Spec, which is what every other field on this struct reads.
+	input *readInputSpec
 	// Choices supplies finite field declarations copied into this Spec schema.
 	Choices *entity.ChoiceFields
 	// Source replaces storage reads with a service's scope and projection.
@@ -230,6 +233,9 @@ func (s Spec[T]) Event(verb string) string {
 // Events are the three names this Spec publishes, so a manifest can name them
 // without spelling them.
 func (s Spec[T]) Events() []string {
+	if s.input != nil {
+		return nil
+	}
 	return []string{s.Event(Created), s.Event(Updated), s.Event(Deleted)}
 }
 
@@ -238,6 +244,9 @@ func (s Spec[T]) Events() []string {
 // the entity type and nothing else. A module that mounts a Spec puts this in
 // its manifest rather than writing the three types out beside the three names.
 func (s Spec[T]) Declared() []events.Declared {
+	if s.input != nil {
+		return nil
+	}
 	return []events.Declared{
 		events.Declare[T](s.Event(Created)),
 		events.Declare[T](s.Event(Updated)),
@@ -248,5 +257,8 @@ func (s Spec[T]) Declared() []events.Declared {
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
 func (s Spec[T]) Schema() crud.Schema {
+	if s.input != nil {
+		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.input.fields}
+	}
 	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.choiceFields()}
 }

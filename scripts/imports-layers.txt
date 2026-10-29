@@ -1,0 +1,50 @@
+# Every module of this repository, in one of the platform's four layers. The
+# order itself lives in the gate — tools/importgate/layers.go — so a layer name
+# means the same thing here, in the catalogue and in a product repository. One
+# module per row: its full owner path and its layer. The reason a module sits
+# where it sits is that order's placement rule read against the measured graph in
+# docs/MODULE-GRAPH.md, which a reviewer reads apart from this file.
+#
+# platform: needs no account, no role and no person; it works over a tenant id and
+# values. identity: owns the account, the tenant record, a person's identity, or
+# the channel the platform reaches a person through. generic: a reusable domain
+# capability composed over those two, with no client name, sector rule, price or
+# specialist fact. product: the module's reason is an application-facing surface.
+#
+# A production import may not climb this order, and no row here admits one: the
+# cure is a port the lower module declares, or the layer the module's real
+# dependencies already show. A pair that imports each other in production needs a
+# justification row below; a row for a pair that is not reciprocal is refused, so
+# this file can only shrink like the contract baseline beside it. One run judges one
+# build context, the one ./scripts/check_imports.sh pins, and a row read from a
+# dependency's own file is that repository's verdict, announced here and judged
+# there.
+#
+# See tools/importgate/README.md.
+github.com/septagon-oss/platformkit/modules/audit platform
+github.com/septagon-oss/platformkit/modules/content platform
+github.com/septagon-oss/platformkit/modules/file platform
+github.com/septagon-oss/platformkit/modules/history platform
+github.com/septagon-oss/platformkit/modules/picture platform
+github.com/septagon-oss/platformkit/modules/site platform
+github.com/septagon-oss/platformkit/modules/translation platform
+github.com/septagon-oss/platformkit/modules/webhook platform
+github.com/septagon-oss/platformkit/modules/auth identity
+github.com/septagon-oss/platformkit/modules/notification identity
+github.com/septagon-oss/platformkit/modules/tenant identity
+github.com/septagon-oss/platformkit/modules/user identity
+github.com/septagon-oss/platformkit/modules/billing generic
+github.com/septagon-oss/platformkit/modules/change generic
+github.com/septagon-oss/platformkit/modules/decide generic
+github.com/septagon-oss/platformkit/modules/saved generic
+github.com/septagon-oss/platformkit/modules/task generic
+github.com/septagon-oss/platformkit/modules/admin product
+github.com/septagon-oss/platformkit/modules/scim product
+github.com/septagon-oss/platformkit/modules/subject product
+github.com/septagon-oss/platformkit/modules/web product
+# Reciprocal production pairs: one row per pair, with the reason neither direction
+# moves today. A row records a fact about composition; it never admits an upward
+# import, which no configuration of this gate accepts.
+github.com/septagon-oss/platformkit/modules/auth <-> github.com/septagon-oss/platformkit/modules/notification Auth's contract types name the channel a verification reaches a person by, and Notification's composition names Auth's actor and token values to address a delivery; neither direction moves without reshaping a published surface.
+github.com/septagon-oss/platformkit/modules/auth <-> github.com/septagon-oss/platformkit/modules/user The Granting construction: Auth's root package provides usercontracts.Granting over its own role reader, and User's provider reads Auth's contracts for its capability adapters. pkit's typed Provides and Needs order the two providers, so the pair is composition rather than an import cycle.
+github.com/septagon-oss/platformkit/modules/tenant <-> github.com/septagon-oss/platformkit/modules/user Tenant's service reads the account behind a membership, and User's provider reads Tenant's contract to scope the tenants a caller holds.

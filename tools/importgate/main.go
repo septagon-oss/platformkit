@@ -26,7 +26,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, goCommand
 	flags := flag.NewFlagSet("importgate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	measure := flags.Bool("edges", false, "report cross-module direct edges as JSON")
+	modules := flags.Bool("modules", false, "report the aggregate module graph and its layers as JSON")
 	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *measure && *modules {
+		fmt.Fprintln(stderr, "imports: --edges and --modules report different graphs; name one")
 		return 2
 	}
 	root := "."
@@ -57,14 +62,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, goCommand
 		fmt.Fprintln(stderr, "imports:", err)
 		return 2
 	}
-	decision := decide(g, grants, baseline)
-	if _, err := io.WriteString(stderr, notices(grants, decision.used)+baselineNotices(baseline, decision.carried)+diagnostics(decision.refused)); err != nil {
+	layers, err := readLayers(g)
+	if err != nil {
+		fmt.Fprintln(stderr, "imports:", err)
 		return 2
 	}
-	if *measure {
+	decision := decide(g, grants, baseline, layers)
+	if _, err := io.WriteString(stderr, notices(grants, decision.used)+baselineNotices(baseline, decision.carried)+layers.notices(decision.spent, decision.justified)+diagnostics(decision.refused)); err != nil {
+		return 2
+	}
+	if *measure || *modules {
 		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(edgeReport(g)); err != nil {
+		aggregate := any(edgeReport(g))
+		if *modules {
+			aggregate = moduleGraph(g, layers, decision.justified)
+		}
+		if err := encoder.Encode(aggregate); err != nil {
 			fmt.Fprintln(stderr, "imports: write report:", err)
 			return 2
 		}

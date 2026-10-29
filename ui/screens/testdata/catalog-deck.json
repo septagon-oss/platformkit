@@ -393,6 +393,28 @@
           "summary": []
         },
         "layout": {
+          "forms": {
+            "updateForm": {
+              "layout": "steps",
+              "steps": [
+                {
+                  "key": "unsectioned",
+                  "section": "",
+                  "label": "Details",
+                  "fields": [
+                    "title",
+                    "body",
+                    "rank",
+                    "pinned",
+                    "tags"
+                  ],
+                  "primaryLabel": "Save the note",
+                  "answerField": "",
+                  "emptyLabel": ""
+                }
+              ]
+            }
+          },
           "columns": [
             "title",
             "createdAt",

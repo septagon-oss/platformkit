@@ -132,6 +132,14 @@ type Resource struct {
 	// See rest.Singleton.
 	Singleton bool
 
+	// InputRun answers a typed query whose inputs are the generated form and
+	// whose result has no CRUD routes: the three fields below are what its pages
+	// are built from, and Registration guards the closure with Read, as it guards
+	// every other read. A resource that names none of them is an ordinary CRUD
+	// resource, which is nearly every one.
+	InputRun    func(ctx context.Context, values map[string]any) (any, error) `json:"-"`
+	InputOutput []entity.Field
+	InputList   bool
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
 	Count func(ctx context.Context) (int64, error)
@@ -343,10 +351,12 @@ func (a *API) RegisterResource(r Resource) {
 }
 
 // guard returns r with its closures behind the two declarations it
-// carries: the read guard for count/list/get, the write guard for the three
-// writes. The same pairing the routes declare, read through the same methods a
-// page and the catalogue ask, so a resource cannot guard its routes one way and
-// its closures another.
+// carries: the read guard for the typed query and for count/list/get, the write
+// guard for the three writes. The same pairing the routes declare, read through
+// the same methods a page and the catalogue ask, so a resource cannot guard its
+// routes one way and its closures another. The two narrowed counts ask what the
+// total asks, wrapped here for Count's own reason: a Resource built anywhere else
+// is unguarded until it is registered.
 //
 // The pair is computed here and stored in the value's own ReadBy and WriteBy,
 // rather than recomputed by every later reader of Read and Write and the two
@@ -381,9 +391,6 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
-	// The two narrowed counts ask the same question the total asks, and are
-	// wrapped here rather than at their caller for the same reason Count is: a
-	// Resource built anywhere else is unguarded until it is registered.
 	if narrowed := r.CountFiltered; narrowed != nil {
 		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
@@ -406,6 +413,14 @@ func (a *API) guard(r Resource) Resource {
 				return nil, err
 			}
 			return get(ctx, id)
+		}
+	}
+	if input := r.InputRun; input != nil {
+		r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return input(ctx, values)
 		}
 	}
 	if create != nil {

@@ -461,6 +461,138 @@
     ],
     "translation": "Merge by hand"
   },
+  "forms.richtext.bold.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Bold (%[1]s)"
+  },
+  "forms.richtext.italic.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Italic (%[1]s)"
+  },
+  "forms.richtext.link.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Link (%[1]s)"
+  },
+  "forms.richtext.quote.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Quote (%[1]s)"
+  },
+  "forms.richtext.code.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Inline code (%[1]s)"
+  },
+  "forms.richtext.undo.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Undo (%[1]s)"
+  },
+  "forms.richtext.redo.name": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Redo (%[1]s)"
+  },
+  "forms.field.choose": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Choose a %[1]s"
+  },
+  "forms.field.note.immutable": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Changed by a command of its own, not by this form."
+  },
+  "forms.field.note.entityPicker": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "The identifier of the related record. There is no picker for it yet."
+  },
+  "forms.field.note.list": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Comma separated."
+  },
+  "forms.form.fieldError": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "%[1]s: %[2]s"
+  },
+  "forms.form.fieldsToCorrect": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Fields to correct"
+  },
+  "forms.form.cancel": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Cancel"
+  },
+  "forms.form.submit": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Save"
+  },
+  "forms.form.failureTitle": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "That could not be saved"
+  },
+  "forms.step.progress": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Step %d of %d"
+  },
+  "forms.step.back": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Back"
+  },
+  "forms.step.cancel": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Cancel"
+  },
+  "forms.step.correct": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Check your answers"
+  },
+  "forms.step.details": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Details"
+  },
+  "forms.step.restart": {
+    "references": [
+      "ui/screens/form_steps.go"
+    ],
+    "translation": "Start again"
+  },
   "forms.choice.order": {
     "references": [
       "ui/forms/choice.go"
