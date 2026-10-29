@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/appname"
@@ -39,12 +40,12 @@ func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.S
 	if in.Source != "manual" && in.Source != "automatic" || in.TourID == "" || in.Edition == 0 || in.ContractHash == "" {
 		return nil, crud.ErrInvalid
 	}
+	at := atTime(s.Clock)
 	if in.Source == "automatic" {
-		if err := lockOffer(ctx, tx, s.App, person); err != nil {
+		if err := lockOffer(ctx, tx, s.App, person, at); err != nil {
 			return nil, err
 		}
 	}
-	at := s.Clock().UTC()
 	steps := slices.Clone(in.StepIDs)
 	if len(steps) == 0 {
 		return nil, crud.ErrInvalid
@@ -59,8 +60,15 @@ func (s *Service) Start(ctx context.Context, tx db.Tx[db.Tenant], in contracts.S
 	if err := crud.Create(ctx, tx, run); err != nil {
 		return nil, err
 	}
+	if in.Source == "automatic" {
+		if err := reserveOffer(ctx, tx, run, at); err != nil {
+			return nil, err
+		}
+	}
 	return run, nil
 }
+
+func atTime(clock contracts.Clock) time.Time { return clock().UTC() }
 
 func (s *Service) Get(ctx context.Context, tx db.Tx[db.Tenant], person, id uuid.UUID) (*contracts.Run, error) {
 	actor, err := s.actor(ctx, tx, "", "read")
@@ -151,7 +159,38 @@ func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], run *contrac
 	return nil
 }
 
-func lockOffer(ctx context.Context, tx db.Tx[db.Tenant], app appname.Name, person uuid.UUID) error {
+func lockOffer(ctx context.Context, tx db.Tx[db.Tenant], app appname.Name, person uuid.UUID, at time.Time) error {
 	name := fmt.Sprintf("tours.offer/%s/%s/%s", app, db.TenantOf(tx).ID, person)
-	return tx.DB().WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", name).Error
+	dbtx := tx.DB().WithContext(ctx)
+	if err := dbtx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", name).Error; err != nil {
+		return err
+	}
+	tenantID := db.TenantOf(tx).ID
+	if err := dbtx.Exec(`INSERT INTO tours_person_frequency (tenant_id, app, person_id)
+		VALUES (?, ?, ?) ON CONFLICT (tenant_id, app, person_id) DO NOTHING`, tenantID, app.String(), person).Error; err != nil {
+		return err
+	}
+	if err := dbtx.Exec(`UPDATE tours_reservations SET released_at = ?, revision = revision + 1
+		WHERE tenant_id = ? AND app = ? AND person_id = ? AND consumed_at IS NULL
+		AND released_at IS NULL AND expires_at <= ?`, at, tenantID, app.String(), person, at).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func reserveOffer(ctx context.Context, tx db.Tx[db.Tenant], run *contracts.Run, at time.Time) error {
+	tenantID := db.TenantOf(tx).ID
+	result := tx.DB().WithContext(ctx).Exec(`INSERT INTO tours_reservations
+		(tenant_id, app, person_id, tour_id, edition, run_id, reserved_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (tenant_id, app, person_id)
+		WHERE consumed_at IS NULL AND released_at IS NULL DO NOTHING`,
+		tenantID, run.App, run.PersonID, run.TourID, run.Edition, run.ID, at, at.Add(2*time.Minute))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return crud.ErrConflict
+	}
+	return nil
 }

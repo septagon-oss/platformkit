@@ -4,9 +4,11 @@ package tours
 import (
 	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/tours/contracts"
+	"github.com/septagon-oss/platformkit/modules/tours/internal"
 )
 
 // Deps contains the current policy, UTC clock and app namespace used by runs.
@@ -19,7 +21,6 @@ type Deps struct {
 
 // New returns the manifest for the tour runtime and its typed event promises.
 func New(deps Deps) module.Module {
-	_ = deps.Service
 	return module.Module{
 		Name:       "tours",
 		Migrations: Migrations.Files,
@@ -33,5 +34,6 @@ func New(deps Deps) module.Module {
 			events.Declare[contracts.Event](contracts.EventCompleted),
 			events.Declare[contracts.Event](contracts.EventDismissed),
 		},
+		Routes: func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, deps.Service) },
 	}
 }

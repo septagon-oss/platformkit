@@ -7,9 +7,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 5018 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 2770 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 4644 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 5022 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 2771 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 4648 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 79 | filename prefix |
 | rows inside them | 123 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 122 / 1 / 152 / 99 | same walk |
@@ -21,7 +21,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 24 | push, first | asserts a golden or the published API set |
-| behaviour | 4314 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 4318 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 557 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 123 | nightly | `e2e/`: browser or device |
 <!-- END GENERATED -->
@@ -51,7 +51,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 2525 | 4632 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 2526 | 4636 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 91 | 170 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -123,7 +123,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
 | kit | 828 | 69 | 139 | 0 |
-| modules | 713 | 35 | 36 | 0 |
+| modules | 714 | 35 | 36 | 0 |
 | ui | 341 | 22 | 5 | 0 |
 | apps | 326 | 24 | 28 | 0 |
 | tools | 160 | 1 | 0 | 0 |
@@ -155,7 +155,7 @@ The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that 
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 <!-- BEGIN GENERATED: scripts/inventory_figures.py go-test-ceiling -->
-The `go_test` bucket declares a ceiling of 242208 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
+The `go_test` bucket declares a ceiling of 242316 lines in `loc-budget.json`; `make check-loc` refuses a branch's growth in it beyond what the branch prices in its own `build(budget):` commits since its merge base with `origin/main`.
 <!-- END GENERATED -->
 
 ## What CI re-checks, after the tiers
