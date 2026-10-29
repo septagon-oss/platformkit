@@ -24,7 +24,7 @@ func TestEveryKernelEventReachesTheTrail(t *testing.T) {
 	ctx := tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), uuid.New())
 
 	declared := []events.Declared{events.Declare[events.ReplayRecord](events.EventReplayed)}
-	for _, n := range module.KernelEvents {
+	for _, n := range module.KernelEventNames() {
 		declared = append(declared, events.Declared{Name: n})
 	}
 	mods := module.Expand([]module.Module{

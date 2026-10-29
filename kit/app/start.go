@@ -7,8 +7,23 @@ import (
 	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
+
+// withPublisher returns a handler that carries p as the composition's event door on the
+// request context, so a publish inside a served request is measured against this
+// composition's manifest wherever it happens. A composition with no catalog is served
+// unchanged: there is nothing to carry, and the installed catalogue answers as it does
+// without this wrapper.
+func withPublisher(p events.Publisher, h http.Handler) http.Handler {
+	if p == nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(events.WithPublisher(r.Context(), p)))
+	})
+}
 
 func (a *App) prepareRuntime(ctx context.Context) (*httpx.API, http.Handler, cache.Cache, error) {
 	// Validate dry registrations before opening deployment resources.
@@ -81,11 +96,18 @@ func (a *App) connectRuntime(ctx context.Context, api *httpx.API, build cache.Ca
 func (a *App) finishRuntime(ctx context.Context, api *httpx.API, conn *db.Conn, store cache.Cache, handler http.Handler) (*Runtime, error) {
 	var err error
 	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store,
-		declaredRelease: a.takeDeclaredRelease()}
+		catalog: a.catalog, declaredRelease: a.takeDeclaredRelease()}
 	if a.opts.Role == Worker {
 		// Worker routes are validated, but its serving surface contains only probes.
 		rt.handler = a.probes(api, conn)
 	}
+	// Every request this Runtime serves is measured against the manifest of the
+	// composition that serves it, the way every request already carries this
+	// composition's connection (kit/httpx.transaction): the door that resolves the
+	// fact is the one the composition owns, and a module's publish stays the package
+	// call it has always been. A handler that hands the request context to a
+	// goroutine hands the composition to it too.
+	rt.handler = withPublisher(rt.Publisher(), rt.handler)
 	if a.opts.Role != Web {
 		if rt.transport, err = a.transport(); err != nil {
 			// Close releases the declaration claim as well as opened resources.
