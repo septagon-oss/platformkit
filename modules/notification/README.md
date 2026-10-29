@@ -4,10 +4,13 @@
 optionally by mail. Rows are addressed to a person, so the two routes under
 `/api/v1/notification/notifications` are scoped by the principal rather than by
 a permission, and the manifest declares one permission — `sender:manage`, which
-guards the tenant's sender commands and no page — and no navigation entry; a
-subscription delivers the mail-marked rows through the composed
-`Mailer`. Without a mail host the rows are still recorded and the mails are
-logged, which is what a development machine wants.
+guards the tenant's sender commands and no page — and no navigation entry. A
+notice that asks for mail is answered twice: a subscription decides the mail and
+writes it as an intent, and a job sends it after that decision commits, so the
+socket a notice's mail opens is never inside a database transaction. Without a
+mail host the rows are still recorded and the owed mail closes `suppressed` on
+the delivery ledger with the reason a reader can act on, which is what a
+development machine wants.
 
 Compose it with `notification.Deps{Recipients, Senders, Providers, Mailer, Hosts,
 Secure}`: the mailer is `providers/gomail` — `gomail.New(gomail.Config{…})` over
@@ -43,27 +46,56 @@ answers into a ledger row this module writes — nil is `sent`, `contracts.ErrPe
 `failed` with its sentence, anything else rolls back and retries — and a provider wired for
 `in_app` or `email`, which the module carries itself, panics at composition.
 
-Mail leaves as the tenant that raised it. `SendMail` reads `notification_senders` in
-the worker's own transaction and hands the row to the carrier, which puts the tenant's
-name and address in the `From:` **header** and signs it with DKIM (RFC 6376) under the
-row's selector; the **envelope** sender stays `mail.from` — one address per
-binary, which `kit/config` accepts with a display name and the carrier strips for
-`MAIL FROM` and keeps in `From:`, because those two answer different questions. A
-verified sender whose key this deployment does
-not hold is never sent unsigned. What the relay answers decides the ledger: a 5xx is
-`contracts.ErrPermanent`, which writes `failed` with the relay's own sentence and
-acknowledges the event, and anything else writes no row, rolls back and is retried on the
-kernel's ladder. A delivery the ledger already closed is not sent again — the worker reads
-the terminal row before it dials, which is the other half of migration 000056.
+Mail leaves as the tenant that raised it, and that tenant is read twice. `SendMail`
+reads `notification_senders` as it decides whether the notice owes a mail, so a sender
+that is not verified owes no send at all, and the worker reads the same row again before
+the socket opens, because the administrator can put a different domain there in between.
+The composed `Mailer` puts the tenant's name and address in the `From:` **header** and
+signs it with DKIM (RFC 6376) under the row's selector; the **envelope** sender stays
+`mail.from` — one address per binary, which `kit/config` accepts with a display name and
+the carrier strips for `MAIL FROM` and keeps in `From:`, because those two answer
+different questions. A verified sender whose key this deployment does not hold is never
+sent unsigned.
+
+What the relay answers decides both rows, in one transaction after the send, and the
+carrier names which answer it is giving. `contracts.ErrPermanent` or
+`contracts.ErrNotAccepted` is a refusal the relay actually gave: the intent goes back
+`queued` behind the module's own ladder — one minute, then ten — and ends `failed`
+beside the notice's `failed` ledger row when the ladder or `contracts.MailIntentWindow`
+runs out. An answer that never came back is `contracts.ErrUncertainSend`: the intent
+becomes `unknown`, waits a day, is worth one more socket, and writes no ledger row,
+because a ledger row says at most what this process can prove and this process cannot
+prove the mail left. A mail the ledger already closed is not sent again — the
+subscription reads the terminal row before it writes the intent, which is the other half
+of migration 000056 — and one mail request is one intent because 000076 makes
+`(tenant, purpose, cause)` unique in the table, which is what a redelivered or a replayed
+event resolves to instead of a second copy of one message.
+
+The intent is `notification_mail_intents` (migration 000076), under the tenant's
+row-level security with `FORCE`: the six states `contracts` spells in Go (`queued`,
+`in_flight`, `sent`, `failed`, `suppressed`, `unknown`), an attempt count only a claim
+raises, a two-minute lease, and a sweep that forgets a finished mail after
+`contracts.MailIntentRetentionDays` and never an unfinished one. `internal.Deliver` runs
+it per tenant: it claims the due rows in one short transaction that commits before any
+socket opens, asks each row once more whether it is still wanted — the notice still
+there, the recipient still at the address that was decided for, the tenant's sender
+still verified, each refusal a `suppressed` row carrying its own sentence — sends with no
+transaction and no lock held, and writes the answer guarded on the state it read, so a
+worker whose relay answered late cannot overwrite a newer answer. An `in_flight` row
+whose lease expired is the crash case: it becomes `unknown` rather than being re-sent on
+the strength of the lease.
 
 The ledger is `notification_deliveries` (migration 000027), under the tenant's
 row-level security and append-only: a `requested` row when the notice is written, then a
 terminal row in the same transaction as the step that finishes the channel — `sent`, or
 `suppressed` with the reason (no address, the notice deleted before its mail was due).
-In-app is requested and sent with the row itself. A relay that refuses leaves no
-terminal row, because its transaction rolls back and the outbox retries; a send that can
-never succeed is recorded by the kernel in `platformkit_dead_letters`. Migration 000056
-is a unique partial index over the `sent` rows, so a redelivered send is accounted once
+In-app is requested and sent with the row itself. A carried channel whose relay fails
+without refusing it leaves no terminal row, because its transaction rolls back and the
+outbox retries; a send that can never succeed is recorded by the kernel in
+`platformkit_dead_letters`. A notice's mail is not one of those: its terminal row arrives
+in the intent worker's outcome transaction, and the outbox's ladder is not what retries a
+mail. Migration 000056 is a unique partial index over the `sent` rows, so a redelivered
+send is accounted once
 and the worker acknowledges the retry instead of dead-lettering a delivery that
 happened. `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
@@ -78,7 +110,12 @@ per send, appended in the transaction of the step that decided it, saying who it
 went to, which kind it was (`auth.set_password`, `auth.verification` — the sender
 names its own kinds), what became of it (`sent`, `suppressed`, `failed` with the
 transport's own words redacted by `contracts.RedactMailReason`), and which call
-asked. It holds no subject, body, link or credential.
+asked. It holds no subject, body, link or credential. A credential mail does not come
+000076's way and could not: an intent keeps the message it owes verbatim until it is
+sent, which is what makes sending after the commit possible and is exactly what a live
+secret must not do — so the link is minted and mailed in one breath over
+`contracts.Mailer.Send`, and this table is the only record of the attempt.
+
 **`delivery_ledger_coverage` does not count these rows and never will**: the
 register's number is requested channels of notices with a terminal row, and a
 mail with no notice and no `requested` half would silently narrow what that name
@@ -87,9 +124,11 @@ means. Ask the two tables two questions.
 ### Limits
 
 * **No retry ladder on this side.** A notice's channel that fails is retried by
-  the outbox and dead-letters; a direct send that fails is acknowledged by the
-  module that made it, so its `failed` row and its `auth.mail_failed` event commit
-  in the transaction of the attempt. That is the trade the ledger is built on — a
+  the outbox and dead-letters — its mail by the intent worker's ladder above, which is
+  a capability of its own and not this table's; a direct send that fails is
+  acknowledged by the module that made it, so its `failed` row and its
+  `auth.mail_failed` event commit in the transaction of the attempt. That is the trade
+  the ledger is built on — a
   row that commits with the step it describes or not at all — and what it gives up
   is named: a transient transport failure on a set-password or verification link is
   final for that attempt, and the retry is the person asking again, not the queue.
@@ -128,11 +167,17 @@ means. Ask the two tables two questions.
 and `Preferences` (one person's channel switches and quiet window), `Senders` and
 `SenderAdmin` (the tenant's one sending address), `DeviceService` (the devices a
 person registered), `Decide` and the channel vocabulary, the
-twelve names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
-`HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `GrantChecker`, `Provider`).
-Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake `Mailer`
-and `RunService`, the suite the real service also runs — and never `internal/`. The three
-faces the composition reaches are `notification.Settings()`,
+twelve names in `Events`, the mail this module owes (`MailIntents`, `OutgoingMail`,
+`MailIntent` and its six states, `PrepareIntent`, and the two answers a transport gives
+that no status code carries, `ErrNotAccepted` and `ErrUncertainSend`), and the ports the
+composition owes the module (`RecipientLookup`, `HostLookup`, `Mailer`, `Senders`,
+`DKIMKeys`, `SenderVerifier`, `GrantChecker`, `Provider`). The intent reaches its caller
+through the plan as `contracts.MailIntents`, which this module Provides, and
+`Deps.Tenants` — a `jobs.TenantLister` — is what lets its two jobs run per tenant.
+Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake
+`Mailer`, a fake `MailIntents` whose `Owed()` is what a caller is owed, and `RunService`
+and `RunMailIntents`, the suites the real service and the real table also run — and never
+`internal/`. The three faces the composition reaches are `notification.Settings()`,
 `notification.Devices(adapters)` and
 `notification.Senders(verifier, keys, grants)`; the five HTTP routes are hand-written, because a
 `rest.Spec` list route is the whole tenant and these rows are addressed to a person.
@@ -206,6 +251,34 @@ beside the interface it already satisfied, which is how the next "does this inst
 really do the thing?" is asked without widening a frozen port; and `contracts.MailDeliveryFunc`,
 so a composition or a fixture can say which installation it is in one token.
 
+
+**Reused, by the mail intent** — the delivery ledger and its one writer
+(`internal.record`, and with it 000056's "a channel is sent once" partial unique
+index), `contracts.Message` as the frozen rendered mail, `contracts.PrepareMail`'s
+validate-before-write shape in the new `contracts.PrepareIntent`,
+`kit/jobs.PerTenant` over `jobs.TenantLister`, `platformkit_tenant_match` with
+`ENABLE`+`FORCE`, and the claim/commit/send/record job `modules/webhook` already
+runs — the same four steps, the same reason for splitting them.
+
+**Added, by the mail intent** — `contracts.MailIntents`, `notification_mail_intents`
+(migration `000076`) and `internal.Deliver`. Nothing existing could carry this:
+`notification_deliveries` is keyed by `notification_id` and begins at `requested`,
+`direct_mail_deliveries` is written once at the decision and has no pending half,
+and neither can hold a row that begins before the send is decided — which is the
+only kind of row that survives a crash between a relay and a commit. `Mailer.Send`
+is untouched: it still sends immediately for whoever composes it, and it is not
+deprecated, because an intent is a different capability and not a newer way to do
+the same thing.
+
+**Made reusable, by the mail intent** — the owed-mail row and its worker are the
+pattern for any effect this module must perform after the transaction that decided
+it: `contracts.MailIntents.Queue(ctx, tx, OutgoingMail)` takes the caller's own
+transaction, so a caller that cannot afford to lose a send writes one beside its
+own state and adopts the same states, ladder, lease and unknown rule rather than
+inventing a queue. `contracts.ErrNotAccepted` and `contracts.ErrUncertainSend` are
+the two answers any carrier can give that no status code carries, and
+`internal/mail_retention.go` is the forget-terminal-rows-never-owed-ones sweep.
+
 ## Authorization
 
 ### Permissions
@@ -222,13 +295,14 @@ None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
 `notification_devices` (migration 000058) is the same fact one level down: `RegisterDevice` writes the caller, `ListDevices` sets the recipient filter rather than reading it from the query, and `RemoveDevice` answers `crud.ErrNotFound` for a row that is not the caller's live device — somebody else's, an already-removed one and one that never existed are one answer, which is what lets the route stay `SignedIn`.
 `MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read one way — by the request id of the caller's own call — bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
+`notification_mail_intents` (migration 000076) is bounded one level further down, by `FORCE ROW LEVEL SECURITY` over `platformkit_tenant_match`: a transaction of another tenant that names one of its ids updates no row, and the worker runs per tenant, so the transaction that claims a row is that tenant's own and can resolve nobody else's.
 
 ### Duties the module enforces itself
 
 `Service.MarkRead` in `modules/notification/internal/service.go` answers `crud.ErrNotFound` when the row's `RecipientID` is not the caller, so nobody learns whether another person's notification exists.
 `caller` in `handler.go` answers 403 when there is no principal or the user id is nil.
 `SetChannel`, `SetQuietHours`, `ClearQuietHours` and `Mine` in `internal/preferences.go` answer `tenancy.ErrPolicyDenied` when the context carries a principal who is not the recipient they name: one person's opt-out, quiet window and the list of both are their own, and row-level security cannot say so because both people are in one tenant.
-The mail subscription re-reads the tenant's sender before it sends (`internal/mail.go`): a sender that went back to pending after the notice was queued is a suppressed row, not a message signed as a domain that stopped vouching for itself.
+Both halves of the mail path re-read the tenant's sender: the subscription when it decides whether a notice owes a mail at all (`internal/mail.go`), and the worker before the socket opens (`internal/mail_deliver.go`) — a sender that went back to pending after the mail was decided is a suppressed row, not a message signed as a domain that stopped vouching for itself. The worker re-reads the recipient's address by the same rule and suppresses a mail whose person moved, so a queued mail is never delivered somewhere it was never decided for.
 This is a recipient check, not a separation-of-duties rule.
 
 ### Public faces
@@ -323,6 +397,22 @@ sender against the identity a newer one committed
 (`TestAStaleSenderEditPreservesTheCommittedIdentity`), another tenant's copy of a published
 DNS challenge (`TestAnotherTenantCannotReuseAPublishedDomainProof`) and a carrier wired to
 nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
+The mail intent is checked against a real Postgres by the same suite its fake runs
+(`TestTheMailIntentServiceOwesWhatItIsTold`), by the four answers a queue owes — a
+decision that rolls back owes nothing (`TestARolledBackMailDecisionOwesNothing`), a
+committed intent survives a restart and sends (`TestACommittedIntentSurvivesRestartAndSends`),
+one mail request written twice owes one intent
+(`TestTheSameMailRequestWrittenTwiceOwesOneIntent`), and another tenant reaches none of
+this tenant's owed mail read (`TestAnotherTenantsOwedMailIsNotThere`) or written
+(`TestAnotherTenantCannotWriteAnOwedMail`) — and by the two a relay can leave unanswered:
+an ambiguous send is `unknown` and is not sent again within the delay
+(`TestAnAmbiguousSendIsUnknownAndIsNotSentAgainWithinTheDelay`) and an attempt whose
+lease expired is `unknown` rather than blindly re-sent
+(`TestAnExpiredAttemptIsUnknownAndNotBlindlyReSent`). The address that moved is
+`TestAMailIsNotSentToAnAddressNobodyDecidedFor`, the notice deleted before its mail was
+due is `TestANoticeDeletedBeforeItsMailIsSentIsSuppressed`, and the sweep that forgets a
+sent mail and never an unknown one is
+`TestTheRetentionSweepForgetsASentMailAndNeverAnUnknownOne`.
 `providers/gomail` runs against an in-process relay in its own package, including
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and

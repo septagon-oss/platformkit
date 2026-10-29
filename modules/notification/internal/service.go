@@ -27,6 +27,7 @@ type Service struct {
 	prefs      contracts.Preferences
 	senders    contracts.Senders
 	providers  contracts.Providers
+	mailer     contracts.Mailer
 	clock      func() time.Time
 }
 
@@ -60,6 +61,14 @@ func WithProviders(p contracts.Providers) Option {
 		}
 	}
 }
+
+// WithMailer wires the transport the delivery worker sends with. It belongs to the
+// service and not to the mail subscription because the send no longer happens in
+// the handler that decides the mail: the handler writes the intent, and the job that
+// drains it is the thing that needs the relay. Nil is the same sentence Deps.Mailer
+// is — this installation has no mail server — and the worker records the mail it
+// cannot carry as suppressed rather than leaving it owed forever.
+func WithMailer(m contracts.Mailer) Option { return func(s *Service) { s.mailer = m } }
 
 // WithClock is the clock the quiet-hour decision reads. A composition leaves it
 // alone; a test that wants to know what happens at 22:00 in Lisbon in September

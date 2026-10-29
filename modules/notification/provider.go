@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/push"
@@ -52,6 +53,11 @@ var Module = pkit.NewModule("notification", wire,
 	// deployment's fact and never the module's — so this module names the need and
 	// the composition answers it, exactly as it answers a storage port.
 	pkit.Needs[secrets.Secrets](),
+	// The owed mail goes out per tenant, so the transaction that claims a row is
+	// that tenant's own and row level security — not a WHERE clause — is what makes
+	// "never another tenant's intent" true. The same lister webhook, auth and file
+	// ask for.
+	pkit.Needs[jobs.TenantLister](),
 	// The device adapters this installation carries, if it carries any. Optional
 	// because a deployment with no push credentials is the normal one today: with
 	// nothing wired, the two device channels are suppressed with a reason and no
@@ -77,6 +83,12 @@ var Module = pkit.NewModule("notification", wire,
 	// interface — so one Put answers both spellings, and the module that records
 	// the attempt is the module that owns the record's table.
 	pkit.Provides[contracts.MailLedger](),
+	// The owed half of mail: the intent a caller writes in its own transaction and
+	// the worker sends after it commits. Its own port rather than a method on
+	// Mailer, because a mail that has to survive a rollback needs a transaction and
+	// not a socket, and because a method added to Mailer would be a break to every
+	// sender outside this repository.
+	pkit.Provides[contracts.MailIntents](),
 	pkit.Contributes[personaldata.Part](),
 	// The module's own screen. Which chrome a person's list of their own notices
 	// sits in is an installation's fact — the same shape change's two review
@@ -149,14 +161,25 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// The zero map when nothing put it: no device channel is carried, and the
 		// decision says so in the ledger rather than at send time.
 		Push: pkit.Get[push.Adapters](w),
+		// The drain and the sweep walk every tenant, one transaction each.
+		Tenants: pkit.Get[jobs.TenantLister](w),
 	})
 
 	if err != nil {
 		return module.Module{}, err
 	}
+	// The same service answers the owed half, and the assertion says so rather than
+	// widening Service to cover it: a caller that needs a mail to survive its own
+	// transaction asks this port, and every other caller keeps the interface it
+	// already held.
+	intents, ok := svc.(contracts.MailIntents)
+	if !ok {
+		return module.Module{}, fmt.Errorf("notification: the notification service %T does not keep owed mail", svc)
+	}
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Notifier](w, svc)
 	pkit.Put[contracts.MailLedger](w, svc)
+	pkit.Put[contracts.MailIntents](w, intents)
 	pkit.Put[contracts.Mailer](w, mailer)
 	pkit.Put[contracts.MailDelivery](w, delivery)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
