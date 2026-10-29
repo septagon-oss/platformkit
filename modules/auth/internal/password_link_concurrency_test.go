@@ -58,7 +58,7 @@ func TestTwoResetRequestsAtOnceMailOneLink(t *testing.T) {
 	for _, payload := range payloads {
 		workers.Go(func() {
 			<-start
-			err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			err := db.Run(deliveryContext(t.Context(), conn, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				return handle.Handler(ctx, tx, events.Event{ID: uuid.New(), Name: handle.Name, TenantID: acme.ID, Payload: payload})
 			})
 			if err != nil {
