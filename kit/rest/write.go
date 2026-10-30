@@ -314,13 +314,27 @@ func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return err
 	}
-	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
+	if err := events.PublishTo(ctx, tx, s.topic(verb), e); err != nil {
 		return err
 	}
 	if hook == nil {
 		return nil
 	}
 	return hook(ctx, tx, e)
+}
+
+func (s Spec[T]) topic(verb string) events.Topic[T] {
+	topics := s.Topics()
+	switch verb {
+	case Created:
+		return topics.Created
+	case Updated:
+		return topics.Updated
+	case Deleted:
+		return topics.Deleted
+	default:
+		panic("rest: unknown CRUD event " + verb)
+	}
 }
 
 func (s Spec[T]) validateUpdate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, e T, fields []crud.Field, beforeJSON map[string]json.RawMessage, ifMatch string) error {

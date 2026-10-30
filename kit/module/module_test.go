@@ -295,12 +295,12 @@ func TestAManifestMayNameAnEventWithoutNamingItsPayload(t *testing.T) {
 	t.Run("a name given both ways is one event, described", func(t *testing.T) {
 		both := Module{
 			Name:     "work",
-			Events:   []string{"work.task_changed"},
+			Events:   []string{"work.task_changed", "work.legacy"},
 			Declared: []events.Declared{events.Declare[string]("work.task_changed")},
 		}
 		emitted := both.Emits()
 		if len(emitted) != 1 {
-			t.Fatalf("Emits returned %d events for one name given twice, want one", len(emitted))
+			t.Fatalf("Emits returned %d events with typed declarations present, want only those declarations", len(emitted))
 		}
 		if emitted[0].Payload == nil {
 			t.Error("the bare name stood in for the typed declaration that was given beside it")
