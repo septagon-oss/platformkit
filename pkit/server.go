@@ -31,20 +31,9 @@ type TenantValue struct {
 	Host string
 }
 
-// Tenant claims that this application is reached for this tenant at this host.
-//
-// It is a claim and not a mapping, a route or a row. The answer to "which tenant
-// is this host?" stays the tenant module's rows — tenant_hosts, read by
-// httpx.TenantLoader per request, which is the tenancy boundary the database
-// enforces (decision 0052 §4). A second answer written here would be a second
-// question the same request has to reconcile, and the two would drift the first
-// time an operator adds a host. What a claim is for is three things: refusing one
-// host claimed by two tenants, refusing two applications on one database — which
-// is half here, over the claims one process records, and half in claims.go, over
-// the database itself, because a second `Server` value names the same database as
-// far away as the first — and writing the tenant-hosts section of the composition
-// file, which nothing else can say because nothing else knows what a deployment
-// intends.
+// Tenant records a deployment claim used to detect duplicate host assignments
+// and describe intended tenant hosts. Request-time tenant resolution remains the
+// tenant loader's responsibility and is enforced by database row-level security.
 func Tenant(name, host string) TenantValue { return TenantValue{Name: name, Host: host} }
 
 // Server is a process: the applications it hosts and the configuration, role and
