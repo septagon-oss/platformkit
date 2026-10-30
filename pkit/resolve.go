@@ -326,20 +326,8 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		}
 	}
 
-	// Every need is resolved for every living module, the module that runs
-	// after everything included: it is built last, so whatever it needs is
-	// already placed when it is asked for, and skipping it is how its own need
-	// went unanswered — built with the zero value, no sentence.
-	//
-	// One supplier is an edge, none is the missing sentence (unless the supplier
-	// exists but could not itself be resolved, the follow-on that stays unsaid),
-	// several is the ambiguity sentence, said once for the contract. An unmet
-	// need withdraws its supplier's takers too, and an optional need of such a
-	// supplier goes unfilled, the way it does when no provider is composed.
-	//
-	// Refused in the same sweep is any dependency on the module that runs after
-	// everything, whichever way it is spelled: whoever depended on it would have
-	// to be built after it, which no order holds.
+	// Resolve needs after withdrawals so no module is built with a missing required
+	// value. Optional needs of withdrawn suppliers remain empty.
 	for {
 		changed := false
 		for _, m := range lives {

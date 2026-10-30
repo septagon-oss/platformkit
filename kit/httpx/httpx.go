@@ -1,11 +1,3 @@
-// Package httpx builds the Huma API and records every declared operation, including
-// hidden and builtin routes. Register supplies authorization metadata; the boot
-// gate validates it before serving. Tenant requests share one lazy transaction
-// and buffer responses until finalisation. See README.md for surface and lifetime
-// contracts; the raw adapter stays private so callers cannot bypass them.
-//
-// The [Register] example mounts a typed operation with explicit authorization.
-// It inspects the registered route without opening a server or serving tenant work.
 package httpx
 
 import (

@@ -1,16 +1,3 @@
-// Package db owns database access. Every query runs inside a transaction whose
-// scope is a type parameter: a repository that accepts Tx[Tenant] cannot be
-// handed a Tx[System], and nothing can run outside a transaction. The tenant is
-// applied with set_config(..., true) so Postgres row-level security enforces
-// isolation; there is no Go-side tenant predicate anywhere.
-//
-// This package is the only place in the program that writes a platformkit.*
-// setting, in Go or in SQL. scripts/check_gucs.sh keeps it that way, because
-// those settings are USERSET: any statement could rewrite them, so the barrier
-// is a grep and a re-read (see Run and RunSystem), not a database privilege.
-//
-// The [Run] example shows a tenant transaction against PostgreSQL.
-// The [RunSystem] example shows the separate system capability.
 package db
 
 import (

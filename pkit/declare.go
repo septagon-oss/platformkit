@@ -1,17 +1,3 @@
-// Package pkit composes an application in sentences: an app is a name and the
-// modules it uses, and the modules wire themselves by the contracts they declare
-// (docs/adr/0022-pkit-orchestrates-composition.md).
-//
-// Every method records; Build answers, with every problem at once, each naming
-// the method that caused it. The wiring resolves at Build, not by the compiler:
-// generics check each declaration's type and the resolver checks the graph — a
-// missing or ambiguous provider, a cycle, a phase violation — before anything has
-// an effect. The composition is still a list somebody wrote down: nothing is found
-// that Use does not name, and reflect answers a contract type's identity and
-// printed name only, never to discover, construct or call anything.
-//
-// The engine rules — the fixed order of the validate phase, what a refusal costs,
-// the identity claim and the description's absences — are in pkit/README.md.
 package pkit
 
 import (
