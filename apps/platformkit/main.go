@@ -1,5 +1,5 @@
 // Command platformkit is the reference application: one binary, one image, and
-// seven subcommands — `run`, which serves, `bootstrap`, which creates the first
+// nine subcommands — `run`, which serves, `bootstrap`, which creates the first
 // tenant of an empty installation, `start`, which runs the whole thing from
 // nothing on a laptop, `seed`, which fills one tenant from the application's own
 // seed through the owners' write paths, `migrate`, which applies the pending
@@ -47,6 +47,8 @@ func main() {
 		err = seedCommand(args)
 	case "migrate":
 		err = migrate(args)
+	case "diagnose":
+		err = diagnose(args)
 	case "screens":
 		err = screenCommand(args)
 	case "composition":
@@ -54,7 +56,7 @@ func main() {
 	case "repair-roles":
 		err = repairRoles(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are eight: run, bootstrap, start, seed, migrate, composition, screens and repair-roles", command)
+		err = fmt.Errorf("%q is not a command; there are nine: run, bootstrap, start, seed, migrate, diagnose, composition, screens and repair-roles", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the
