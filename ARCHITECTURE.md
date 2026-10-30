@@ -717,8 +717,8 @@ those two members and says nothing about correlation (`:63-70`; the column is
 **How an app extends it.** Declare in the manifest — `Declared` and
 `Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:382`), in the function the application calls the one
-place it names an event provider (`:381`). `kit/app` selects by name and imports
+(`apps/platformkit/product.go:324`), in the function the application calls the one
+place it names an event provider (`:323`). `kit/app` selects by name and imports
 no provider ([Transports.constructor](kit/app/app.go) and
 [App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
