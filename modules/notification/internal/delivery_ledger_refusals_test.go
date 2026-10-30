@@ -1,11 +1,7 @@
 package internal
 
-// The delivery ledger's two promises that only the database can be asked, and so
-// the two its direct SQL is built on. Which of two racing `sent` rows exists is
-// decided by 000056's partial unique index, and a ledger the role cannot read is a
-// refused statement rather than an empty answer. A stand-in over these functions
-// would hold its own copy of the index predicate and its own copy of a grant, and a
-// case run against it would be about the copy.
+// The sent-once index and read grants are database behavior that a fake would only
+// copy, so these cases ask PostgreSQL to decide both.
 
 import (
 	"context"
@@ -168,6 +164,9 @@ func TestTwoAttemptsOfOneChannelWriteOneSentRow(t *testing.T) {
 	}
 	if sent := ledgerCount(t, admin, notice, OutcomeSent); sent != 1 {
 		t.Errorf("a redelivered send left %d sent rows, want 1", sent)
+	}
+	if all := ledgerCount(t, admin, notice, ""); all != 2 {
+		t.Errorf("a redelivered send left %d rows, want the original requested and sent rows", all)
 	}
 }
 
