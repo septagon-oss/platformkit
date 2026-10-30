@@ -10,59 +10,34 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
-// The dispatch row is this module's record that it decided to send a credential, written
-// in the transaction that minted the link it names and marked with whatever the transport
-// answered afterwards. Its subject is the window between those two commits: a process
-// that stops inside it leaves a link nobody was sent, and without this row nothing in the
+// The dispatch row is this module's record that it decided to send a credential, written in
+// the transaction that minted the link it names and marked with whatever the transport
+// answered afterwards. Its subject is the window between those two commits: a process that
+// stops inside it leaves a link nobody was sent, and without this row nothing in the
 // database can say so.
-//
-// The row is written by every offer that reaches the point of mailing — the two offers of
-// a credential nobody holds, in password.go and verification.go. Rotation is the one
-// decided send with no row, and that is deliberate rather than unfinished: its mail leaves
-// before its credential is written, so the transaction that has the transport's answer
-// already is the one that writes sent_at, the notice and the ledger record, and a row
-// written before the send could be undone only by the refusal that ends the credential the
-// person is holding (see rotate).
-//
-// Nothing reads this table over the network. It has no port method, no route and no
-// screen, because the public delivery door's whole defence is that a caller is answered
-// from a record its own call caused, and "is this person's mail still unsent" keyed by a
-// request id or an address is the enumeration oracle that defence exists to refuse (see
-// no_link.go). An operator reads it in SQL, inside the tenant's own scope.
+
+// Every offer that reaches the point of mailing writes one, for the two credentials nobody
+// holds yet (password.go, verification.go). Rotation is the one decided send with no row,
+// deliberately: its mail leaves before its credential is written, so the transaction that
+// already has the transport's answer is the one writing sent_at, the notice and the ledger
+// row, and a row written ahead of that send could be undone only by the refusal that ends
+// the credential the person is holding (see rotate).
+
+// Nothing reads this table over the network: no port method, no route, no screen, for the
+// reason in this table's own SQL header. An operator reads it in SQL, in tenant scope.
 //
 // # The states, and who may write them
 //
-// unsent is the state the mint's transaction writes, and no other writer ever does. sent
-// and withdrawn are written by the hand-off's own transaction, beside the marks of the
-// same send (see delivered and undelivered). unknown is written by the sweep alone, for a
-// row still unsent past the grace below, and it is terminal in the strong sense: no code
-// path may move it to sent, because nothing can prove a mail left, and a state that
-// quietly became sent would be a claim about the world nothing earned.
-//
-// Every mark names this attempt's own row and insists on unsent, so the sweep and a slow
-// hand-off cannot both settle one row: the later writer finds no row to settle and writes
-// nothing. A mark that loses that race is only reachable if one hand-off outlived
-// handoverBudget inside a grace four times its length, and its consequence is a mail that
-// did leave being recorded unknown — the conservative direction, an honest "we do not
-// know" rather than a false "we sent it".
-//
-// # What is kept, and for how long
-//
-// A settled row is forgotten 90 days after it settled. An unsettled one is never
-// forgotten: it is the evidence of a lost send, and a sweep that deleted it would be the
-// mechanism that hides the loss this table exists to make visible. The cost, said out
-// loud, is that a host that crashes mid-send leaves rows nothing removes but an
-// operator's hand or the person's own erasure — and their count is the metric.
-//
-// # What this does not promise
-//
-// It does not make a send survivable, and nothing can: the plaintext lived only in the
-// memory that died, so the recovery is the person asking again, which no cooldown holds
-// off because both cooldowns count sent_at and a never-sent row carries no mark. It does
-// not make a send exactly-once either — a transport with no idempotency key can take a
-// message and die before its marks commit, leaving a row that reads unsent while the mail
-// is in the mailbox. The row's honesty is that it never claims more than the transport
-// proved.
+// unsent is written by the mint's transaction and by no other writer. sent and withdrawn are
+// written by the hand-off's own transaction, beside the marks of the same send (see delivered
+// and undelivered). unknown is written by the sweep alone, for a row still unsent past the
+// grace below, and it is terminal: no path may move it to sent, because nothing can prove a
+// mail left and a state that quietly became sent would be a claim nothing earned.
+
+// Every mark names this attempt's own row and insists on unsent, so a slow hand-off and the
+// sweep cannot both settle one row: the later writer finds nothing to settle. That race is
+// only reachable if one hand-off outlived handoverBudget inside a grace four times its
+// length, and it ends with a mail that did leave recorded unknown — the honest direction.
 const (
 	// dispatchUnsentGrace is how long a row may stand unsent before this module stops
 	// claiming anybody remembers it. It is four times handoverBudget — the ceiling on one
@@ -72,12 +47,8 @@ const (
 	// cooldown and a thirtieth of the shortest credential life, so no person's experience
 	// turns on it.
 	dispatchUnsentGrace = 2 * time.Minute
-	// dispatchRetention is how long a settled row outlives the send it describes. Ninety
-	// days is this module's own longest stated horizon — SessionMaxLifetime — and a
-	// table's retention is its owner's promise rather than a shared default borrowed from
-	// wherever somebody else needed the same number. The credential the row names expired
-	// within a day of being written, so what is kept past that is an operator's reading
-	// distance, not a live door.
+	// dispatchRetention is how long a settled row outlives the send it names; see
+	// forgetSettledDispatch for why this horizon and why nothing past it.
 	dispatchRetention = 90 * 24 * time.Hour
 )
 
@@ -133,16 +104,19 @@ func writeMailDispatch(tx db.Tx[db.Tenant], m linkMail) error {
 	return nil
 }
 
-// markDispatch records the fate one credential message reached, inside the hand-off's own
-// transaction so the state, the credential's sent_at and the ledger row are one commit
-// rather than three facts that can disagree.
+// markDispatch records the fate one credential message reached, in the hand-off's own
+// transaction, so its state, the credential's sent_at and the ledger row are one commit.
 //
-// The row is named by this attempt's own hash and only while it still reads unsent, so a
-// row the sweep has already given up on keeps the state the sweep gave it: RowsAffected
-// zero says somebody settled this first, and settling it twice would be rewriting a fate
-// that was already recorded. A row that was never written — a mint from before this table
-// existed, on an installation that is mid-upgrade — is not an error either, and no send is
-// failed for the absence of its record.
+// A mark says at most what the transport proved. It cannot make a lost send survivable — the
+// plaintext lived only in the memory that handed it over — and it cannot make a send
+// exactly-once, since the transport keeps no idempotency key to outlast: a hand-off that took
+// a message and died before its marks commit leaves a row reading unsent beside a mail that did
+// arrive. The recovery is the person asking, which no cooldown holds off.
+//
+// The row is named by this attempt's own hash and only while it still reads unsent, so a row
+// the sweep gave up on keeps the state the sweep gave it: RowsAffected zero says somebody
+// settled this first, and settling it twice would rewrite a fate already recorded. A row that
+// was never written, on an installation mid-upgrade, is no error either.
 func markDispatch(tx db.Tx[db.Tenant], m linkMail, state string) error {
 	res := tx.DB().Exec("UPDATE auth_mail_dispatch SET state = ?, settled_at = clock_timestamp()"+
 		" WHERE tenant_id = ? AND token_hash = ? AND state = ?",
@@ -151,6 +125,21 @@ func markDispatch(tx db.Tx[db.Tenant], m linkMail, state string) error {
 		return fmt.Errorf("auth: record that the %s mail %s: %w", m.kind, state, res.Error)
 	}
 	return nil
+}
+
+// settleDispatch is Purge's share of this table, in one call: give up on the messages
+// nobody came back to mark, then forget the settled ones past the horizon. It returns what
+// left the table and what changed, so the batch loop can tell a full batch from an empty one.
+func settleDispatch(tx db.Tx[db.Tenant]) (int64, error) {
+	lost, err := loseUnsentDispatch(tx)
+	if err != nil {
+		return 0, err
+	}
+	forget, err := forgetSettledDispatch(tx)
+	if err != nil {
+		return 0, err
+	}
+	return lost + forget, nil
 }
 
 // loseUnsentDispatch gives up on the messages nobody came back to mark, and says so rather
@@ -167,9 +156,15 @@ func loseUnsentDispatch(tx db.Tx[db.Tenant]) (int64, error) {
 	return res.RowsAffected, nil
 }
 
-// forgetSettledDispatch drops the settled rows past this module's horizon. An unsettled row
-// is never in its own result: the row nobody settled is the evidence of a lost send, and
-// deleting it is the exact thing this table exists to prevent.
+// forgetSettledDispatch drops the settled rows past this module's horizon — its own horizon,
+// SessionMaxLifetime, and not a number borrowed from wherever another table needed the same
+// one. A credential expired within a day of being written, so what a settled row keeps past
+// that is an operator's reading distance and not a live door.
+//
+// An unsettled row is never in its own result: it is the evidence of a lost send, and deleting
+// it would hide the loss this table exists to make visible. The cost is that a host which
+// crashes mid-send leaves rows nothing removes but an operator's hand or the person's own
+// erasure — and their count is the metric.
 func forgetSettledDispatch(tx db.Tx[db.Tenant]) (int64, error) {
 	res := tx.DB().Exec("DELETE FROM auth_mail_dispatch"+
 		" WHERE (tenant_id, token_hash) IN (SELECT tenant_id, token_hash FROM auth_mail_dispatch"+

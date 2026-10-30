@@ -186,8 +186,6 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	token, at := secret(), db.Now()
-	// Described before the credential is written, so the row, the record of the mail and
-	// the hand-off carry one set of values rather than three reads that can disagree.
 	out := linkMail{
 		table: "verification_tokens", kind: contracts.MailVerification,
 		person: id, address: current.Email, token: token, digest: contracts.Hash(token), was: was,

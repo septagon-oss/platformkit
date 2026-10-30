@@ -517,24 +517,16 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if ceremonies.Error != nil {
 		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
 	}
-	// A credential mail still marked unsent past its grace is a message nobody can
-	// any longer report on: the memory that held its plaintext is gone, and the only
-	// honest sentence about it is that nobody knows. This is the sweep's one write to
-	// that table, and the rows it settles here are the crash's evidence made legible
-	// rather than the crash deleted (see mail_dispatch.go).
-	lost, err := loseUnsentDispatch(tx)
-	if err != nil {
-		return 0, err
-	}
-	// What a transport answered is history after this module's own horizon; what nobody
-	// answered is evidence, and it is never in this statement's result.
-	forget, err := forgetSettledDispatch(tx)
+	// The credential mails: the ones nobody can any longer report on are settled as
+	// unknown, and the ones a transport answered are history past this module's horizon.
+	// See mail_dispatch.go for what may be forgotten and what may never be.
+	dispatch, err := settleDispatch(tx)
 	if err != nil {
 		return 0, err
 	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
 		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected +
-		lost + forget, nil
+		dispatch, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason
