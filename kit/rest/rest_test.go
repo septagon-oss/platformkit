@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -577,9 +578,19 @@ func TestAHooksEventsAreDeclaredWhereTheGateLooks(t *testing.T) {
 
 	declared := undeclared
 	declared.HookEvents = []string{hooked}
+	declared.HookTopics = []events.Declared{events.Declare[*Task](hooked)}
 	api, _, _ := mount(t, declared)
 	if !slices.Contains(api.Events(), hooked) {
 		t.Fatalf("the routes declare %v, which does not include the hook's event", api.Events())
+	}
+	count := 0
+	for _, name := range api.Events() {
+		if name == hooked {
+			count++
+		}
+	}
+	if got := count; got != 1 {
+		t.Errorf("duplicate typed and legacy hook declarations were recorded %d times", got)
 	}
 	// kit/app's gate, which is this comparison and nothing else.
 	if got := missing(api.Events(), spec.Events()); len(got) != 1 || got[0] != hooked {
@@ -587,6 +598,23 @@ func TestAHooksEventsAreDeclaredWhereTheGateLooks(t *testing.T) {
 	}
 	if got := missing(api.Events(), append(spec.Events(), hooked)); len(got) != 0 {
 		t.Errorf("a manifest naming every event still leaves %v undeclared", got)
+	}
+}
+
+func TestSpecTopicsUseTheGeneratedCRUDNamesAndPayloadType(t *testing.T) {
+	spec := rest.Spec[*Task]{Module: "tasks", Entity: "task"}
+	topics := spec.Topics()
+	if got, want := topics.Created.Name(), "tasks.task.created"; got != want {
+		t.Errorf("Created topic name = %q, want %q", got, want)
+	}
+	if got, want := events.Names([]events.Declared{topics.Created.Declaration(), topics.Updated.Declaration(), topics.Deleted.Declaration()}), spec.Events(); !slices.Equal(got, want) {
+		t.Errorf("topic names = %v, Spec.Events = %v", got, want)
+	}
+	if got, want := topics.Created.Declaration().Payload, reflect.TypeOf((*Task)(nil)); got != want {
+		t.Errorf("Created payload type = %v, want %v", got, want)
+	}
+	if got := spec.Declared(); len(got) != 3 || got[0].Name != topics.Created.Name() {
+		t.Errorf("Spec.Declared = %v, want declarations from generated topics", got)
 	}
 }
 
