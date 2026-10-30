@@ -260,20 +260,9 @@ type seamState struct {
 	note     string
 }
 
-// resolveCloud reads a deployment's configuration against the cloud profile it
-// named.
-//
-// The seams are answered in every environment, because what runs is a fact about
-// the configuration and not about who is watching. What the environment decides is
-// severity: staging and production refuse a profile whose inputs the deployment
-// never named, and development warns — a laptop halfway through a setup is the
-// normal state of a laptop, not a broken deployment. A warning is not a quieter
-// yes: the seams are still answered from the settings that are there, so a
-// development boot on an incomplete aws profile says local-disk, in-process and
-// mailbox out loud rather than letting the profile name a cloud it was never given.
-//
-// An unknown profile name is one refusal and nothing else. Every other answer would
-// be a guess about which table the deployment meant.
+// resolveCloud reports the configured providers for each seam. Missing profile
+// inputs warn in development and refuse in staging or production; an unknown
+// profile refuses in every environment.
 func resolveCloud(d Deployment) (cloudPlan, []issue) {
 	var issues []issue
 	p := cloudPlan{}

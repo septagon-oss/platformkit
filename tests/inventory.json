@@ -102206,6 +102206,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/reviews/httpx_response_buffer_contract_test.py",
+   "id": "scripts/reviews/httpx_response_buffer_contract_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "httpx_response_buffer_contract_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/reviews/resolved_components_no_other_answer_reads_as_a_records_forms_test.py",
    "id": "scripts/reviews/resolved_components_no_other_answer_reads_as_a_records_forms_test.py",
    "kind": "shell_pin",
@@ -104813,7 +104833,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 3012,
+  "files": 3013,
   "forge_runs": [
    408,
    413,
@@ -104848,7 +104868,7 @@
   ],
   "layers": {
    "behaviour": 4604,
-   "composition": 594,
+   "composition": 595,
    "contract": 24,
    "journey": 123
   },
@@ -104866,23 +104886,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5345,
+  "rows": 5346,
   "tiers": {
    "merge": 3310,
    "nightly": 123,
-   "push": 1912
+   "push": 1913
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2767,
+   "keep": 2768,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4959,
+   "keep": 4960,
    "keep-rewrite": 170,
    "merge": 216
   }
