@@ -59,7 +59,7 @@ func TestSweepWinnerKeepsDeliveryUnmarked(t *testing.T) {
 		t.Fatalf("read the dispatch and credential marks: %v", err)
 	}
 	if state != "unknown" || sentAt.Valid {
-		t.Errorf("sweep state=%q credential sent_at=%v, want unknown with no successful delivery mark", state, sentAt)
+		t.Errorf("sweep state=%q credential sent_at=%v, want terminal unknown with no sent_at mark", state, sentAt)
 	}
 	if n := countDispatched(t, admin); n != 1 {
 		t.Errorf("dispatch rows=%d, want the one row the sweep settled", n)
