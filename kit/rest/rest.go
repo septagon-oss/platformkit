@@ -161,7 +161,11 @@ type Spec[T crud.Entity] struct {
 	// named here and missing from a manifest fails startup, and an event a
 	// hook publishes that nobody named here is still invisible to everything
 	// but the outbox.
+	// Deprecated: use HookTopics when the payload type is known.
 	HookEvents []string
+
+	// HookTopics declares hook events with their payload types for route metadata.
+	HookTopics []events.Declared
 
 	// Gate optionally decides whether the current caller may directly change these
 	// fields after locking and merging, before writing. JSON and in-process writes
@@ -249,17 +253,30 @@ func (s Spec[T]) Events() []string {
 // the entity type and nothing else. A module that mounts a Spec puts this in
 // its manifest rather than writing the three types out beside the three names.
 func (s Spec[T]) Declared() []events.Declared {
-	if s.Session != nil {
+	topics := s.Topics()
+	if topics.Created.Name() == "" {
 		return nil
 	}
-	if s.input != nil {
-		return nil
+	return []events.Declared{topics.Created.Declaration(), topics.Updated.Declaration(), topics.Deleted.Declaration()}
+}
+
+// Topics returns this Spec's generated CRUD topics in created, updated, deleted order.
+func (s Spec[T]) Topics() Topics[T] {
+	if s.Session != nil || s.input != nil {
+		return Topics[T]{}
 	}
-	return []events.Declared{
-		events.Declare[T](s.Event(Created)),
-		events.Declare[T](s.Event(Updated)),
-		events.Declare[T](s.Event(Deleted)),
+	return Topics[T]{
+		Created: events.DeclareTopic[T](s.Event(Created)),
+		Updated: events.DeclareTopic[T](s.Event(Updated)),
+		Deleted: events.DeclareTopic[T](s.Event(Deleted)),
 	}
+}
+
+// Topics contains the generated CRUD events for one entity type.
+type Topics[T any] struct {
+	Created events.Topic[T]
+	Updated events.Topic[T]
+	Deleted events.Topic[T]
 }
 
 // Schema describes the entity to anything that did not compile against it: the
