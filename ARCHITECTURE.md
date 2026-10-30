@@ -756,7 +756,7 @@ process names a host, port and from-address, the mailbox when not (`:60-62`), an
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
 (`apps/platformkit/main.go:96-102`). A refusal a person must see raises a
-`Notice` (`apps/platformkit/product.go:473`). A nil lookup writes every row and sends no
+`Notice` (`apps/platformkit/product.go:415`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -826,7 +826,7 @@ another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
 selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:409`, in `caches()` at `:408`). A selected
+else (`apps/platformkit/product.go:350-352`, in `caches()`). A selected
 adapter with no constructor is refused before anything opens
 ([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
