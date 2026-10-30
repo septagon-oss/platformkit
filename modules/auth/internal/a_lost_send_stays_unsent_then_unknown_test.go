@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -151,7 +152,9 @@ func purgeOnce(t *testing.T, conn *db.Conn, svc *internal.Service) (int64, error
 }
 
 // blockingDispatchMailer is a mail server that is still answering when the test needs the
-// hand-off to be open: it says it was entered, then waits to be released.
+// hand-off to be open: it says it was entered, then waits to be released. It answers nil
+// every time, so a case may send again once it has been released — its own control, on the
+// same wiring — and only the first send announces itself.
 type blockingDispatchMailer struct {
 	entered chan struct{}
 	release chan struct{}
@@ -160,7 +163,11 @@ type blockingDispatchMailer struct {
 
 func (m *blockingDispatchMailer) Send(ctx context.Context, msg notification.Message) error {
 	m.token = authtest.TokenIn(msg.Body)
-	close(m.entered)
+	select {
+	case <-m.entered:
+	default:
+		close(m.entered)
+	}
 	select {
 	case <-m.release:
 		return nil
@@ -179,17 +186,20 @@ func (m *blockingDispatchMailer) Available() bool { return true }
 //
 // The direction matters more than the winner: a hand-off that outlived the grace records a
 // mail that may well have left as unknown, which is an honest "we do not know" rather than
-// a claim about the world it can no longer prove.
+// a claim about the world it can no longer prove. What comes back with the row's own claim
+// is the whole set of marks it carried — `sent_at`, the notice, the ledger row — and the
+// control at the end is what makes those three zeros mean anything.
 func TestAMarkThatFoundItsRowAlreadyUnknownSaysNothingAgain(t *testing.T) {
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations)
 	mailer := &blockingDispatchMailer{entered: make(chan struct{}), release: make(chan struct{})}
+	recorder, _ := notificationmodule.New(notificationmodule.Deps{Mailer: notificationmodule.NewMailbox()})
 	users := realUsers()
-	svc := internal.NewService(users, nil, internal.Delivery{
-		Mailer: mailer, MailDelivery: mailer, Hosts: authtest.Host("acme.example.com"), Secure: true,
+	svc := internal.NewService(users, recorder, internal.Delivery{
+		Mailer: mailer, MailDelivery: mailer, Mails: recorder, Hosts: authtest.Host("acme.example.com"), Secure: true,
 	})
 	seed(t, conn, acme)
 	const address = "dispatch-race@acme.example.com"
-	invitedPerson(t, conn, users, address)
+	person := invitedPerson(t, conn, users, address)
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 	done := make(chan error, 1)
 	go func() {
@@ -230,6 +240,47 @@ func TestAMarkThatFoundItsRowAlreadyUnknownSaysNothingAgain(t *testing.T) {
 	if n := countDispatched(t, admin); n != 1 {
 		t.Errorf("dispatch rows = %d, want one row for one decided message", n)
 	}
+	// The notice and the ledger row are marks of that same message, so they come back with
+	// sent_at: a notice telling this person to check mail beside a record that says nothing
+	// is known would be the lie the dispatch row exists to make impossible.
+	if notices, records, marked := sendRecord(t, conn, person, address); notices != 0 || records != 0 || marked != 0 {
+		t.Errorf("the losing hand-off left notices=%d ledger rows=%d sent marks=%d, want none of each",
+			notices, records, marked)
+	}
+	// The control, on the same three counters and the same recorder: an offer answered
+	// normally after the row was settled has to move all three, or the zeros above would be
+	// a wiring that records nothing rather than a hand-off that kept its marks back.
+	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return svc.Reissue(ctx, tx, address)
+	}); err != nil {
+		t.Fatalf("the control offer: %v", err)
+	}
+	if notices, records, marked := sendRecord(t, conn, person, address); notices != 1 || records != 1 || marked != 1 {
+		t.Errorf("the answered offer left notices=%d ledger rows=%d sent marks=%d, want one of each",
+			notices, records, marked)
+	}
+}
+
+// sendRecord reads, in one tenant-scoped transaction, the three records an accepted send
+// owes besides its dispatch row: notices raised, mails in the ledger for this address, and
+// credential rows carrying sent_at.
+func sendRecord(t *testing.T, conn *db.Conn, person uuid.UUID, address string) (notices, records, marked int) {
+	t.Helper()
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := tx.DB().Raw("SELECT count(*) FROM notifications WHERE recipient_id = ?", person).Row().Scan(&notices); err != nil {
+			return err
+		}
+		if err := tx.DB().Raw("SELECT count(*) FROM direct_mail_deliveries WHERE kind = ? AND recipient = ?",
+			contracts.MailSetPassword, contracts.EmailKey(address)).Row().Scan(&records); err != nil {
+			return err
+		}
+		return tx.DB().Raw("SELECT count(*) FROM password_tokens WHERE user_id = ? AND sent_at IS NOT NULL",
+			person).Row().Scan(&marked)
+	})
+	if err != nil {
+		t.Fatalf("read the records of one send: %v", err)
+	}
+	return notices, records, marked
 }
 
 // TestTheSweepForgetsASettledDispatchRowAndNeverAnUnsettledOne is the retention rule in

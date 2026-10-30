@@ -368,7 +368,7 @@ Three files make those claims falsifiable: `a_credential_mail_is_recorded_before
 for the write, the rollback, the refused send and the filing carrier,
 `no_dispatch_row_names_a_plaintext_credential_test.go` for what a row may hold and which
 tenant may read it, and `a_lost_send_stays_unsent_then_unknown_test.go` for the grace, the
-sweep and the hand-off that came back to a row the sweep had already settled.
+sweep, and the hand-off that came back to a settled row and kept back every mark of its send.
 
 ## The record a mail leaves
 
