@@ -207,7 +207,7 @@ func StepperWithSlots(p StepperProps, slots StepperSlots) g.Node {
 func segmentedStepper(p StepperProps, slots StepperSlots, items []g.Node) g.Node {
 	return sharedSection(p.ComponentProps, "stepper", p.Label,
 		h.P(g.Text(p.ProgressText)),
-		h.Nav(g.Attr("aria-label", p.Label), h.Ol(h.Class(clStepSegments.Compile()), g.Group(items))),
+		h.Nav(g.Attr("aria-label", p.Label), g.Attr("data-stepper-segmented", ""), h.Ol(h.Class(clStepSegments.Compile()), g.Group(items))),
 		g.Group(slots.ErrorSummary), h.FieldSet(g.Group(slots.Body)),
 		Flex(FlexProps{Wrap: true, Gap: "3"}, g.Group(slots.Continue), g.Group(slots.Back), g.Group(slots.Cancel)))
 }

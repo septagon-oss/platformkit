@@ -53,6 +53,8 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// Session supplies a typed read without a storage row; see SessionSpec.
+	Session *SessionRead
 	// input is the typed read-only query declared by ReadForm; nil for every
 	// ordinary CRUD Spec, which is what every other field on this struct reads.
 	input *readInputSpec
@@ -237,6 +239,9 @@ func (s Spec[T]) Event(verb string) string {
 // Events are the three names this Spec publishes, so a manifest can name them
 // without spelling them.
 func (s Spec[T]) Events() []string {
+	if s.Session != nil {
+		return nil
+	}
 	if s.input != nil {
 		return nil
 	}
@@ -257,7 +262,7 @@ func (s Spec[T]) Declared() []events.Declared {
 
 // Topics returns this Spec's generated CRUD topics in created, updated, deleted order.
 func (s Spec[T]) Topics() Topics[T] {
-	if s.input != nil {
+	if s.Session != nil || s.input != nil {
 		return Topics[T]{}
 	}
 	return Topics[T]{
@@ -277,6 +282,9 @@ type Topics[T any] struct {
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
 func (s Spec[T]) Schema() crud.Schema {
+	if s.Session != nil {
+		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: []crud.Field{}}
+	}
 	if s.input != nil {
 		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.input.fields}
 	}
