@@ -279,6 +279,29 @@ inventing a queue. `contracts.ErrNotAccepted` and `contracts.ErrUncertainSend` a
 the two answers any carrier can give that no status code carries, and
 `internal/mail_retention.go` is the forget-terminal-rows-never-owed-ones sweep.
 
+**Reused, by the delivery ledger's evidence** — `internal.record`, `closed`,
+`internal.Deliveries` and `internal.Coverage` themselves, none of them reshaped; the
+schema fixture's owner connection and the grant-taken-from-`current_user` seam
+`modules/auth` asks of its own role floor; the handoff and the `pg_stat_activity`
+question this directory already asks of two concurrent writers; and the counted relay,
+the directory every address resolves in and the mail request of `mail_test.go`, beside
+the intent table the refused step would have written.
+
+**Added, by the delivery ledger's evidence** — two cases and no new unit: no
+`Ledger` interface in `contracts/`, no fake and no suite beside one, because the two
+facts these cases hold are a constraint and a grant rather than behaviour of this
+package. No case reached the index's `DO NOTHING` answer before: a replayed carrier is
+short-circuited by `closed` and a replayed mail request resolves against 000076's
+intent uniqueness instead, so the second `sent` write a redelivery can still make was
+untested.
+
+**Made reusable, by the delivery ledger's evidence** — the fault seam for any table
+under this fixture: take one grant from the role the connection names itself rather
+than the role the environment names, ask the owner what that role can no longer see,
+and settle that a writer is waiting by asking `pg_stat_activity` instead of pausing.
+That seam is how the next "does this refusal stop the write, or only the read?" is
+asked of the database that runs it.
+
 ## Authorization
 
 ### Permissions
@@ -369,15 +392,38 @@ What this module does not do, stated here rather than only in the branch that le
   `delivery_ledger_coverage` as requested channels with a terminal row over all requested
   ones; the repository has no `tools/pillars.py` to report it through, so the ratio is a
   query and a number in the brief, not a dashboard.
+- **`notification_deliveries` is SQL, not a port.** `internal/ledger.go` keeps its three
+  functions and `closed` keeps its statement: no `Ledger` interface enters `contracts/`,
+  no fake and no conformance suite is written beside one. Each of the four operations takes
+  the `db.Tx[db.Tenant]` of the step it describes — the row commits with that step or not at
+  all — so the seam is the transaction and an interface over it moves every call site behind
+  a field and removes none of them. The faults a stand-in would inject are the ones the
+  database already produces and a stand-in could only copy: which of two racing `sent` rows
+  exists is 000056's index (`TestTwoAttemptsOfOneChannelWriteOneSentRow`) and a ledger the
+  role cannot read is a refused statement (`TestALedgerItCannotReadIsNotAnsweredAsUndelivered`).
+  `contracts.Channel.Validate` is the one half of the table's own vocabulary a caller can
+  reach today; `contracts.Outcome*` has no validator because every writer names a constant,
+  and a validator for a value nothing builds by string is a field nothing reads. A second
+  consumer would arrive through a port declared when it appears, naming the consumer in the
+  requirement — which is what `modules/webhook`'s own delivery contract says it will not do
+  to this table.
+- **Retention: indefinitely.** Nothing sweeps, ages or deletes a delivery row;
+  `internal/mail_retention.go` sweeps the mail *intents*, not this history. Erasure scrubs a
+  row's `reason` through its notice (`internal/personaldata.go`) and keeps the row, so a
+  delivery stays countable for as long as the tenant does and what it can say about a person
+  is what the erase left. A retention window would be a product promise with a compliance
+  owner, not a sweep in a shared module.
 
 ## Verification
 
 `go test ./modules/notification/...` runs the contracts suite against the real service,
 a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
-sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
-send against 000056 (`TestARedeliveredSendWritesOneSentRow`) and the same committed replay
+sender commands against the same (`TestAConversationWithTheSenderCommands`), two attempts of
+one channel against 000056 — the second waiting on the first's uncommitted row and answered
+"nothing to write" (`TestTwoAttemptsOfOneChannelWriteOneSentRow`) —, the same committed replay
 over every asynchronous channel (`TestEveryCarriedChannelIgnoresACommittedEventReplay`), a
-wired carrier through its ledger row
+ledger the application role cannot read refused by all three of its reads and by the mail step
+that asks it (`TestALedgerItCannotReadIsNotAnsweredAsUndelivered`), a wired carrier through its ledger row
 (`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`), one tenant's writes against another tenant's rows with a caller both transactions name
 (`TestOneTenantsLedgerIsNotAnothers`, `TestAnotherTenantWritesNothingOfThisTenants`,
 `TestAnotherTenantThatHoldsTheKeyWritesNothingOfThisTenants`), two verifications of one

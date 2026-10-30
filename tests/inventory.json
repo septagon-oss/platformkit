@@ -63777,6 +63777,44 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/notification/internal/delivery_ledger_refusals_test.go",
+   "id": "modules/notification/internal/delivery_ledger_refusals_test.go#TestTwoAttemptsOfOneChannelWriteOneSentRow",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoAttemptsOfOneChannelWriteOneSentRow",
+   "needs_db": true,
+   "pkg": "modules/notification/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/notification/internal/delivery_ledger_refusals_test.go",
+   "id": "modules/notification/internal/delivery_ledger_refusals_test.go#TestALedgerItCannotReadIsNotAnsweredAsUndelivered",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestALedgerItCannotReadIsNotAnsweredAsUndelivered",
+   "needs_db": true,
+   "pkg": "modules/notification/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/notification/internal/device_owner_transfer_test.go",
    "id": "modules/notification/internal/device_owner_transfer_test.go#TestDeviceRemovalRechecksOwnershipAfterAConcurrentTransfer",
    "kind": "go",
@@ -102476,7 +102514,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2909,
+  "files": 2910,
   "forge_runs": [
    408,
    413,
@@ -102510,7 +102548,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4489,
+   "behaviour": 4491,
    "composition": 586,
    "contract": 24,
    "journey": 123
@@ -102529,9 +102567,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5222,
+  "rows": 5224,
   "tiers": {
-   "merge": 3200,
+   "merge": 3202,
    "nightly": 123,
    "push": 1899
   },
@@ -102539,13 +102577,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2664,
+   "keep": 2665,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4836,
+   "keep": 4838,
    "keep-rewrite": 170,
    "merge": 216
   }
