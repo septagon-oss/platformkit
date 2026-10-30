@@ -48,6 +48,10 @@ type (
 // address; a singleton uses its own read/write paths. Commands retain their
 // own guards and a verb collision panics. See docs/adr/0008.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
+	if res.Guided != nil {
+		mountGuided(router, s, o, res)
+		return
+	}
 	// A read-only query answers a form and nothing else: no list, no record, no
 	// write route to withhold.
 	if res.InputRun != nil {
