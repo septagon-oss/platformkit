@@ -1043,6 +1043,8 @@ jobs:
           JOB_NETWORK: ${{ job.container.network }}
           PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
           CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
+          # Chromium's Unix socket lives under TMPDIR; keep its profile path short when the checkout path is long.
+          TMPDIR: /tmp
         run: |
           test -n "$JOB_NETWORK"
           # The same fact the install step above exists to make true, asked where it is used: the

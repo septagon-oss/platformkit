@@ -61,6 +61,57 @@
         }
       ],
       "resolved": {
+        "session": {
+          "contractVersion": 1,
+          "complete": {
+            "declared": false,
+            "command": null
+          },
+          "finish": {
+            "declared": false,
+            "command": null
+          },
+          "labels": {
+            "add_15": "+15 s",
+            "cancel_timer": "Cancel {name} timer",
+            "completed": "Completed {completed} of {total} sets",
+            "completed_step": "Step {current} of {total}, completed",
+            "completion_unavailable": "Set completion is unavailable.",
+            "continue": "Continue",
+            "done_set": "Done set",
+            "enable_sound": "Enable sound",
+            "end": "End of session",
+            "exit": "Exit session",
+            "finish": "Finish session",
+            "finish_partial": "Finish with {completed} of {total} sets",
+            "finish_unavailable": "Finish is unavailable.",
+            "keyboard": "Arrow keys change steps. Space starts a timer or skips rest.",
+            "navigation_only": "Next does not record progress.",
+            "next_set": "Next set",
+            "next_step": "Next step",
+            "no_script": "Live countdown and sound need JavaScript.",
+            "nothing_recorded": "Nothing recorded",
+            "previous_step": "Previous step",
+            "reload": "Reload",
+            "rest": "Rest",
+            "rest_added": "Added 15 seconds",
+            "rest_ended": "Rest ended",
+            "restart_timer": "Start {name} again",
+            "running_timer": "{name}: {duration} remaining",
+            "set": "Set {current} of {total}",
+            "skip": "Skip rest",
+            "start_timer": "Start “{name}” {duration}",
+            "step": "Step {current} of {total}",
+            "storage_unavailable": "Timers will reset if you reload.",
+            "target_duration": "Duration",
+            "target_repetitions": "Repetitions",
+            "timer_ended": "{name} timer ended",
+            "timers": "Timers",
+            "up_next": "Up next",
+            "wake_unavailable": "Your screen may sleep."
+          },
+          "motion": "fade"
+        },
         "views": [
           {
             "kind": "list",
