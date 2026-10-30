@@ -47,6 +47,10 @@ import (
 // is a field name from Schema, and a value is whatever the entity's own JSON
 // says it is. There is no second serialization; it is encoding/json, once.
 type Resource struct {
+	// Guided reads an authorized non-storage session in the request transaction.
+	Guided func(context.Context, uuid.UUID) (entity.GuidedSession, error)
+	// GuidedCommands retains declaration presence after command filtering.
+	GuidedCommands [2]bool
 	// Module and Entity name it; Path is the collection path as the module
 	// wrote it, relative to itself ("/tasks"), which is what a generated screen
 	// mounts and links from. The composed addresses are Schema.Path — the API's
@@ -460,7 +464,7 @@ func (a *API) guard(r Resource) Resource {
 			return remove(ctx, id)
 		}
 	}
-	return r
+	return a.guardGuided(r)
 }
 
 // mayDeclare asks every question one declaration states, in process: the grant
@@ -744,4 +748,16 @@ func signInFor(ctx huma.Context) (string, bool) {
 	query.Set("next", here)
 	target.RawQuery = query.Encode()
 	return target.String(), true
+}
+
+func (a *API) guardGuided(r Resource) Resource {
+	if guided := r.Guided; guided != nil {
+		r.Guided = func(ctx context.Context, id uuid.UUID) (entity.GuidedSession, error) {
+			if err := a.mayDeclare(ctx, r.ReadAuth()); err != nil {
+				return entity.GuidedSession{}, err
+			}
+			return guided(ctx, id)
+		}
+	}
+	return r
 }

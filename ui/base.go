@@ -147,5 +147,6 @@ func componentState() *css.Sheet {
 	s.Select("dialog[data-component=modal]:not([open])", css.Decl("display", css.Literal("none")))
 	s.Select("dialog[data-component=modal]::backdrop", css.Decl("background", css.Literal("transparent")))
 	sharedComponentRules(s)
+	guidedRules(s)
 	return s
 }

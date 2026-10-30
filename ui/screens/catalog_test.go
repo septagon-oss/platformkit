@@ -49,6 +49,7 @@ func TestCatalogGolden(t *testing.T) {
 	// argument and one without: the four shapes a shell has to render, in the
 	// document the shell parses.
 	notes := resource()
+	notes.Present.Session = true
 	notes.Schema.Fields = crud.Fields[*sketchNote]()
 	notes.Commands = []httpx.Command{
 		{
