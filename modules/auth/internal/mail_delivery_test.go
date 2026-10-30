@@ -55,8 +55,10 @@ func refuseNothingYet(t *testing.T, admin *sql.DB, secrets ...string) {
 		tables = append(tables, name)
 	}
 	rows.Close()
-	if !slices.Contains(tables, "direct_mail_deliveries") {
-		t.Fatalf("the scan names no delivery table, so it scans nothing: %v", tables)
+	for _, expected := range []string{"direct_mail_deliveries", "auth_mail_dispatch"} {
+		if !slices.Contains(tables, expected) {
+			t.Fatalf("the scan names no %s table, so it cannot notice a leak into it: %v", expected, tables)
+		}
 	}
 	for _, table := range tables {
 		for _, secret := range secrets {
