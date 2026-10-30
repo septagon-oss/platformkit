@@ -23,6 +23,10 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	if err := validateSketchInput(e); err != nil {
 		var zero T
 		return zero, err
@@ -87,6 +91,10 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // Responses, hooks and events therefore use the snapshot that this transaction
 // replaces, including after contention.
 func (s Spec[T]) updateRowRaw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -287,6 +295,10 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	if s.Session != nil {
+		var none T
+		return none, crud.ErrInvalid
+	}
 	if s.input != nil {
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
@@ -300,6 +312,10 @@ func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	if s.Session != nil {
+		var none T
+		return none, crud.ErrInvalid
+	}
 	if s.input != nil {
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
@@ -314,13 +330,27 @@ func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return err
 	}
-	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
+	if err := events.PublishTo(ctx, tx, s.topic(verb), e); err != nil {
 		return err
 	}
 	if hook == nil {
 		return nil
 	}
 	return hook(ctx, tx, e)
+}
+
+func (s Spec[T]) topic(verb string) events.Topic[T] {
+	topics := s.Topics()
+	switch verb {
+	case Created:
+		return topics.Created
+	case Updated:
+		return topics.Updated
+	case Deleted:
+		return topics.Deleted
+	default:
+		panic("rest: unknown CRUD event " + verb)
+	}
 }
 
 func (s Spec[T]) validateUpdate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, e T, fields []crud.Field, beforeJSON map[string]json.RawMessage, ifMatch string) error {

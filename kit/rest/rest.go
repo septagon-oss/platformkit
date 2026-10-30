@@ -53,6 +53,8 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// Session supplies a typed read without a storage row; see SessionSpec.
+	Session *SessionRead
 	// input is the typed read-only query declared by ReadForm; nil for every
 	// ordinary CRUD Spec, which is what every other field on this struct reads.
 	input *readInputSpec
@@ -159,7 +161,11 @@ type Spec[T crud.Entity] struct {
 	// named here and missing from a manifest fails startup, and an event a
 	// hook publishes that nobody named here is still invisible to everything
 	// but the outbox.
+	// Deprecated: use HookTopics when the payload type is known.
 	HookEvents []string
+
+	// HookTopics declares hook events with their payload types for route metadata.
+	HookTopics []events.Declared
 
 	// Gate optionally decides whether the current caller may directly change these
 	// fields after locking and merging, before writing. JSON and in-process writes
@@ -233,6 +239,9 @@ func (s Spec[T]) Event(verb string) string {
 // Events are the three names this Spec publishes, so a manifest can name them
 // without spelling them.
 func (s Spec[T]) Events() []string {
+	if s.Session != nil {
+		return nil
+	}
 	if s.input != nil {
 		return nil
 	}
@@ -244,19 +253,38 @@ func (s Spec[T]) Events() []string {
 // the entity type and nothing else. A module that mounts a Spec puts this in
 // its manifest rather than writing the three types out beside the three names.
 func (s Spec[T]) Declared() []events.Declared {
-	if s.input != nil {
+	topics := s.Topics()
+	if topics.Created.Name() == "" {
 		return nil
 	}
-	return []events.Declared{
-		events.Declare[T](s.Event(Created)),
-		events.Declare[T](s.Event(Updated)),
-		events.Declare[T](s.Event(Deleted)),
+	return []events.Declared{topics.Created.Declaration(), topics.Updated.Declaration(), topics.Deleted.Declaration()}
+}
+
+// Topics returns this Spec's generated CRUD topics in created, updated, deleted order.
+func (s Spec[T]) Topics() Topics[T] {
+	if s.Session != nil || s.input != nil {
+		return Topics[T]{}
 	}
+	return Topics[T]{
+		Created: events.DeclareTopic[T](s.Event(Created)),
+		Updated: events.DeclareTopic[T](s.Event(Updated)),
+		Deleted: events.DeclareTopic[T](s.Event(Deleted)),
+	}
+}
+
+// Topics contains the generated CRUD events for one entity type.
+type Topics[T any] struct {
+	Created events.Topic[T]
+	Updated events.Topic[T]
+	Deleted events.Topic[T]
 }
 
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
 func (s Spec[T]) Schema() crud.Schema {
+	if s.Session != nil {
+		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: []crud.Field{}}
+	}
 	if s.input != nil {
 		return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.input.fields}
 	}
