@@ -309,3 +309,6 @@ func (a Auth) String() string {
 // router a command belongs on, and this package's own authorizer, before it
 // asks anybody's roles table — and it is one question, so it has one answer.
 func (a Auth) Operator() bool { return a.kind == kindOperator }
+
+// HasReplayCheck reports whether a cached-answer authority callback is already bound.
+func (a Auth) HasReplayCheck() bool { return a.replay != nil }

@@ -10,6 +10,8 @@ const PolicyVersion = 1
 // Resolved is one entry's presentation policy for one request's language. It
 // holds no record values and no viewer clock: those stay rendering.
 type Resolved struct {
+	// Session is present only for the typed guided-session contract.
+	Session *ResolvedSession `json:"session,omitempty"`
 	// Views holds the visible control decision for each offered screen.
 	Views         []ResolvedView `json:"views"`
 	PolicyVersion int            `json:"policyVersion"`

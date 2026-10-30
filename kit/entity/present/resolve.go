@@ -13,6 +13,9 @@ import (
 // holds it for one request. Resolve reads it and writes none of it, so a shared
 // registration may be resolved concurrently in several languages.
 type Input struct {
+	// SessionCommands declares completion and finish; SessionWords carries translated screen copy.
+	SessionCommands [2]bool
+	SessionWords    map[string]string
 	// InputOnly enables the input form without advertising storage operations.
 	InputOnly bool
 	// Schema and Hints are the registration's, with declared words already
@@ -54,6 +57,7 @@ type CommandInput struct {
 // the neutral reading, because the mount gate is where such a hint is refused.
 func Resolve(in Input) Resolved {
 	r := Resolved{
+		Session:       sessionPolicy(in),
 		PolicyVersion: PolicyVersion,
 		Language:      cmp.Or(in.Language, "en"),
 		Identity:      identity(in),
