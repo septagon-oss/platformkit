@@ -56399,6 +56399,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/sweep_winner_keeps_delivery_unmarked_test.go",
+   "id": "modules/auth/internal/sweep_winner_keeps_delivery_unmarked_test.go#TestSweepWinnerKeepsDeliveryUnmarked",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestSweepWinnerKeepsDeliveryUnmarked",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/taken_signup_mail_test.go",
    "id": "modules/auth/internal/taken_signup_mail_test.go#TestASignUpForATakenAddressMailsOneMessageAndNoCredential",
    "kind": "go",
@@ -102685,7 +102704,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2912,
+  "files": 2913,
   "forge_runs": [
    408,
    413,
@@ -102719,7 +102738,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4500,
+   "behaviour": 4501,
    "composition": 586,
    "contract": 24,
    "journey": 123
@@ -102738,9 +102757,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 5233,
+  "rows": 5234,
   "tiers": {
-   "merge": 3211,
+   "merge": 3212,
    "nightly": 123,
    "push": 1899
   },
@@ -102748,13 +102767,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2667,
+   "keep": 2668,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4847,
+   "keep": 4848,
    "keep-rewrite": 170,
    "merge": 216
   }

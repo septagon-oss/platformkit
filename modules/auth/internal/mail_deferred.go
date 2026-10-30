@@ -192,21 +192,27 @@ func linkSuperseded(tx db.Tx[db.Tenant], m linkMail) (bool, error) {
 // completed, the notice beside the link, and the ledger record — in the transaction that
 // is carrying the hand-off (see marks).
 //
-// Together, because they describe one fact that is only true once the message left.
-// The notice is raised here rather than beside the mint for the same reason: its copy
-// tells the person to check their mail, and a sentence promising a mail the transport
-// refused is the lie the record exists to make impossible. What the record claims about
-// the world is the carrier's answer, not this module's guess: see deliveredOutcome. The
-// dispatch row is the one mark that stays this module's own claim: a carrier that filed
-// the message rather than dialling records `suppressed` in the ledger and still took the
-// hand-off, so the two columns say different true things and neither writes the other's
-// word.
+// Together, because they describe one fact that is only true once the message left, and
+// dropped together for the same reason: once the sweep settled this attempt's row, the record
+// of this send is no longer this module's to write (see markDispatch). The notice is raised
+// here rather than beside the mint for the same reason: its copy tells the person to check
+// their mail, and a sentence promising a mail the transport refused is the lie the record
+// exists to make impossible. What the record claims is the carrier's answer, not this
+// module's guess: see deliveredOutcome. The dispatch row is the one mark that stays this
+// module's own claim: a carrier that filed the message rather than dialling records
+// `suppressed` in the ledger and still took the hand-off, and the two say different things.
 func (s *Service) delivered(ctx context.Context, m linkMail) error {
 	err := s.marks(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if err := markLinkSent(tx, m); err != nil {
+		// The row's own state decides whether this commit is owed at all, so it is settled
+		// first and nothing else is written until it has said.
+		own, err := markDispatch(tx, m, dispatchSent)
+		if err != nil {
 			return err
 		}
-		if err := markDispatch(tx, m, dispatchSent); err != nil {
+		if !own {
+			return errSendAlreadySettled
+		}
+		if err := markLinkSent(tx, m); err != nil {
 			return err
 		}
 		if s.notify != nil && m.notice.Recipient != uuid.Nil {
@@ -217,6 +223,19 @@ func (s *Service) delivered(ctx context.Context, m linkMail) error {
 		outcome, reason := s.deliveredOutcome()
 		return s.recordMail(ctx, tx, m.kind, m.address, outcome, reason)
 	})
+	if errors.Is(err, errSendAlreadySettled) {
+		// The sweep gave up on this row while the message was with the transport, and what it
+		// wrote is terminal, so this module says nothing about the send: no sent_at, no notice,
+		// no ledger row. The mail may well have arrived, and the link in it answers until the
+		// next offer replaces it, which is the state a crash between the commit and the send
+		// leaves — and it has that loss's recovery, the person asking again, whom no cooldown
+		// holds off because no cooldown counts a mark nobody wrote. Nothing here failed, so the
+		// caller is not answered a failure and no retry mints a second link over the one a
+		// transport took; asking again is the only caller owed that.
+		slog.WarnContext(ctx, "auth: a link left after its record had been given up on",
+			"kind", m.kind, "user", m.person)
+		return nil
+	}
 	if err != nil {
 		// The message left and its marks did not commit. The failure goes back to
 		// whoever asked: a delivery comes round again and mints a second link, which is
@@ -271,7 +290,11 @@ func (s *Service) undelivered(ctx context.Context, m linkMail, failure error) er
 		if err := restoreUnmailed(ctx, tx, m); err != nil {
 			return err
 		}
-		if err := markDispatch(tx, m, dispatchWithdrawn); err != nil {
+		// What the dispatch row says is not owed to a refusal: a row the sweep settled keeps
+		// that state and markDispatch will not move it. The rest of these marks stand either
+		// way, because withdrawing a link nobody was sent and recording the refusal are
+		// protections rather than claims that a mail left.
+		if _, err := markDispatch(tx, m, dispatchWithdrawn); err != nil {
 			return err
 		}
 		return s.recordMail(ctx, tx, m.kind, m.address, notificationcontracts.MailFailed, failure.Error(),

@@ -342,11 +342,16 @@ answers, and this is the window before any transport answered.
 One row is written per decided message, in the minting transaction, naming the
 credential only by its hash, with the kind, the address and `state = unsent`; the
 hand-off marks the same row `sent` or `withdrawn` in its own transaction, beside the
-marks of the send. A row still `unsent` after the grace — twice the ceiling on one
+marks of the send. A row still `unsent` after the grace — four times the ceiling on one
 hand-off — becomes `unknown` in the hourly sweep, and nothing may ever make it `sent`,
-because no memory holds the plaintext any more and no carrier ever held it. A settled
-row is forgotten after ninety days; an unsettled one outlives every sweep, since it
-is the crash's evidence and deleting it would hide the loss.
+because no memory holds the plaintext any more and no carrier ever held it. A hand-off
+that comes back after the sweep settled its row keeps every one of its marks back, not
+only this column: `sent_at`, the notice and the ledger row are marks of that same
+message, and a row saying the send is unknowable is the record they would contradict.
+The link such a hand-off mailed still answers until the next offer replaces it, so the
+person asking again is the recovery there too. A settled row is forgotten after ninety
+days; an unsettled one outlives every sweep, since it is the crash's evidence and
+deleting it would hide the loss.
 
 So a never-sent link is a queryable state, and the recovery is the person asking
 again: both resend cooldowns count `sent_at`, which a lost send never wrote. This
@@ -358,6 +363,12 @@ exists to refuse, so an operator reads the table in SQL. A rotation of a link th
 person already holds is the one decided send with no row — its mail leaves before its
 credential is written, so only the transaction holding the transport's answer can
 write its evidence.
+
+Three files make those claims falsifiable: `a_credential_mail_is_recorded_before_it_leaves_test.go`
+for the write, the rollback, the refused send and the filing carrier,
+`no_dispatch_row_names_a_plaintext_credential_test.go` for what a row may hold and which
+tenant may read it, and `a_lost_send_stays_unsent_then_unknown_test.go` for the grace, the
+sweep and the hand-off that came back to a row the sweep had already settled.
 
 ## The record a mail leaves
 

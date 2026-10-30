@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,7 +38,9 @@ import (
 // Every mark names this attempt's own row and insists on unsent, so a slow hand-off and the
 // sweep cannot both settle one row: the later writer finds nothing to settle. That race is
 // only reachable if one hand-off outlived handoverBudget inside a grace four times its
-// length, and it ends with a mail that did leave recorded unknown — the honest direction.
+// length, and it ends with a mail that did leave recorded unknown — the honest direction. The
+// hand-off that loses it keeps its other marks back too, because they are marks of the same
+// message and the row they belong to says this module cannot say (see markDispatch).
 const (
 	// dispatchUnsentGrace is how long a row may stand unsent before this module stops
 	// claiming anybody remembers it. It is four times handoverBudget — the ceiling on one
@@ -104,28 +107,43 @@ func writeMailDispatch(tx db.Tx[db.Tenant], m linkMail) error {
 	return nil
 }
 
+// A mark says at most what the transport proved. This table makes no send survivable — the
+// plaintext lived only in the memory that handed it over — and no send exactly-once, since the
+// transport keeps no idempotency key to outlast: a hand-off that took a message and died before
+// its marks commit leaves a row reading unsent beside a mail that did arrive. The recovery is
+// the person asking, which no cooldown holds off.
+
 // markDispatch records the fate one credential message reached, in the hand-off's own
-// transaction, so its state, the credential's sent_at and the ledger row are one commit.
+// transaction, so its state, the credential's sent_at and the ledger row are one commit. It
+// reports whether the marks of this send may stand beside that record: true when this write
+// settled the row, and when the send named no row of its own, and false when the row is there
+// and the sweep settled it first — the claim `sent` is one that record no longer supports, so
+// the caller keeps every mark of the send back rather than this column alone (see delivered).
 //
-// A mark says at most what the transport proved. It cannot make a lost send survivable — the
-// plaintext lived only in the memory that handed it over — and it cannot make a send
-// exactly-once, since the transport keeps no idempotency key to outlast: a hand-off that took
-// a message and died before its marks commit leaves a row reading unsent beside a mail that did
-// arrive. The recovery is the person asking, which no cooldown holds off.
-//
-// The row is named by this attempt's own hash and only while it still reads unsent, so a row
-// the sweep gave up on keeps the state the sweep gave it: RowsAffected zero says somebody
-// settled this first, and settling it twice would rewrite a fate already recorded. A row that
-// was never written, on an installation mid-upgrade, is no error either.
-func markDispatch(tx db.Tx[db.Tenant], m linkMail, state string) error {
-	res := tx.DB().Exec("UPDATE auth_mail_dispatch SET state = ?, settled_at = clock_timestamp()"+
-		" WHERE tenant_id = ? AND token_hash = ? AND state = ?",
-		state, db.TenantOf(tx).ID, m.digest, dispatchUnsent)
-	if res.Error != nil {
-		return fmt.Errorf("auth: record that the %s mail %s: %w", m.kind, state, res.Error)
+// The row is named by this attempt's own hash and only while it still reads unsent, and the
+// settle and the reading of what that name holds are one statement, so no hand-off can read
+// the sweep mid-write: the count says who won, and the existence says whether there was a row
+// to win, which RowsAffected read alone cannot tell from a send that had none.
+func markDispatch(tx db.Tx[db.Tenant], m linkMail, state string) (own bool, err error) {
+	tenant := db.TenantOf(tx).ID
+	var settled, named bool
+	scan := tx.DB().Raw("WITH settled AS (UPDATE auth_mail_dispatch"+
+		" SET state = ?, settled_at = clock_timestamp()"+
+		" WHERE tenant_id = ? AND token_hash = ? AND state = ? RETURNING 1)"+
+		" SELECT (SELECT count(*) FROM settled) > 0,"+
+		" EXISTS (SELECT 1 FROM auth_mail_dispatch WHERE tenant_id = ? AND token_hash = ?)",
+		state, tenant, m.digest, dispatchUnsent, tenant, m.digest).Row().Scan(&settled, &named)
+	if scan != nil {
+		return false, fmt.Errorf("auth: record that the %s mail %s: %w", m.kind, state, scan)
 	}
-	return nil
+	return settled || !named, nil
 }
+
+// errSendAlreadySettled is the hand-off's own rollback signal: its dispatch record was
+// settled by the sweep before the transport answered, so the marks of this send describe a
+// message this module no longer records and the whole of them come away unwritten. It never
+// leaves delivered, which turns it into a logged decision and a nil answer (see delivered).
+var errSendAlreadySettled = errors.New("auth: the record of this send was settled before its answer came back")
 
 // settleDispatch is Purge's share of this table, in one call: give up on the messages
 // nobody came back to mark, then forget the settled ones past the horizon. It returns what
