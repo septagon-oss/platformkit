@@ -1,15 +1,5 @@
 package pkit
 
-// The composition as values. `App.Explain` answers the same resolution in
-// sentences, which is what a person reads and what a client commits; this file
-// answers it in named fields, which is what an agent, a CLI or a deployment
-// pipeline reads. One projection produces both — `described` below — so the two
-// encodings cannot disagree about who supplies whose need.
-//
-// What runs here is stated on Describe, and it is the same phase Validate, Plan
-// and Explain already run: every module's own build function. This is a reading
-// of your own composition, not a sandbox around somebody else's.
-
 import (
 	"errors"
 	"reflect"

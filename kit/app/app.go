@@ -1,16 +1,3 @@
-// Package app assembles a running application from a configuration and a list
-// of modules.
-//
-// New checks the composition; Run migrates, opens the connection, and then does
-// whichever half of the work this process's role names: web builds the API,
-// proves that every operation declared its authorization and every event it
-// publishes was promised, and serves; worker relays the outbox, consumes
-// subscriptions, schedules the periodic jobs and answers the two probes; all
-// does both in one process. The order is written here, once, in the order it
-// happens — which is the whole argument of docs/adr/0002: a startup sequence
-// that is read rather than derived. Run owns the listener it serves on; Start
-// hands the same sequence, up to the point of listening, to an application that
-// owns a listener of its own.
 package app
 
 import (

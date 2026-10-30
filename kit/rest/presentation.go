@@ -7,22 +7,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
-// presentation.go is the read axis's mount gate, the mirror of the widget gate in
-// widget.go. Separate file, same reason: a Spec is where an entity, a schema and a
-// mount are all in hand at once, and the failure both gates prevent is silence — a
-// declaration nobody honours reads like a decision.
-//
-// The vocabulary itself is kit/entity's, and the gate cannot live there: ui/resource
-// is what honours a `present:` name, ui/resource imports kit/rest, so a check inside
-// kit/entity would be an import cycle. The only place a name can be checked against
-// the words that exist is the package that owns both ends.
+// presentationFault validates presentation hints where the entity schema and
+// resource mount are both available. The UI consumer imports rest, so the check
+// cannot live in entity without creating an import cycle.
 
-// presentationFault names the first field whose `ui:"present:…"` is a name no
-// screen renders, or a name that cannot be honoured by the column it sits on,
-// and "" when every presentation the entity names is inside the vocabulary
-// kit/entity owns. It is widgetFault for the read axis, at the same site, for the
-// same reason: a declaration nobody honours is worse than none, because it reads
-// like a decision.
+// presentationFault returns the first invalid presentation declaration, or an
+// empty string when every field's presentation, choices and image hints are valid.
 func presentationFault(fields []crud.Field) string {
 	for _, f := range fields {
 		if bad := f.SketchFault(); bad != "" {

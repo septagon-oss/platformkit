@@ -25,23 +25,8 @@ var jsonMediaType = regexp.MustCompile(`^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z
 // author would never hear about it.
 func validJSONMediaType(mt string) bool { return jsonMediaType.MatchString(mt) }
 
-// A declared protocol address.
-//
-// The surface table answers "which chain does this address get" from three prefixes, and a
-// protocol that names its own address — SCIM says /scim/v2, and a vendor's connector will
-// only be configured against what it says — lives under none of them. Renaming it lands the
-// capability at an address its clients will not configure, and a fourth surface means
-// inventing a middleware chain (session, cookie, host gating, cache) nobody asked for, so a
-// module declares an address instead. The declaration moves where the door is served and
-// nothing else: the router keeps its surface and so its chain — the workspace's no-store,
-// its CSRF rule, its tenant transaction, its deny-by-default authorization — and the mount
-// gate keeps its rule that a declared address with a credential has to declare the
-// credential.
-
-// protocolPath is the shape a declared address has to be in: absolute, clean,
-// lower-case, and made of segments the table itself uses. The character class
-// is the one the composed prefixes already satisfy, so a declared address can
-// never be spelled in a way the fixed table could not have produced.
+// protocolPath accepts absolute, clean, lower-case paths made from the same
+// segment characters as the composed surface prefixes.
 var protocolPath = regexp.MustCompile(`^(/[a-z0-9][a-z0-9._-]*){1,}$`)
 
 // roots are the addresses the table owns outright. A declared address may not
