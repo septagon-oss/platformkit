@@ -295,12 +295,12 @@ short-circuited by `closed` and a replayed mail request resolves against 000076'
 intent uniqueness instead, so the second `sent` write a redelivery can still make was
 untested.
 
-**Made reusable, by the delivery ledger's evidence** — the fault seam for any table
-under this fixture: take one grant from the role the connection names itself rather
-than the role the environment names, ask the owner what that role can no longer see,
-and settle that a writer is waiting by asking `pg_stat_activity` instead of pausing.
-That seam is how the next "does this refusal stop the write, or only the read?" is
-asked of the database that runs it.
+**Made reusable, by the delivery ledger's evidence** — the fault seam as a shape rather
+than an importable unit, because its helpers are unexported in this directory's own test
+file: take one grant from the role the connection names itself rather than the environment
+names, ask the owner what that role can no longer see, and settle that a writer waits by
+asking `pg_stat_activity` rather than pausing. The next module that asks "does this refusal
+stop the write, or only the read?" writes those three questions in a file of its own.
 
 ## Authorization
 
