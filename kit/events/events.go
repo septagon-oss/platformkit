@@ -58,6 +58,8 @@ func ValidName(name string) bool { return transport.ValidName(name) }
 // It takes a context only to read the actor off it. A db.Tx carries none — a
 // transaction is a handle, not a scope somebody can cancel through — so the
 // caller's own context is the one thing that knows whose request this is.
+//
+// Deprecated: use PublishTo with a Topic when the payload type is known.
 func Publish(ctx context.Context, tx db.Tx[db.Tenant], name string, payload any) error {
 	// The tenant comes from the transaction, never from the caller: an event
 	// belongs to the tenant whose data changed, by construction. The manifest that
@@ -65,6 +67,14 @@ func Publish(ctx context.Context, tx db.Tx[db.Tenant], name string, payload any)
 	// installed when the context carries none — see publisher.go.
 	pub, _ := PublisherFrom(ctx)
 	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload, false, pub)
+}
+
+// PublishTo writes a payload to its declared topic through the tenant outbox.
+func PublishTo[T any](ctx context.Context, tx db.Tx[db.Tenant], topic Topic[T], payload T) error {
+	if topic.name == "" {
+		return fmt.Errorf("events: %q is not %q", topic.name, "<module>.<event>")
+	}
+	return Publish(ctx, tx, topic.name, payload)
 }
 
 // PublishFor writes an event from a cross-tenant transaction, naming the tenant
