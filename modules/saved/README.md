@@ -528,67 +528,20 @@ third-party library is selected by this specification.
 
 ## Authorization
 
-The six questions, answered for the manifest in `module.go`. [Section 4](#4-authorization)
-holds the reasoning behind the shape; this section is the census the gate reads.
-
 ### Permissions
-
-The manifest's `permissions` declares two keys, whose constants are in
-`modules/saved/contracts/saved.go`:
-
-- `saved:read` is the grant a person needs to list their own copies and to see the
-  standing of one. It is asked through this module's `Access` port, not by a route
-  guard, because the module mounts no route: whoever composes it mounts the page and
-  names the grant there, and the port answers the same question for the list, the
-  record-screen control and the save command.
-- `saved:write` is the grant that lets a person keep a copy and give one back. It is
-  asked twice over a save — once when the copy is opened, once when it is submitted,
-  after the source's row is locked — so a role taken while a save waited is taken.
-
-Neither key is operator-scoped: `module.Permission.Operator` is unset on both, and
-this module declares no operator-only permission at all. A copy is a person's own
-row; no operator surface reads one.
+`saved:read` lists copies; `saved:write` saves or removes one. `Access` checks both in the caller's transaction.
 
 ### Object scope
-
-Row-level security, not a policy call. `saved_items.person_id` is the keeper, and the
-schema's own policies let a tenant's transaction see the copies of the person the
-`Access` answer named — which is why `Access` answers a user id rather than a
-boolean. `Save`, `Unsave`, `Find` and `List` all resolve that id inside the caller's
-transaction; a `List` never reaches another person's rows whatever it is asked for.
-No `tenancy.Policy` is consulted: a copy carries no action a rule could weigh, and
-retaining one grants no right over the live source.
+Postgres RLS scopes `saved_items` to the tenant and keeper from `Access`; every operation uses the request transaction.
 
 ### Duties the module enforces itself
-
-- A save is idempotent against the unique index over `(person, source_module,
-  source_kind, source_key)`, so a second save of the same source is the same copy.
-- `Save` refuses a `Source` that fails `Check`; `Unsave` refuses a stale
-  `expectedRevision` with `ErrConflict` and writes nothing.
-- A source that is gone is refused: an empty title or a `Check` failure leaves no
-  half-captured row behind.
-- Domain state and its outbox event commit together; a refused command emits nothing
-  and returns no stale row.
+`Save` validates and deduplicates its source; `Unsave` checks the expected revision. Refusals write or emit nothing.
 
 ### Public faces
-
-`saved.Spec()` contributes no routes, no screens and no OpenAPI document: the module
-declares no `Routes` in its manifest. The composition's own page draws the list, and
-the generated record screen draws the control — both reach the service only through
-`Service` and `Access`. What this module does put on the wire is the two events,
-`saved.saved` and `saved.unsaved`, whose payload type the composition's AsyncAPI
-document is written from.
+The module declares no routes; the composition mounts list and record control. Events are `saved.saved` and `saved.unsaved`.
 
 ### The operator boundary
-
-Nothing here is operator-only. Both keys are tenant-scoped, so the tenant
-administrator's role holds them the way it holds every other tenant-scoped grant;
-`tenant:manage` and the control plane's keys belong to auth and are untouched.
+Both permissions are tenant-scoped; operator and control-plane grants belong to auth.
 
 ### Provisioning
-
-The module seeds no role: a product decides which of its personas may keep copies,
-and the reference application's answer sits in `apps/platformkit/roles.go`. A tenant
-is created with no copies, and the first save is what creates a row. Erasure goes
-through the `PersonalData` claim the manifest carries: `saved_items` keyed on
-`person_id`, with `title` and `values` as the prose columns.
+The module seeds no role. The product assigns grants; personal-data erasure uses the manifest's `saved_items` claim.
