@@ -174,6 +174,9 @@ func TestAnAddressThatNeedsPrivilegeNamesTheFlagThatMovesIt(t *testing.T) {
 }
 
 func TestAnUnwritableDataDirectoryIsNamedWithItsPath(t *testing.T) {
+	if startWithoutRoot(t) {
+		return
+	}
 	t.Parallel()
 	readonly := t.TempDir()
 	if err := os.Chmod(readonly, 0o500); err != nil {
@@ -200,6 +203,9 @@ func TestAnUnwritableDataDirectoryIsNamedWithItsPath(t *testing.T) {
 // The cache is where the first start downloads to, so the variable that moves it
 // belongs in the refusal. XDG_CACHE_HOME is the setting Linux reads.
 func TestAnUnwritableCacheDirectoryNamesTheVariableThatMovesIt(t *testing.T) {
+	if startWithoutRoot(t) {
+		return
+	}
 	readonly := t.TempDir()
 	if err := os.Chmod(readonly, 0o500); err != nil {
 		t.Fatal(err)
@@ -220,6 +226,37 @@ func TestAnUnwritableCacheDirectoryNamesTheVariableThatMovesIt(t *testing.T) {
 		}
 	}
 	saysWhatItDidNotDo(t, refused)
+}
+
+// Root can write through the fixture's mode bits. Re-exec only this case and
+// drop privilege in the child, leaving the suite and its cleanup identity alone.
+func startWithoutRoot(t *testing.T) bool {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		return false
+	}
+	const child = "PLATFORMKIT_TEST_START_UNPRIVILEGED"
+	if os.Getenv(child) == t.Name() {
+		if err := syscall.Setuid(65534); err != nil {
+			t.Fatalf("drop root for the read-only directory fixture: %v", err)
+		}
+		return false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$", "-test.v")
+	// These cases use a fake launcher and need a scratch root the dropped UID can enter.
+	cmd.Dir = "/tmp"
+	cmd.Env = append(os.Environ(), child+"="+t.Name(), "TMPDIR=/tmp",
+		"PLATFORMKIT_TEST_ADMIN_URL=", "PLATFORMKIT_TEST_DATABASE_URL=")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("unprivileged directory check: %v\n%s", err, output)
+	}
+	t.Logf("unprivileged directory check:\n%s", output)
+	return true
 }
 
 // The download is the first start's one external dependency. A machine that cannot
