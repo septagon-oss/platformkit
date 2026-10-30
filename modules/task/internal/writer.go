@@ -69,7 +69,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.T
 	if err := crud.Update(ctx, tx, in, columns...); err != nil {
 		return nil, err
 	}
-	return in, events.Publish(ctx, tx, contracts.EventUpdated, in)
+	return in, events.PublishTo(ctx, tx, contracts.TopicUpdated, in)
 }
 
 // refuseUnproposableMove names the first field a merged document moves that no

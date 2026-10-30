@@ -20,7 +20,8 @@ import (
 // Service owns task transitions. Optional policy decisions use the locked task
 // and the current principal; they never replace the lifecycle's state checks.
 type Service struct {
-	Policy tenancy.Policy
+	Policy       tenancy.Policy
+	CreatedTopic events.Topic[*contracts.Task]
 	// Lifecycle, when set, runs the commands Create follows the insert with
 	// (assignment, the breach check), so a composed service sees them.
 	Lifecycle contracts.Service
@@ -28,7 +29,10 @@ type Service struct {
 
 // NewService returns the lifecycle commands. It takes nothing, on purpose: see
 // the type. module.go constructs it.
-func NewService() *Service { return &Service{} }
+func NewService() *Service { return &Service{CreatedTopic: contracts.TopicCreated} }
+
+// SetCreatedTopic selects the REST-generated topic used when this service creates a task.
+func (s *Service) SetCreatedTopic(topic events.Topic[*contracts.Task]) { s.CreatedTopic = topic }
 
 var _ contracts.Service = (*Service)(nil)
 
@@ -67,7 +71,7 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return nil, err
 	}
-	if err := events.Publish(ctx, tx, contracts.EventAssigned, contracts.Assigned{
+	if err := events.PublishTo(ctx, tx, contracts.TopicAssigned, contracts.Assigned{
 		TaskID: task.ID, Assignee: assignee, Status: task.Status, At: db.Now(),
 	}); err != nil {
 		return nil, err
@@ -106,7 +110,7 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	if err := events.Succeed(ctx, tx, at); err != nil {
 		return nil, err
 	}
-	if err := events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
+	if err := events.PublishTo(ctx, tx, contracts.TopicResolved, contracts.Resolved{
 		TaskID: task.ID, Resolution: task.Resolution, At: at,
 	}); err != nil {
 		return nil, err
@@ -134,7 +138,7 @@ func (s *Service) CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(ctx, tx, contracts.EventSLABreached, contracts.SLABreached{
+	return task, events.PublishTo(ctx, tx, contracts.TopicSLABreached, contracts.SLABreached{
 		TaskID: task.ID, Priority: task.Priority, Deadline: *task.SLADeadline, At: db.Now(),
 	})
 }

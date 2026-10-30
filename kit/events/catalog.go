@@ -39,6 +39,24 @@ type Declared struct {
 	Payload reflect.Type
 }
 
+// Topic is a named event whose payload type is fixed at the publication call.
+// The zero value is invalid; use DeclareTopic to create one.
+type Topic[T any] struct {
+	name string
+	decl Declared
+}
+
+// DeclareTopic binds an event name to its payload type without installing process state.
+func DeclareTopic[T any](name string) Topic[T] {
+	return Topic[T]{name: name, decl: Declare[T](name)}
+}
+
+// Name returns the declared event name.
+func (t Topic[T]) Name() string { return t.name }
+
+// Declaration returns the manifest declaration represented by this topic.
+func (t Topic[T]) Declaration() Declared { return t.decl }
+
 // Declare names an event and the Go type of its payload:
 //
 //	Declared: []events.Declared{events.Declare[contracts.Invited](contracts.EventInvited)}
