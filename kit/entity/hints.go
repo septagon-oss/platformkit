@@ -164,6 +164,8 @@ func validNamed(list []string, name string, emptyOK bool) bool {
 // order its group sits in. It carries no JSON tags of its own: it is a
 // declaration the mount gate reads, and the bytes are ui/screens' to write.
 type EntryHints struct {
+	// Session selects the typed guided read presentation.
+	Session     bool
 	Forms       *FormsHints
 	Singular    string // "note"; a shell's default is Humanize(Entity)
 	Plural      string // "notes"; a shell's default is Singular + "s"

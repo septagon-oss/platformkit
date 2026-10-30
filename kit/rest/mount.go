@@ -22,6 +22,10 @@ import (
 // before mounting. Request failures use Fault.
 func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	s.Module = mountedUnder(s.Module, surfaces.App, "Spec", s.Entity)
+	if s.Session != nil {
+		s.mountSession(surfaces)
+		return
+	}
 	if s.input != nil {
 		s.mountReadForm(surfaces)
 		return
