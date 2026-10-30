@@ -1,17 +1,3 @@
-// Package module defines what a module is.
-//
-// A module is a plain Go package that exports a Module value, built by its one
-// constructor, New(Deps). An application composes modules with pkit,
-// pkit.NewApp(name).Use(...): each declares what it provides and needs, and pkit
-// resolves and checks the whole plan before anything opens. There is no init(),
-// no registry addressed by string and no discovery. See docs/adr/0022.
-//
-// The manifest below is what the kernel needs to know about a module that it
-// cannot learn from a function call: the permissions it defines, the events it
-// emits and consumes, its periodic work, where it appears in navigation, what
-// makes it healthy, its SQL, and its routes. Nothing else belongs in it — a
-// field the kernel never reads is a field a module will fill in and no one will
-// honour.
 package module
 
 import (
