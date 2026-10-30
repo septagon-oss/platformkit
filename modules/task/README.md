@@ -106,6 +106,10 @@ The module does not create roles. A composition grants `task:read` and `task:upd
 
 ## Composition
 
+**Reused** — `rest.Spec.Topics`, `events.Topic`, the transactional outbox and task's existing lifecycle contracts.
+**Added** — typed CRUD and lifecycle topic declarations, because the former string publisher could pair any name with any payload at compile time.
+**Made reusable** — `Spec.Topics()` and `events.PublishTo` give the next module one generated CRUD declaration and a compiler-checked publish path.
+
 `task.Module` provides four contracts and one value: `contracts.Service`,
 `contracts.Creator`, `contracts.Reader` and `contracts.LockedReader` are one
 `internal.Service` put under four keys, so a module that needs part of the desk

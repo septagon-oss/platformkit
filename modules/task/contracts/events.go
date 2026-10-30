@@ -25,16 +25,20 @@ const (
 	EventSLABreached = "task.sla_breached"
 )
 
-// Events is every event this module emits, for the manifest.
+// Events is the compatibility declaration list for consumers that need the task event set.
 var Events = []events.Declared{
-	// The first three are kit/rest's and carry the entity itself.
-	events.Declare[*Task](EventCreated),
-	events.Declare[*Task](EventUpdated),
-	events.Declare[*Task](EventDeleted),
-	events.Declare[Assigned](EventAssigned),
-	events.Declare[Resolved](EventResolved),
-	events.Declare[SLABreached](EventSLABreached),
+	TopicCreated.Declaration(), TopicUpdated.Declaration(), TopicDeleted.Declaration(),
+	TopicAssigned.Declaration(), TopicResolved.Declaration(), TopicSLABreached.Declaration(),
 }
+
+var (
+	TopicCreated     = events.DeclareTopic[*Task](EventCreated)
+	TopicUpdated     = events.DeclareTopic[*Task](EventUpdated)
+	TopicDeleted     = events.DeclareTopic[*Task](EventDeleted)
+	TopicAssigned    = events.DeclareTopic[Assigned](EventAssigned)
+	TopicResolved    = events.DeclareTopic[Resolved](EventResolved)
+	TopicSLABreached = events.DeclareTopic[SLABreached](EventSLABreached)
+)
 
 // Assigned is the payload of EventAssigned: somebody is now responsible.
 type Assigned struct {

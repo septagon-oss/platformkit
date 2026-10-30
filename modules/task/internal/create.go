@@ -37,7 +37,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.Tenant], in contracts.
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return nil, err
 	}
-	if err := events.Publish(ctx, tx, contracts.EventCreated, task); err != nil {
+	if err := events.PublishTo(ctx, tx, s.CreatedTopic, task); err != nil {
 		return nil, err
 	}
 	if in.AssigneeID != nil {

@@ -59,22 +59,13 @@ type Module struct {
 	// name it.
 	Roles []RoleDecl
 
-	// Events are the events this module emits, by name: "<module>.<event>",
-	// inside the module's own namespace. A name is all the kernel needs to
-	// refuse a route that would publish what no manifest promised, to name a
-	// subscription's subject, and to expand a SubscribeAll module — so a module
-	// whose payload it cannot describe (a hand-built document, a type that
-	// marshals itself) still gets to emit by naming the event here.
-	//
-	// Every event a rest.Spec would publish has to appear in this list or in
-	// Declared, or the app refuses to start: a module that emits something it
-	// never promised is an integration nobody can find. Module.Emits is the one
-	// list that says so; nothing reads these two fields separately.
+	// Events are bare-name declarations used when Declared is empty. When
+	// Declared is non-empty, that typed list is authoritative.
+	// Deprecated: use Declared.
 	Events []string
 
 	// Declared names emitted events with their payload types for outbox validation
-	// and AsyncAPI. Emits prefers a typed declaration over the same bare Events
-	// name; a bare event has no payload validation and is reported as uncovered.
+	// and AsyncAPI. When non-empty, this list is authoritative and Events is ignored.
 	Declared []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
@@ -230,30 +221,23 @@ func (s SystemAccess) fault() string {
 	return ""
 }
 
-// Emits returns everything the module says it emits, in the one shape the
-// kernel checks: each typed declaration as it stands, and each bare name in
-// Events as that declaration with no payload type, which is the state
-// events.Declared reserves for a payload the kernel cannot describe. A name
-// given both ways is one event and appears once, as the typed declaration.
+// Emits returns typed declarations when present, or legacy bare event names
+// when a module has not declared payload shapes.
 //
 // Validate, Expand, the coverage line and the AsyncAPI document all read this
-// method rather than either field, so the two spellings of a manifest's event
-// list cannot disagree about what the composition emits.
+// method, so every reader uses the same effective event list.
 func (m Module) Emits() []events.Declared {
+	if len(m.Declared) > 0 {
+		return m.Declared
+	}
 	if len(m.Events) == 0 {
 		return m.Declared
 	}
-	typed := make(map[string]bool, len(m.Declared))
-	for _, d := range m.Declared {
-		typed[d.Name] = true
-	}
-	out := make([]events.Declared, 0, len(m.Declared)+len(m.Events))
+	out := make([]events.Declared, 0, len(m.Events))
 	for _, name := range m.Events {
-		if !typed[name] {
-			out = append(out, events.Declared{Name: name})
-		}
+		out = append(out, events.Declared{Name: name})
 	}
-	return append(out, m.Declared...)
+	return out
 }
 
 // Permission is one thing a role can be granted.
