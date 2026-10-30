@@ -11,37 +11,79 @@ and connects their dependencies explicitly in Go.
 
 ## Try it locally
 
-Install the Go version declared in [go.mod](go.mod), then run this command from
-a directory where you want to keep the application's data. The first start
-needs internet access to download dependencies and PostgreSQL:
+**Prerequisite: one thing — Go.** [go.mod](go.mod) states the floor on its `go`
+line and the version this repository is verified with on its `toolchain` line; any
+Go from 1.21 onwards reads the `toolchain` line and downloads that toolchain by
+itself, which is a download of its own on a machine whose Go is older. Nothing
+else: no Docker, no `psql`, no `make`, no Node.
+
+**Command.** Run this from the directory where you want the application's data to
+live. The first start downloads Go modules and then PostgreSQL, so it needs
+internet access; a machine behind a filter is refused with the host named.
 
 ```sh
 go run github.com/septagon-oss/platformkit/apps/platformkit@main start --addr 127.0.0.1:8080
 ```
 
-This starts the reference application from `main`, with its own PostgreSQL 16
-database and an initial tenant. No separate database or message broker is needed.
-The HTTP server listens only on your machine.
+**Machines.** `start` runs on `linux/amd64`, `linux/arm64`, `darwin/amd64` and
+`darwin/arm64`, and refuses any other pair by name before it downloads or writes
+anything. WSL2 answers as Linux and takes that answer; Windows is refused, not
+because it is known to be broken but because no release has run it — use
+`platformkit run` there, against a PostgreSQL of your own.
 
-Open [the sign-in page](http://platformkit.localhost:8080/app/admin/login) and use
-`admin@platformkit.localhost` with the password printed in your terminal.
-Keep that password: it is shown only when the administrator is first created.
+**Expected result.** A banner naming the reference and its version, the data and
+cache directories, the addresses, and the next useful action — then a server on
+the address you named. Everything answerable about your machine is answered before
+the first byte is downloaded: an occupied `--addr`, a data directory that cannot be
+written, a data directory another server is holding, or a cluster from another
+PostgreSQL version is refused with the path or flag that would change it, the
+command to retry, and the statement that nothing was written. Rerunning the same
+command after such a refusal is safe, and it is also safe after a run that
+succeeded: the same command reuses the database and the uploads under `./data`,
+creates no second tenant and prints no second password.
+
+```
+  reference PlatformKit v1.1.2-proof.20261027.e5fe4025c5ad
+  data      /you/platformkit            (uploads under /you/platformkit/files)
+  database  /you/platformkit/postgres    (binaries under /you/.cache/platformkit/postgres)
+  tenant    platformkit, administrator admin@platformkit.localhost
+  password: <printed once, by the run that created the administrator>
+            It is not stored and will not be shown again.
+  site      http://platformkit.localhost:8080/
+  admin     http://platformkit.localhost:8080/app/admin/login
+  next      sign in at the admin address, or the two curl calls that follow
+```
+
+`start` runs its own PostgreSQL 16 and an initial tenant, so no separate database or message broker is
+needed, and by default the HTTP server listens only on your machine, on
+`127.0.0.1:8080`. Use `--data` to choose another data directory and `--addr` to
+change the listening address and port — an address that names no host, such as
+`--addr :8080`, binds every interface the machine has and answers the administrator's
+sign-in page for whatever else is on that network, which is what you want only when
+you meant it.
+
 After signing in, explore the administration screens and the
 [component gallery](http://platformkit.localhost:8080/app/admin/_gallery).
 Product applications configure [tenant storybooks](modules/admin/README.md) to
-show only the examples selected for the signed-in tenant.
-An optional [Storybook.js adapter](ui/storybook/README.md) adds Storybook's native
-navigation and controls while rendering these same Go components.
+show only the examples selected for the signed-in tenant. An optional
+[Storybook.js adapter](ui/storybook/README.md) adds Storybook's native navigation
+and controls while rendering these same Go components.
 
-Use `platformkit.localhost` in your browser because the host identifies the
-tenant. Stop with Ctrl+C; starting again from the same directory reuses your
-database and uploads under `./data`. Use `--data` to choose another data directory
-or `--addr` to change the listening address and port.
+**Next useful action.** Open
+[the sign-in page](http://platformkit.localhost:8080/app/admin/login) with
+`admin@platformkit.localhost` and the password the banner printed — keep it, it is
+shown only once, and it never appears in a log the run writes. Then create a task;
+the banner prints the two `curl` calls that do it through the public API if you
+would rather not use a browser. Use `platformkit.localhost` as the host because the
+host identifies the tenant. Stop with Ctrl-C.
 
-This is a local evaluation setup, not a production configuration. For a deployed
-application, pin a reviewed module version and supply your own configuration,
-database and service credentials. [config.example.yaml](config.example.yaml)
-describes the available settings; its defaults are for local development.
+The measured cost of all of this, per machine, is in
+[apps/platformkit/FIRST-USE.md](apps/platformkit/FIRST-USE.md) with the command
+that produces it. This is a local evaluation setup, not a production configuration.
+For a deployed application, pin a reviewed module version and supply your own
+configuration, database and service credentials.
+[config.example.yaml](config.example.yaml) describes the available settings; its
+defaults are for local development.
 
 ## Build your application
 

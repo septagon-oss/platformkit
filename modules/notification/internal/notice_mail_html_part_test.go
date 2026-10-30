@@ -24,9 +24,8 @@ import (
 // markup. A notice with no link still has both parts and no anchor.
 func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{})
-	box := notification.NewMailbox()
-	sub := internal.SendMail(box, directory{}, hosts{}, nil, true)
+	svc := internal.NewService(directory{}, internal.WithMailer(notification.NewMailbox()))
+	sub := internal.SendMail(svc, hosts{}, true)
 
 	send := func(ctx context.Context, tx db.Tx[db.Tenant], notice contracts.Notice) contracts.Message {
 		t.Helper()
@@ -35,17 +34,20 @@ func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 			t.Fatalf("notify: %v", err)
 		}
 		payload := `{"notificationId":"` + row.ID.String() + `","recipientId":"` + row.RecipientID.String() + `"}`
-		before := len(box.Sent())
 		if err := sub.Handler(ctx, tx, events.Event{
 			ID: uuid.New(), Name: contracts.EventEmailRequested, Payload: []byte(payload),
 		}); err != nil {
-			t.Fatalf("send: %v", err)
+			t.Fatalf("queue the mail: %v", err)
 		}
-		sent := box.Sent()
-		if len(sent) != before+1 {
-			t.Fatalf("the mailbox holds %d messages, want %d", len(sent), before+1)
+		// The message is read back off the owed row rather than out of a mailbox:
+		// what this case checks is what the mail was frozen as, and the worker hands
+		// a relay exactly these parts.
+		var owed owedMessage
+		if err := tx.DB().Table("notification_mail_intents").Select("subject, body, html").
+			Order("seq DESC").First(&owed).Error; err != nil {
+			t.Fatalf("read the owed mail: %v", err)
 		}
-		return sent[len(sent)-1]
+		return contracts.Message{Subject: owed.Subject, Body: owed.Body, HTML: owed.HTML}
 	}
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -80,4 +82,12 @@ func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 	if !errors.Is(err, errRollback) {
 		t.Fatalf("the transaction: %v", err)
 	}
+}
+
+// owedMessage is the stored message as a row: contracts.Message holds a *Sender,
+// which is a value the table deliberately does not keep.
+type owedMessage struct {
+	Subject string
+	Body    string
+	HTML    string
 }

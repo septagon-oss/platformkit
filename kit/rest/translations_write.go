@@ -238,10 +238,10 @@ func (s Spec[T]) untranslateRow(ctx context.Context, tx db.Tx[db.Tenant], id uui
 // It is a separate shape from patchInput for the same reason the two read doors
 // are: a resource with no translatable field must not advertise a `?lang=` its
 // PATCH would have to refuse.
-type translatedPatchInput struct {
+type translatedPatchInput[T any] struct {
 	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
 	Lang string         `query:"lang" doc:"Write this language's translation of the body's fields instead of the record itself; the tenant's own language, or none, writes the record"`
-	Body map[string]any `doc:"The translatable fields to write in that language"`
+	Body patchValues[T] `doc:"The translatable fields to write in that language"`
 	// IfMatch is the row's ETag as the caller read it, honoured by both halves of
 	// this door: it conditions the write of the record, and it conditions the write
 	// of a translation, because a translation is measured against the source its

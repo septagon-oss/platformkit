@@ -71,9 +71,10 @@
     // The settled fragment, not the whole page, owns these field errors.
     // Native focus skips disabled, hidden and inert controls; keep looking if
     // one cannot receive focus. A multi-root swap announces only one field.
-    const selector = 'input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"]';
+    const selector = 'input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"], [data-sketch][aria-invalid="true"]';
     const fields = elt.matches(selector) ? [elt] : elt.querySelectorAll(selector);
-    for (const field of fields) {
+    for (const candidate of fields) {
+      const field = candidate.matches("[data-sketch]") ? candidate.querySelector("canvas:not([hidden])") || candidate : candidate;
       field.focus();
       if (document.activeElement === field) {
         focusedRefusals.add(xhr);

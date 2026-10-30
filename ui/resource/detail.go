@@ -66,7 +66,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	// row, and a command is what they may do to it once they have read it.
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
-	return document.View{Title: named, Language: r.Resolved.Language, Body: r.viewBody("detail", body)}
+	return document.View{Title: named, Language: r.Resolved.Language, Modules: sketchCommandModules(r), Body: r.viewBody("detail", body)}
 }
 
 // savingControl is the keep-a-copy control, its standing, and the link to the
@@ -194,12 +194,16 @@ func details(r Resource, o Options, row map[string]any, rendered map[string]stri
 func detailBlock(r Resource, o Options, row map[string]any, rendered map[string]string, names []string, role, title string) g.Node {
 	items := make([]components.DetailItem, 0, len(names))
 	nodes := make([]g.Node, 0, len(names))
+	words := o.Words(r.Schema)
 	for _, name := range names {
 		f := r.field(name)
 		read := value(f, row, o)
 		node := read.node
 		definition, _ := fieldFor(r.Schema.Fields, name)
 		definition.Present = f.Kind
+		if definition.Type == entity.TypeSketch {
+			node = sketchReading(row[name], f.Label, "full", words.text)
+		}
 		// A choice reads its selection whatever the value, an empty one included;
 		// a media kind is drawn only where the author left something to draw.
 		if raw := row[name]; definition.Choices != nil || (raw != nil && scalarText(raw) != "") {

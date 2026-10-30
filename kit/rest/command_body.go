@@ -43,6 +43,7 @@ func (defaultCommandBody[I]) Schema(registry huma.Registry) *huma.Schema {
 		fields = append(fields, f)
 	}
 	schema := huma.SchemaFromType(registry, reflect.StructOf(fields))
+	annotateSketchFields(schema, entity.FieldsOf(typ))
 	// Defaults remain documented, but the request must be allowed to omit them.
 	for _, sf := range reflect.VisibleFields(typ) {
 		value := sf.Tag.Get("default")

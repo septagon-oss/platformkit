@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/tour"
 )
 
 // Module is one business capability, described to the kernel.
@@ -106,6 +107,14 @@ type Module struct {
 	Nav []NavEntry
 	// Views are immutable custom-screen descriptors, checked again after Routes.
 	Views []screen.View
+
+	// Tours is how this module's features teach themselves: instructions
+	// anchored to published screens, read by whatever renders them and
+	// validated twice — here, as a declaration, and after routes are
+	// registered, against what the composition actually published. A
+	// composition that selects no tour runner validates them all the same and
+	// shows nothing.
+	Tours []tour.Tour
 
 	// There is no Health. Nothing in three repositories ever contributed a
 	// check, and /ready is the one question a probe can act on — is this
@@ -399,7 +408,19 @@ func validMoves(mods []Module) []string {
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
+//
+// Deprecated: read KernelEventNames(), which hands out a copy a caller cannot write
+// into. This slice is the same storage every composition in the process reads, and one
+// append that grew it past its length would change what the kernel emits for all of them.
 var KernelEvents = []string{"security.denied", "security.access_requested", events.EventOperationOutcome}
+
+// KernelEventNames is KernelEvents as a copy: the names the kernel emits itself, which
+// no module may declare and which a SubscribeAll module subscribes to beside the
+// composition's own. It is a fresh slice per call, so a caller that sorts, truncates or
+// appends to the answer leaves the kernel's own list where it found it.
+func KernelEventNames() []string {
+	return slices.Clone(KernelEvents)
+}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the
@@ -414,7 +435,7 @@ const KernelName = "platformkit"
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
-	for _, e := range KernelEvents {
+	for _, e := range KernelEventNames() {
 		if !seen[e] {
 			seen[e], all = true, append(all, e)
 		}

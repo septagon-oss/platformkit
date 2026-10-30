@@ -9,6 +9,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -182,13 +183,27 @@ func NewReader() contracts.Reader { return internal.NewReader() }
 
 // NewServiceWithPolicy adds resource decisions to assignment and resolution.
 // The caller still owns route grants, current identity and tenant transactions.
+// A nil policy is refused with a panic; NewServiceWithPolicyChecked answers it as
+// an error.
 func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
+	svc, err := NewServiceWithPolicyChecked(policy)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc
+}
+
+// NewServiceWithPolicyChecked answers a nil policy provider as the error
+// NewServiceWithPolicy panics with: the point of the policy is to refuse a
+// resource the caller does not hold, and a service with no policy answers that
+// question by allowing everything it was asked.
+func NewServiceWithPolicyChecked(policy tenancy.Policy) (contracts.Service, error) {
 	if policy == nil {
-		panic("task: a policy-enabled service requires a policy provider")
+		return nil, errors.New("task: a policy-enabled service requires a policy provider")
 	}
 	svc := internal.NewService()
 	svc.Policy = policy
-	return svc
+	return svc, nil
 }
 
 // roles are the two people the task desk is written for. They are declared here
@@ -207,13 +222,32 @@ var roles = []module.RoleDecl{
 }
 
 // Module mounts one shared lifecycle implementation for routes and jobs.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) module.Module {
+	m, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return m
+}
+
+// NewChecked mounts one shared lifecycle implementation for routes and jobs, and
+// answers as an error the two ways of naming a policy at once: the shared service
+// already carries one, and the Desk would then answer with the other. A zero
+// SweepEvery keeps the interval beside it. It opens nothing, runs no query and is
+// safe to call twice.
+func NewChecked(deps Deps) (module.Module, error) {
 	svc := deps.Service
 	if deps.Policy != nil {
 		if svc != nil {
-			panic("task: configure policy on the shared service or supply Policy, not both")
+			return module.Module{}, errors.New("task: configure policy on the shared service or supply Policy, not both")
 		}
-		svc = NewServiceWithPolicy(deps.Policy)
+		policyService, err := NewServiceWithPolicyChecked(deps.Policy)
+		if err != nil {
+			return module.Module{}, err
+		}
+		svc = policyService
 	}
 	if svc == nil {
 		svc = NewService()
@@ -259,7 +293,7 @@ func New(deps Deps) module.Module {
 			mounted.Mount(s)
 			internal.RegisterRoutes(s, mounted, svc)
 		},
-	}
+	}, nil
 }
 
 // createWith adapts the creator to the REST seam: the decoded body supplies only

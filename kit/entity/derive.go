@@ -24,7 +24,7 @@ func deriveField(t reflect.Type, sf reflect.StructField) (Field, bool) {
 		Type:     kind,
 		Elem:     elem,
 		Required: has(sf.Tag.Get("validate"), "required"),
-		ReadOnly: declaredBy(t, sf) == baseType || (kind == TypePicture && sf.Tag.Get("readOnly") == "true"),
+		ReadOnly: declaredBy(t, sf) == baseType || ((kind == TypePicture || kind == TypeSketch) && sf.Tag.Get("readOnly") == "true"),
 		Default:  sf.Tag.Get("default"),
 		Doc:      sf.Tag.Get("doc"),
 		Index:    sf.Index,

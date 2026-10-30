@@ -42,7 +42,7 @@ func main() {
 	case "bootstrap":
 		err = bootstrap(args)
 	case "start":
-		err = startApp(args)
+		err = startApp(args, startDeps{})
 	case "seed":
 		err = seedCommand(args)
 	case "migrate":

@@ -188,15 +188,18 @@ func namedFieldFault(key, field, name string, fields []crud.Field, allowHidden b
 // no entry of its own.
 func fieldHintFault(name string, fields []crud.Field, p entity.EntryHints) string {
 	for _, f := range fields {
+		if bad := f.SketchFault(); bad != "" {
+			return bad
+		}
 		h := f.Presentation
 		if bad := hintWordsFault(f); bad != "" {
 			return bad
 		}
 		if !entity.ValidFormat(h.Format) {
-			return fmt.Sprintf("field %q is formatted %q, which is not a format entity.Formats admits", f.Name, h.Format)
+			return fmt.Sprintf("field %q is formatted %q, which is not a format entity.FormatNames admits", f.Name, h.Format)
 		}
 		if !entity.ValidVisibility(h.Visibility) {
-			return fmt.Sprintf("field %q declares visibility %q, which is not a visibility entity.Visibilities admits", f.Name, h.Visibility)
+			return fmt.Sprintf("field %q declares visibility %q, which is not a visibility entity.VisibilityNames admits", f.Name, h.Visibility)
 		}
 		if bad := enumHintFault(f); bad != "" {
 			return bad
@@ -260,7 +263,7 @@ func enumHintFault(f crud.Field) string {
 				return fmt.Sprintf("field %q declares an enum %s for %q, which its enum does not hold", f.Name, label, value)
 			}
 			if label == "tone" && !entity.ValidTone(said) {
-				return fmt.Sprintf("field %q names tone %q for value %q, which is not a tone entity.Tones admits", f.Name, said, value)
+				return fmt.Sprintf("field %q names tone %q for value %q, which is not a tone entity.ToneNames admits", f.Name, said, value)
 			}
 		}
 	}

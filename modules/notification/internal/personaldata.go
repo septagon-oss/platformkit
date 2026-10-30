@@ -38,7 +38,23 @@ func PersonalData() personaldata.Part {
 type notificationPart struct {
 	Notifications []notificationRow `json:"notifications"`
 	Deliveries    []deliveryRow     `json:"deliveries"`
+	Intents       []intentRow       `json:"intents"`
 	Devices       []deviceRow       `json:"devices"`
+}
+
+// intentRow is an owed mail without its message. The person's own notice already
+// exports its title, body and link, so the copy the mail was going to carry would be
+// handed out twice; what the mail adds that the notice does not say is whether it
+// went, which is the state and the reason.
+type intentRow struct {
+	Purpose     string     `json:"purpose"`
+	Cause       string     `json:"cause,omitempty"`
+	State       string     `json:"state"`
+	Attempt     int        `json:"attempt"`
+	Uncertain   int        `json:"uncertain"`
+	Reason      string     `json:"reason,omitempty"`
+	AttemptedAt *time.Time `json:"attemptedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 type notificationRow struct {
@@ -84,6 +100,12 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	if err != nil {
 		return nil, fmt.Errorf("notification: export %s's deliveries: %w", s.ID, err)
 	}
+	err = db_.Table("notification_mail_intents").
+		Select("purpose, cause, state, attempt, uncertain, reason, attempted_at, created_at").
+		Where("person_id = ?", s.ID).Order("seq").Find(&out.Intents).Error
+	if err != nil {
+		return nil, fmt.Errorf("notification: export %s's owed mail: %w", s.ID, err)
+	}
 	err = db_.Table("notification_devices").
 		Select("platform, created_at").
 		Where("recipient_id = ? AND deleted_at IS NULL", s.ID).
@@ -108,6 +130,16 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 	}
 	_, err := personaldata.Scrub(ctx, tx, s, "notification_deliveries", []string{"reason"}, "")
 	if err != nil {
+		return err
+	}
+	// The owed mail holds the address it was owed to and the message it was going to
+	// carry, so all five of its text columns go. The row keeps its state, its purpose
+	// and its counters: "we were owed a mail, it was attempted twice and the relay
+	// never answered" is a fact about this module's behaviour that survives the words
+	// it was written in — and a scrubbed row then fails the worker's address re-ask,
+	// so an erased person is never mailed at an address nobody decided for them.
+	if _, err := personaldata.Scrub(ctx, tx, s, "notification_mail_intents",
+		[]string{"recipient", "subject", "body", "html", "reason"}, ""); err != nil {
 		return err
 	}
 	// A device row exists to reach the person, and its token is their device's

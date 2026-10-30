@@ -142,6 +142,14 @@ func readFormField(form url.Values, f crud.Field, o formRead, out map[string]any
 	if !sent {
 		return nil
 	}
+	if f.Type == entity.TypeSketch {
+		value, err := sketchFormValue(f, raw)
+		if err != nil {
+			return err
+		}
+		out[f.Name] = value
+		return nil
+	}
 	text := strings.TrimSpace(raw[0])
 	if text == "" {
 		if o.update {

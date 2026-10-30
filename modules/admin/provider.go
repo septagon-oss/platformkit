@@ -47,7 +47,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err != nil {
 		return module.Module{}, err
 	}
-	return New(Deps{
+	return NewChecked(Deps{
 		Primary:    primary,
 		Modules:    pkit.Composition(w),
 		Authorize:  pkit.Get[httpx.Authorizer](w),
@@ -78,7 +78,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// the link to it is the same value, so neither half can offer what the
 		// other did not mount.
 		Registration: registration(signin.Registration),
-	}), nil
+	})
 }
 
 // callerOf is the header's read of the caller's own account row, or nothing at all

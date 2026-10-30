@@ -12,6 +12,14 @@ import (
 // Manual command registrants must truthfully declare Fields and EmptyInputFault.
 func CheckRowHints(resources []Resource) string {
 	for _, r := range resources {
+		for _, f := range r.Schema.Fields {
+			if bad := f.SketchFault(); bad != "" {
+				return bad
+			}
+		}
+		if bad := r.Present.SketchFault(r.Schema.Fields); bad != "" {
+			return bad
+		}
 		owner := r.Module + "/" + r.Entity
 		if bad := commandRowHints(r, owner); bad != "" {
 			return bad
@@ -62,6 +70,11 @@ func rowCommandFault(c Command) string {
 
 func commandRowHints(r Resource, owner string) string {
 	for _, c := range r.Commands {
+		for _, f := range c.Fields {
+			if bad := f.SketchFault(); bad != "" {
+				return bad
+			}
+		}
 		if bad := BindingFault(c.Fields, r.Schema.Fields, c.Bindings); bad != "" {
 			return owner + " " + bad
 		}
