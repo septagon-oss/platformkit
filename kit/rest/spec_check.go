@@ -17,6 +17,9 @@ import (
 // events. It panics, at the mount site, for the same reason httpx.Permission
 // does: this is a wiring mistake, not a request-time condition.
 func (s Spec[T]) check() {
+	if s.Present.Session {
+		panic("rest: session presentation requires Session")
+	}
 	if s.Create != nil && s.History {
 		panic("rest: Create replaces the create steps, so a History resource would never record its first version")
 	}
