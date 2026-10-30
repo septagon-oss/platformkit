@@ -2,7 +2,7 @@
   "cc_over_30": 6,
   "files_over_800": 9,
   "funcs_over_100": 18,
-  "history_comment_lines": 57,
+  "history_comment_lines": 56,
   "httpx_exports": 115,
   "long_comment_blocks": 276,
   "stutters": 25

@@ -10,21 +10,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
-// hints.go is the presentation gate: the mount-time refusal of a declaration
-// about how a resource reads that could only ever draw the wrong screen. It is
-// widgetFault and presentationFault for the reading contract, at the same site
-// and for the same reason — a Spec is where an entity, a schema and a mount are
-// all in hand at once, and a declaration nobody honours reads like a decision.
-//
-// The vocabularies themselves are kit/entity's, because ui/ draws them and a
-// kernel below the presentation layer cannot import what it must check against.
-// The one thing that cannot be checked here is whether a `reference` names a
-// module this installation composed: Spec.check runs per Spec and registration
-// order is not a fact it can see, so CheckReferences below asks the question at
-// boot, where the whole resource list exists.
+// entryHintFault validates entry hints at mount. Reference targets are checked
+// separately at boot, when the complete resource list is available.
 
-// entryHintFault names what an entry's own hints get wrong, and "" when they are
-// coherent. Every refusal is a mount-time panic, like the rest of check.
+// entryHintFault returns the first invalid entry hint, or an empty string when
+// the hints are coherent. Spec.check turns a non-empty result into a mount refusal.
 func (s Spec[T]) entryHintFault() string {
 	if s.Present.Deck != nil && (!s.offers(List)) {
 		return "deck requires a list resource"

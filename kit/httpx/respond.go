@@ -16,34 +16,13 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
-// respond decides what the client finally sees.
-//
-// It holds the response in a buffer until the handler and its transaction are
-// both finished, and it turns a panic into a 500 and a log line with the
-// request id, so one bad handler costs one request instead of the process.
-//
-// The two belong together: a recovery is only able to answer at all because
-// nothing has been sent yet. It sits outside the transaction, which is the
-// other half of the point — a recovery any deeper would return normally, and a
-// transaction that returns normally commits the half-finished work that caused
-// the panic. Here the panic unwinds past the transaction middleware, which
-// rolls back on its way out, and arrives with an empty buffer.
-// rolls back on its way out, and arrives with an empty buffer.
+// respond buffers the response until the handler and transaction finish. It
+// recovers panics outside the transaction middleware so the transaction rolls
+// back before the buffered response is replaced with a refusal.
 
-// renegotiate replaces a held refusal that huma wrote with the answer this package
-// would have written for the same verdict. The guard is the shape, not the status: a
-// body this package's encoder wrote is already the one answer (fault.go ends at
-// writeProblem), so re-writing it would be two writers again.
-//
-// The body is discarded and the encoder's two headers with it; every other header
-// stays, because those are the guard's answer and not the encoder's. Retry-After is
-// the one that matters: a refusal that says "come back in 8 seconds" in its body and
-// drops it from its headers tells a client to stop and not when — which is what
-// buffer's reset would have done, reset being the tool for a held 200 whose
-// transaction failed, where the headers beside it must not survive.
-//
-// It re-answers with the handler's own refusal when the buffer carries one: the body
-// alone lacks the catalogue entry a page shows and whose detail the operator owns.
+// renegotiate replaces a problem document with the configured page response when
+// the request accepts a document. It retains response headers from the guard and
+// uses the carried refusal when available so the page can include its detail.
 func (a *API) renegotiate(b *buffer, r *http.Request) {
 	if a.opts.Fault == nil || b.direct || b.status < http.StatusBadRequest ||
 		!strings.HasPrefix(b.Header().Get("Content-Type"), problem.ContentType) ||
