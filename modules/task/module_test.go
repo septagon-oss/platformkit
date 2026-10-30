@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -124,6 +125,31 @@ func TestEveryEventTheRoutesDeclareIsInTheManifest(t *testing.T) {
 		if !slices.Contains(events.Names(contracts.Events), e) {
 			t.Errorf("a route publishes %q and the manifest does not name it", e)
 		}
+	}
+}
+
+func TestManifestUsesEachGeneratedCRUDTopicOnce(t *testing.T) {
+	topics := task.Spec.Topics()
+	manifest := task.New(task.Deps{}).Declared
+	for _, topic := range []events.Declared{topics.Created.Declaration(), topics.Updated.Declaration(), topics.Deleted.Declaration()} {
+		count := 0
+		for _, declaration := range manifest {
+			if declaration.Name == topic.Name {
+				count++
+				if declaration.Payload != topic.Payload {
+					t.Errorf("manifest payload for %s is %v, want %v", topic.Name, declaration.Payload, topic.Payload)
+				}
+			}
+		}
+		if count != 1 {
+			t.Errorf("manifest declares %s %d times, want once", topic.Name, count)
+		}
+	}
+	if got, want := topics.Created.Declaration().Payload, reflect.TypeOf((*contracts.Task)(nil)); got != want {
+		t.Errorf("generated Created topic payload = %v, want %v", got, want)
+	}
+	if contracts.TopicCreated.Name() != topics.Created.Name() {
+		t.Errorf("task Creator topic is %q, REST-generated topic is %q", contracts.TopicCreated.Name(), topics.Created.Name())
 	}
 }
 
