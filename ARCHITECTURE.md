@@ -756,7 +756,7 @@ process names a host, port and from-address, the mailbox when not (`:60-62`), an
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
 (`apps/platformkit/main.go:98-104`). A refusal a person must see raises a
-`Notice` (`apps/platformkit/product.go:473`). A nil lookup writes every row and sends no
+`Notice` (`apps/platformkit/product.go:415-423`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
