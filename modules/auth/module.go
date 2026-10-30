@@ -357,6 +357,10 @@ func NewChecked(deps Deps) (contracts.Auth, module.Module, error) {
 			// account being signed into, and the credential row is the person's key.
 			personaldata.Table{Name: "passkey_challenges", Person: "user_id"},
 			personaldata.Table{Name: "passkey_credentials", Person: "user_id"},
+			// Which link this module decided to send, to which address. The row is a
+			// credential event rather than something the person did, so it is erased
+			// outright and not scrubbed.
+			personaldata.Table{Name: "auth_mail_dispatch", Person: "user_id", Text: []string{"recipient"}},
 		),
 		Permissions: permissions,
 		Declared:    contracts.Events,

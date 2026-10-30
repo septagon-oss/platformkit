@@ -434,7 +434,9 @@ func (s *Service) RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userI
 }
 
 // Purge deletes this tenant's expired sessions and spent tokens, a batch per
-// call, until fewer than a batch remain.
+// call, until fewer than a batch remain. The one thing it does besides deleting is
+// settling a credential mail nobody came back to mark, and the one thing it never does
+// is forget a mail whose fate was never recorded.
 //
 // It runs in the caller's transaction and returns a count, so the hourly job
 // can open one transaction per batch: a tenant with a million dead sessions is
@@ -515,8 +517,24 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if ceremonies.Error != nil {
 		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
 	}
+	// A credential mail still marked unsent past its grace is a message nobody can
+	// any longer report on: the memory that held its plaintext is gone, and the only
+	// honest sentence about it is that nobody knows. This is the sweep's one write to
+	// that table, and the rows it settles here are the crash's evidence made legible
+	// rather than the crash deleted (see mail_dispatch.go).
+	lost, err := loseUnsentDispatch(tx)
+	if err != nil {
+		return 0, err
+	}
+	// What a transport answered is history after this module's own horizon; what nobody
+	// answered is evidence, and it is never in this statement's result.
+	forget, err := forgetSettledDispatch(tx)
+	if err != nil {
+		return 0, err
+	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
-		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected, nil
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected +
+		lost + forget, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason

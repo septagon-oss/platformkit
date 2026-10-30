@@ -247,24 +247,29 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if held {
 		return s.rotate(ctx, tx, user, title, body, base, token, at)
 	}
-	if err := s.writeOffer(tx, user.ID, token, at, false); err != nil {
-		return err
-	}
-	// What waits for the commit is the send and the marks of its outcome. Everything
-	// the message needs — the recipient, the tenant's host, the row, the previous
-	// link — was read above, in the transaction that makes the token spendable. The
+	// Everything the message needs — the recipient, the tenant's host, the row, the
+	// previous link — was read above, in the transaction that makes the token
+	// spendable, and the message is described before anything is written, so the
+	// credential, the record of the mail and the hand-off are one set of values. The
 	// notice is described here and raised on the other side of the commit, with the
 	// send, because its copy tells the person the link is in their email and nothing
 	// raises it until the transport has taken the message.
-	link := base + s.mail.SetPasswordPage
+	out := linkMail{
+		table: "password_tokens", kind: contracts.MailSetPassword,
+		person: user.ID, address: user.Email, token: token,
+		digest: contracts.Hash(token), was: was,
+		msg:    mailMessage(user.Email, title, body, base+s.mail.SetPasswordPage, token),
+		notice: setPasswordNotice(user.ID, title, body, s.mail.SetPasswordPage),
+	}
+	if err := s.writeOffer(tx, user.ID, token, at, false); err != nil {
+		return err
+	}
+	if err := writeMailDispatch(tx, out); err != nil {
+		return err
+	}
+	// What waits for the commit is the send and the marks of its outcome.
 	return events.Defer(ctx, func(ctx context.Context) error {
-		return s.mailAfterCommit(ctx, linkMail{
-			table: "password_tokens", kind: contracts.MailSetPassword,
-			person: user.ID, address: user.Email, token: token,
-			digest: contracts.Hash(token), was: was,
-			msg:    mailMessage(user.Email, title, body, link, token),
-			notice: setPasswordNotice(user.ID, title, body, s.mail.SetPasswordPage),
-		})
+		return s.mailAfterCommit(ctx, out)
 	})
 }
 

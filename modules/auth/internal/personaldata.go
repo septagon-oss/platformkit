@@ -43,6 +43,7 @@ type authPart struct {
 	PasswordTokens    []authIssuedRow    `json:"passwordTokens"`
 	VerificationEmail []authVerification `json:"authVerificationEmails"`
 	FirstFactorProofs []authProofRow     `json:"firstFactorProofs"`
+	MailDispatch      []authDispatchRow  `json:"mailDispatch"`
 }
 
 // authSessionRow names no session. A session's id is its credential, and migration
@@ -120,6 +121,16 @@ type authProofRow struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+// authDispatchRow names a link this module decided to send this person and whether it can
+// prove the message left. It carries no hash: the hash is what names a live door in the
+// credential tables, and a bundle that leaves by email has no use for a copy of one. The
+// address is the person's own and the bundle already names it once.
+type authDispatchRow struct {
+	Kind      string     `json:"kind"`
+	CreatedAt time.Time  `json:"createdAt"`
+	SettledAt *time.Time `json:"settledAt,omitempty"`
+}
+
 func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	s personaldata.Subject) (json.RawMessage, error) {
 	var out authPart
@@ -157,6 +168,9 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	if err := q(&out.FirstFactorProofs, "first_factor_proofs", "expires_at", "expires_at"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's first-factor proofs: %w", s.ID, err)
 	}
+	if err := q(&out.MailDispatch, "auth_mail_dispatch", "kind, created_at, settled_at", "created_at"); err != nil {
+		return nil, fmt.Errorf("auth: export %s's credential mails: %w", s.ID, err)
+	}
 	return json.Marshal(out)
 }
 
@@ -182,7 +196,7 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 	// Delete the row and the key in the authenticator signs nothing — which is what "the
 	// person's credentials are removed" has to mean for the one credential kind that
 	// cannot be reset, revoked or emailed: there is no secret here to replace.
-	for _, t := range []string{"password_tokens", "verification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs", "passkey_credentials", "passkey_challenges"} {
+	for _, t := range []string{"password_tokens", "verification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs", "passkey_credentials", "passkey_challenges", "auth_mail_dispatch"} {
 		// The table name is this file's own constant, never a caller's: it is the only
 		// thing a name written into SQL could be.
 		if err := db_.Exec("DELETE FROM "+t+" WHERE user_id = ?", s.ID).Error; err != nil {

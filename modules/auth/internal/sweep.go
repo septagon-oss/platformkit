@@ -19,7 +19,8 @@ import (
 const sweepCron = "0 * * * *"
 
 // Sweep is this module's periodic work: expired sessions and spent tokens go,
-// and a role naming a permission no module defines is said out loud.
+// a credential mail nobody came back to mark is settled as unknown rather than
+// forgotten, and a role naming a permission no module defines is said out loud.
 //
 // It is a job and not a subscription because nothing happens when a session
 // expires — the clock passes, which is the distinction docs/adr/0004 draws.

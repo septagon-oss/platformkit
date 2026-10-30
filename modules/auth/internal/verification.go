@@ -186,10 +186,25 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	token, at := secret(), db.Now()
+	// Described before the credential is written, so the row, the record of the mail and
+	// the hand-off carry one set of values rather than three reads that can disagree.
+	out := linkMail{
+		table: "verification_tokens", kind: contracts.MailVerification,
+		person: id, address: current.Email, token: token, digest: contracts.Hash(token), was: was,
+		msg: notification.Message{
+			To: current.Email, Subject: "Verify your email address",
+			Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
+				base + s.mail.ConfirmEmailPage + "?token=" + token +
+				"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
+		},
+	}
 	if err := s.writeVerification(tx, id, current.Email, token, at); err != nil {
 		return err
 	}
-	return s.sendConfirmationLink(ctx, id, current.Email, base, token, was)
+	if err := writeMailDispatch(tx, out); err != nil {
+		return err
+	}
+	return s.sendConfirmationLink(ctx, out)
 }
 
 // answerNoLink is what a confirmation offer that sends no link answers with, whether a
@@ -214,21 +229,11 @@ func (s *Service) answerNoLink(ctx context.Context, tx db.Tx[db.Tenant], asked a
 // sendConfirmationLink hands this person's confirmation message to the transport on the
 // commit that makes its row spendable — never after a rollback — and records what the
 // transport answered, which is what a refused send costs (see mailAfterCommit). The
-// recipient, the tenant's host, the row and the previous link were all read inside the
-// transaction that minted the credential, so the hand-off carries the secret and the
-// digest that names this attempt's row, and nothing read back out of the table.
-func (s *Service) sendConfirmationLink(ctx context.Context, id uuid.UUID, address, base, token string, was pendingLink) error {
+// hand-off carries the secret and the digest that names this attempt's row, so nothing
+// about the send is read back out of the table after the commit.
+func (s *Service) sendConfirmationLink(ctx context.Context, m linkMail) error {
 	return events.Defer(ctx, func(ctx context.Context) error {
-		return s.mailAfterCommit(ctx, linkMail{
-			table: "verification_tokens", kind: contracts.MailVerification,
-			person: id, address: address, token: token, digest: contracts.Hash(token), was: was,
-			msg: notification.Message{
-				To: address, Subject: "Verify your email address",
-				Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-					base + s.mail.ConfirmEmailPage + "?token=" + token +
-					"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
-			},
-		})
+		return s.mailAfterCommit(ctx, m)
 	})
 }
 

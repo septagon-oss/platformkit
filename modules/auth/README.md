@@ -331,6 +331,34 @@ fills `Deps` itself (`TestNamedPagesAreWhereTheMailedLinksAndTheResetNoticeLead`
 `TestComposingARefusedLinkPageFailsThePlan`,
 `TestCompositionRefusesAnEncodedPageUnderTheAPIRoot`).
 
+## The record that a mail was decided
+
+A credential link is committed before the message carrying it is handed over, so a
+process can stop between the two and leave a live token nobody was ever sent. The
+ledger above cannot see that: `direct_mail_deliveries` is written when a transport
+answers, and this is the window before any transport answered.
+
+`auth_mail_dispatch` (migration 000056) closes it as evidence rather than as a queue.
+One row is written per decided message, in the minting transaction, naming the
+credential only by its hash, with the kind, the address and `state = unsent`; the
+hand-off marks the same row `sent` or `withdrawn` in its own transaction, beside the
+marks of the send. A row still `unsent` after the grace — twice the ceiling on one
+hand-off — becomes `unknown` in the hourly sweep, and nothing may ever make it `sent`,
+because no memory holds the plaintext any more and no carrier ever held it. A settled
+row is forgotten after ninety days; an unsettled one outlives every sweep, since it
+is the crash's evidence and deleting it would hide the loss.
+
+So a never-sent link is a queryable state, and the recovery is the person asking
+again: both resend cooldowns count `sent_at`, which a lost send never wrote. This
+table makes no send survivable and no send exactly-once — the row says at most what
+the transport proved, and a hand-off that died across the socket leaves `unsent`
+beside a mail that did arrive. It has no read of its own: answered by request id or
+address, "is their mail still unsent" is the enumeration oracle the delivery door
+exists to refuse, so an operator reads the table in SQL. A rotation of a link the
+person already holds is the one decided send with no row — its mail leaves before its
+credential is written, so only the transaction holding the transport's answer can
+write its evidence.
+
 ## The record a mail leaves
 
 Two mails go out of this module with no notice behind them — a set-password

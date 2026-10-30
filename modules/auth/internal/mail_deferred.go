@@ -18,7 +18,9 @@ import (
 )
 
 // linkMail is one credential link this module sends itself, described early enough
-// that everything it needs is read inside the transaction that minted the token.
+// that everything it needs is read inside the transaction that minted the token. It is
+// the one description of the send: the dispatch row that records the decision to mail
+// and the message that carries the link are both written from it, in that transaction.
 //
 // The link leaves on the commit and not with the transaction: a mailbox holding a
 // credential for a row nobody can read yet is a link that answers "those credentials
@@ -185,18 +187,26 @@ func linkSuperseded(tx db.Tx[db.Tenant], m linkMail) (bool, error) {
 	return !held, nil
 }
 
-// delivered leaves the three marks one accepted send is owed — the row's own record
-// that the transport took this link, the notice beside the link, and the ledger
-// record — in the transaction that is carrying the hand-off (see marks).
+// delivered leaves the four marks one accepted send is owed — the row's own record
+// that the transport took this link, the dispatch record that this module's hand-off
+// completed, the notice beside the link, and the ledger record — in the transaction that
+// is carrying the hand-off (see marks).
 //
 // Together, because they describe one fact that is only true once the message left.
 // The notice is raised here rather than beside the mint for the same reason: its copy
 // tells the person to check their mail, and a sentence promising a mail the transport
 // refused is the lie the record exists to make impossible. What the record claims about
-// the world is the carrier's answer, not this module's guess: see deliveredOutcome.
+// the world is the carrier's answer, not this module's guess: see deliveredOutcome. The
+// dispatch row is the one mark that stays this module's own claim: a carrier that filed
+// the message rather than dialling records `suppressed` in the ledger and still took the
+// hand-off, so the two columns say different true things and neither writes the other's
+// word.
 func (s *Service) delivered(ctx context.Context, m linkMail) error {
 	err := s.marks(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if err := markLinkSent(tx, m); err != nil {
+			return err
+		}
+		if err := markDispatch(tx, m, dispatchSent); err != nil {
 			return err
 		}
 		if s.notify != nil && m.notice.Recipient != uuid.Nil {
@@ -252,13 +262,16 @@ func sentStamp(delivered bool) string {
 	return "NULL"
 }
 
-// undelivered takes back the row this attempt minted and records the refusal in the
-// transaction that is carrying the hand-off, and reports only a refusal to write that
-// record. Who is told of the link no transport took is decided once it has committed,
-// in answerRefused.
+// undelivered takes back the row this attempt minted, marks the message this module
+// decided to send as withdrawn, and records the refusal in the transaction that is
+// carrying the hand-off, and reports only a refusal to write that record. Who is told of
+// the link no transport took is decided once it has committed, in answerRefused.
 func (s *Service) undelivered(ctx context.Context, m linkMail, failure error) error {
 	err := s.marks(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if err := restoreUnmailed(ctx, tx, m); err != nil {
+			return err
+		}
+		if err := markDispatch(tx, m, dispatchWithdrawn); err != nil {
 			return err
 		}
 		return s.recordMail(ctx, tx, m.kind, m.address, notificationcontracts.MailFailed, failure.Error(),
