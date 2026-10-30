@@ -42,6 +42,10 @@ func databaseMajor() string {
 	return strings.SplitN(string(embeddedVersion), ".", 2)[0]
 }
 
+func databaseVersionMatches(found string) bool {
+	return strings.TrimSpace(found) == databaseMajor()
+}
+
 func supportedTarget(goos, goarch string) bool {
 	for _, target := range supportedTargets {
 		if target == goos+"/"+goarch {
@@ -251,7 +255,8 @@ func clusterIsThisVersion(cluster string) error {
 	content, err := os.ReadFile(filepath.Join(cluster, "PG_VERSION"))
 	switch {
 	case err == nil:
-		if found := strings.TrimSpace(string(content)); found != major {
+		if !databaseVersionMatches(string(content)) {
+			found := strings.TrimSpace(string(content))
 			return fmt.Errorf("start: %s holds a PostgreSQL %s cluster and this command runs %s\n"+
 				"       nothing was deleted and nothing was downloaded;\n"+
 				"       rerun with --data pointing at an empty directory, or upgrade that cluster yourself",
